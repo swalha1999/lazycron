@@ -326,23 +326,34 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "down":
 			m.form.completer.selectNext()
-			m.form.inputs[fieldWorkDir].SetValue(m.form.completer.selectedValue())
-			m.form.inputs[fieldWorkDir].CursorEnd()
 			return m, nil
 		case "up":
 			m.form.completer.selectPrev()
-			m.form.inputs[fieldWorkDir].SetValue(m.form.completer.selectedValue())
-			m.form.inputs[fieldWorkDir].CursorEnd()
 			return m, nil
-		case "enter":
+		case "enter", "right":
+			// Drill into selected directory
 			if m.form.completer.selected >= 0 {
-				val := m.form.completer.selectedValue()
-				m.form.inputs[fieldWorkDir].SetValue(val)
-				m.form.inputs[fieldWorkDir].CursorEnd()
-				m.form.completer.update(val)
+				path := m.form.completer.drillIn()
+				if path != "" {
+					m.form.inputs[fieldWorkDir].SetValue(path)
+					m.form.inputs[fieldWorkDir].CursorEnd()
+				}
 				return m, nil
 			}
-			// No selection — fall through to save
+			// No selection: right does nothing, enter falls through to save
+			if key == "right" {
+				return m, nil
+			}
+		case "left":
+			// Drill out to parent directory
+			path := m.form.completer.drillOut()
+			m.form.inputs[fieldWorkDir].SetValue(path)
+			m.form.inputs[fieldWorkDir].CursorEnd()
+			return m, nil
+		case "esc":
+			// Close suggestions, keep typed value
+			m.form.completer.reset()
+			return m, nil
 		}
 	}
 

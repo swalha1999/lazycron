@@ -113,6 +113,9 @@ func newFormForEdit(job cron.Job, index int) formModel {
 // focusActive focuses the current active field and returns the blink cmd.
 func (f *formModel) focusActive() tea.Cmd {
 	f.picker.focused = false
+	if f.activeField == fieldWorkDir {
+		f.completer.activate(f.inputs[fieldWorkDir].Value())
+	}
 	return f.inputs[f.activeField].Focus()
 }
 
@@ -262,9 +265,10 @@ func renderForm(f *formModel, width int) string {
 	} else if f.activeField == fieldWorkDir && f.completer.active {
 		b.WriteString("  " +
 			helpBinding("↑/↓", "select") + helpSep() +
-			helpBinding("enter", "confirm") + helpSep() +
-			helpBinding("tab", "next field") + helpSep() +
-			helpBinding("esc", "cancel"))
+			helpBinding("→/enter", "open") + helpSep() +
+			helpBinding("←", "parent") + helpSep() +
+			helpBinding("tab", "next") + helpSep() +
+			helpBinding("esc", "close"))
 	} else {
 		b.WriteString("  " +
 			helpBinding("tab", "next field") + helpSep() +
