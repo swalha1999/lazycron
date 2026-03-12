@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/swalha1999/lazycron/cron"
+	"github.com/swalha1999/lazycron/history"
 )
 
 type mode int
@@ -30,6 +31,11 @@ const (
 	statusInfo
 )
 
+const (
+	panelJobs    = 0
+	panelHistory = 1
+)
+
 type Model struct {
 	jobs     []cron.Job
 	selected int
@@ -46,6 +52,11 @@ type Model struct {
 	runJobName      string
 	runOutputFailed bool
 	runOutputScroll int
+
+	history         []history.Entry
+	historySelected int
+	focusPanel      int
+	historyScroll   int
 }
 
 type jobsLoadedMsg struct {
@@ -61,6 +72,15 @@ type jobRanMsg struct {
 	name   string
 	output string
 	err    error
+}
+
+type historyLoadedMsg struct {
+	entries []history.Entry
+	err     error
+}
+
+type historySavedMsg struct {
+	err error
 }
 
 type clearStatusMsg struct {
@@ -81,7 +101,7 @@ func NewModel() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return loadJobs
+	return tea.Batch(loadJobs, loadHistory)
 }
 
 func loadJobs() tea.Msg {
@@ -104,6 +124,18 @@ func runJob(name, command string) tea.Cmd {
 	return func() tea.Msg {
 		output, err := cron.RunJobNow(command)
 		return jobRanMsg{name: name, output: output, err: err}
+	}
+}
+
+func loadHistory() tea.Msg {
+	entries, err := history.LoadAll()
+	return historyLoadedMsg{entries: entries, err: err}
+}
+
+func saveHistory(jobName, output string) tea.Cmd {
+	return func() tea.Msg {
+		err := history.WriteEntry(jobName, output)
+		return historySavedMsg{err: err}
 	}
 }
 
@@ -139,8 +171,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case historyLoadedMsg:
+		if msg.err == nil {
+			m.history = msg.entries
+		}
+		return m, nil
+
+	case historySavedMsg:
+		if msg.err == nil {
+			return m, loadHistory
+		}
+		return m, nil
+
 	case jobRanMsg:
 		m.statusID++
+		// Save to history regardless of success/failure
+		output := msg.output
+		if output == "" && msg.err != nil {
+			output = msg.err.Error()
+		}
+		saveCmd := saveHistory(msg.name, output)
+
 		if msg.err != nil {
 			m.runOutput = msg.output
 			if m.runOutput == "" {
@@ -151,7 +202,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, nil
+			return m, saveCmd
 		}
 		if msg.output != "" {
 			m.runOutput = msg.output
@@ -160,11 +211,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, nil
+			return m, saveCmd
 		}
 		m.statusMsg = fmt.Sprintf("Job '%s' ran successfully", msg.name)
 		m.statusKind = statusSuccess
-		return m, clearStatusAfter(m.statusID, 4*time.Second)
+		return m, tea.Batch(saveCmd, clearStatusAfter(m.statusID, 4*time.Second))
 
 	case clearStatusMsg:
 		if msg.id == m.statusID {
@@ -209,14 +260,34 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 
+	case "tab":
+		if m.focusPanel == panelJobs {
+			m.focusPanel = panelHistory
+		} else {
+			m.focusPanel = panelJobs
+		}
+		return m, nil
+
 	case "up", "k":
-		if m.selected > 0 {
-			m.selected--
+		if m.focusPanel == panelJobs {
+			if m.selected > 0 {
+				m.selected--
+			}
+		} else {
+			if m.historySelected > 0 {
+				m.historySelected--
+			}
 		}
 
 	case "down", "j":
-		if m.selected < len(m.jobs)-1 {
-			m.selected++
+		if m.focusPanel == panelJobs {
+			if m.selected < len(m.jobs)-1 {
+				m.selected++
+			}
+		} else {
+			if m.historySelected < len(m.history)-1 {
+				m.historySelected++
+			}
 		}
 
 	case "n":
@@ -226,7 +297,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.form.focusActive()
 
 	case "enter", "e":
-		if len(m.jobs) > 0 {
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeForm
 			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
 			m.statusMsg = ""
@@ -234,13 +305,13 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "d":
-		if len(m.jobs) > 0 {
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeConfirmDelete
 			m.statusMsg = ""
 		}
 
 	case " ":
-		if len(m.jobs) > 0 {
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.jobs[m.selected].Enabled = !m.jobs[m.selected].Enabled
 			status := "enabled"
 			if !m.jobs[m.selected].Enabled {
@@ -253,7 +324,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		if len(m.jobs) > 0 {
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			job := m.jobs[m.selected]
 			m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
 			m.statusKind = statusInfo
@@ -263,7 +334,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "R":
 		m.statusMsg = "Refreshing..."
 		m.statusKind = statusInfo
-		return m, loadJobs
+		return m, tea.Batch(loadJobs, loadHistory)
 
 	case "?":
 		m.mode = modeHelp
@@ -466,7 +537,7 @@ func (m Model) View() string {
 	// Main content area: fill remaining space after top bar (1 line) and bottom bar
 	contentHeight := m.height - 1 - lipgloss.Height(bottomBar)
 
-	panels := renderPanels(m.jobs, m.selected, m.width, contentHeight)
+	panels := m.renderPanels(contentHeight)
 
 	var content string
 	switch m.mode {
@@ -501,17 +572,12 @@ func (m Model) View() string {
 	)
 }
 
-func renderPanels(jobs []cron.Job, selected, width, height int) string {
-	listWidth := width * 2 / 5
-	detailWidth := width - listWidth - 4 // account for borders
+func (m Model) renderPanels(height int) string {
+	listWidth := m.width * 2 / 5
+	detailWidth := m.width - listWidth - 4 // account for borders
 
 	if listWidth < 20 {
 		listWidth = 20
-	}
-
-	var selectedJob *cron.Job
-	if selected >= 0 && selected < len(jobs) {
-		selectedJob = &jobs[selected]
 	}
 
 	innerHeight := height - 2 // border (top + bottom)
@@ -519,16 +585,62 @@ func renderPanels(jobs []cron.Job, selected, width, height int) string {
 		innerHeight = 3
 	}
 
-	// Left panel
-	listContent := renderJobList(jobs, selected, listWidth-4, innerHeight)
-	leftPanel := activePanelStyle.
+	// Split left panel into jobs (top) and history (bottom)
+	jobsHeight := innerHeight / 2
+	historyHeight := innerHeight - jobsHeight - 2 // -2 for border between panels
+
+	if jobsHeight < 3 {
+		jobsHeight = 3
+	}
+	if historyHeight < 3 {
+		historyHeight = 3
+	}
+
+	// Top-left: Jobs panel
+	listContent := renderJobList(m.jobs, m.selected, listWidth-4, jobsHeight)
+	jobsPanelStyle := panelStyle
+	if m.focusPanel == panelJobs {
+		jobsPanelStyle = activePanelStyle
+	}
+	jobsPanel := jobsPanelStyle.
 		Width(listWidth).
-		Height(innerHeight).
+		Height(jobsHeight).
 		Render(panelTitleStyle.Render(" Jobs") + "\n" + listContent)
 
-	// Right panel
-	detailContent := renderDetail(selectedJob, detailWidth-4)
-	rightPanel := panelStyle.
+	// Bottom-left: History panel
+	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory)
+	historyPanelStyle := panelStyle
+	if m.focusPanel == panelHistory {
+		historyPanelStyle = activePanelStyle
+	}
+	historyPanel := historyPanelStyle.
+		Width(listWidth).
+		Height(historyHeight).
+		Render(panelTitleStyle.Render(" History") + "\n" + historyContent)
+
+	leftPanel := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, historyPanel)
+
+	// Right panel: show job or history detail based on focus
+	var detailContent string
+	if m.focusPanel == panelHistory && len(m.history) > 0 {
+		var entry *history.Entry
+		if m.historySelected >= 0 && m.historySelected < len(m.history) {
+			entry = &m.history[m.historySelected]
+		}
+		detailContent = renderHistoryDetail(entry, detailWidth-4)
+	} else {
+		var selectedJob *cron.Job
+		if m.selected >= 0 && m.selected < len(m.jobs) {
+			selectedJob = &m.jobs[m.selected]
+		}
+		detailContent = renderDetail(selectedJob, detailWidth-4)
+	}
+
+	rightPanelStyle := panelStyle
+	if m.focusPanel == panelJobs && len(m.history) == 0 {
+		rightPanelStyle = panelStyle
+	}
+	rightPanel := rightPanelStyle.
 		Width(detailWidth).
 		Height(innerHeight).
 		Render(panelTitleStyle.Render(" Details") + "\n" + detailContent)
@@ -567,6 +679,7 @@ func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int)
 			helpBinding("d", "delete") + helpSep() +
 			helpBinding("space", "toggle") + helpSep() +
 			helpBinding("r", "run") + helpSep() +
+			helpBinding("tab", "panel") + helpSep() +
 			helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
@@ -623,6 +736,7 @@ func renderHelpScreen() string {
 		{"d", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
+		{"tab", "Switch panel (Jobs/History)"},
 		{"R", "Refresh from crontab"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},

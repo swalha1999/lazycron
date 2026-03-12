@@ -2,6 +2,8 @@ package cron
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,15 +15,61 @@ type Job struct {
 	Enabled  bool
 }
 
+// recordBinPath returns the path to ~/.lazycron/bin/record.
+func recordBinPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".lazycron", "bin", "record")
+}
+
+// WrapWithRecord wraps a command to pipe output through the record binary.
+func WrapWithRecord(command, jobName string) string {
+	return fmt.Sprintf("{ %s; } 2>&1 | %s %q", command, recordBinPath(), jobName)
+}
+
+// StripRecord removes the record pipe wrapper from a command, returning the inner command.
+func StripRecord(command string) string {
+	recPath := recordBinPath()
+
+	// Look for | <record-path> "name" suffix
+	pipeIdx := strings.LastIndex(command, "| "+recPath+" ")
+	if pipeIdx == -1 {
+		// Also try with | tee -a ... | record
+		pipeIdx = strings.LastIndex(command, "| "+recPath+" ")
+	}
+	if pipeIdx == -1 {
+		return command
+	}
+
+	inner := strings.TrimSpace(command[:pipeIdx])
+
+	// Also strip tee if present: | tee -a logfile | record
+	if teeIdx := strings.LastIndex(inner, "| tee -a "); teeIdx != -1 {
+		inner = strings.TrimSpace(inner[:teeIdx])
+	}
+
+	// Strip { ...; } 2>&1 wrapper
+	if strings.HasPrefix(inner, "{ ") && strings.HasSuffix(inner, "; } 2>&1") {
+		inner = strings.TrimPrefix(inner, "{ ")
+		inner = strings.TrimSuffix(inner, "; } 2>&1")
+		inner = strings.TrimSpace(inner)
+	}
+
+	return inner
+}
+
 // CrontabLine returns the crontab representation of a job,
 // including the name comment and optionally the disabled prefix.
 func (j Job) CrontabLine() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n", j.Name)
+
+	// Wrap command with record pipe
+	wrappedCmd := WrapWithRecord(j.Command, j.Name)
+
 	if !j.Enabled {
-		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, j.Command)
+		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrappedCmd)
 	} else {
-		fmt.Fprintf(&b, "%s %s", j.Schedule, j.Command)
+		fmt.Fprintf(&b, "%s %s", j.Schedule, wrappedCmd)
 	}
 	return b.String()
 }
@@ -109,7 +157,7 @@ func parseJobLine(line, name string) (Job, bool) {
 		return Job{
 			Name:     name,
 			Schedule: schedule,
-			Command:  command,
+			Command:  StripRecord(command),
 			Enabled:  false,
 		}, true
 	}
@@ -127,7 +175,7 @@ func parseJobLine(line, name string) (Job, bool) {
 	return Job{
 		Name:     name,
 		Schedule: schedule,
-		Command:  command,
+		Command:  StripRecord(command),
 		Enabled:  true,
 	}, true
 }

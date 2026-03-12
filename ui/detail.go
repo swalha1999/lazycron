@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/swalha1999/lazycron/cron"
+	"github.com/swalha1999/lazycron/history"
 )
 
 func renderDetail(job *cron.Job, width int) string {
@@ -65,6 +66,45 @@ func renderDetail(job *cron.Job, width int) string {
 
 func renderDetailRow(label, value string) string {
 	return fmt.Sprintf("  %s %s", detailLabelStyle.Render(label+":"), value)
+}
+
+func renderHistoryDetail(entry *history.Entry, width int) string {
+	if entry == nil {
+		return mutedItemStyle.Render("\n  Select a history entry to view details")
+	}
+
+	var b strings.Builder
+
+	// Job name
+	b.WriteString(renderDetailRow("Job", detailValueStyle.Render(entry.JobName)))
+	b.WriteString("\n")
+
+	// Timestamp
+	b.WriteString(renderDetailRow("Ran at", detailValueStyle.Render(entry.Timestamp)))
+	b.WriteString("\n")
+
+	// Relative time
+	b.WriteString(renderDetailRow("When", mutedItemStyle.Render(relativeTime(entry.Timestamp))))
+	b.WriteString("\n")
+
+	// Output
+	b.WriteString("\n")
+	b.WriteString(detailHeaderStyle.Render("  Output"))
+	b.WriteString("\n")
+
+	if entry.Output == "" {
+		b.WriteString("  " + mutedItemStyle.Render("(no output)") + "\n")
+	} else {
+		lines := strings.Split(entry.Output, "\n")
+		for _, line := range lines {
+			wrapped := wrapText(line, width-6)
+			for _, w := range wrapped {
+				b.WriteString("  " + detailValueStyle.Render(w) + "\n")
+			}
+		}
+	}
+
+	return b.String()
 }
 
 func wrapText(text string, width int) []string {
