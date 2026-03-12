@@ -102,7 +102,6 @@ var (
 	formStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(colorActiveBorder).
-			Background(colorOverlayBg).
 			Padding(1, 2)
 
 	formTitleStyle = lipgloss.NewStyle().
@@ -134,7 +133,6 @@ var (
 	confirmStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(colorRed).
-			Background(colorOverlayBg).
 			Padding(1, 3).
 			Align(lipgloss.Center)
 
