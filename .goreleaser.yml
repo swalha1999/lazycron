@@ -1,0 +1,62 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: swalha1999
+      name: homebrew-tap
+    name: lazycron
+    homepage: "https://github.com/swalha1999/lazycron"
+    description: "A lazy TUI for managing cron jobs"
+    license: "MIT"
+
+aurs:
+  - name: lazycron-bin
+    homepage: "https://github.com/swalha1999/lazycron"
+    description: "A lazy TUI for managing cron jobs"
+    license: "MIT"
+    maintainers:
+      - "swalha1999"
+    private_key: "{{ .Env.AUR_SSH_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/lazycron-bin.git"
+    package: |-
+      install -Dm755 lazycron "${pkgdir}/usr/bin/lazycron"
+
+nfpms:
+  - package_name: lazycron
+    homepage: "https://github.com/swalha1999/lazycron"
+    description: "A lazy TUI for managing cron jobs"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+      - archlinux
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
