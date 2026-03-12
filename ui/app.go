@@ -273,7 +273,80 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+
+	// Handle picker-specific keys when picker is focused
+	if m.form.picker.focused {
+		syncPickerToInput := func() {
+			m.form.inputs[fieldSchedule].SetValue(m.form.picker.Expression())
+		}
+		switch key {
+		case "up", "k":
+			m.form.picker.scrollUp()
+			syncPickerToInput()
+			return m, nil
+		case "down", "j":
+			m.form.picker.scrollDown()
+			syncPickerToInput()
+			return m, nil
+		case "left", "h":
+			m.form.picker.moveLeft()
+			return m, nil
+		case "right", "l":
+			m.form.picker.moveRight()
+			return m, nil
+		case " ":
+			m.form.picker.cycleMode()
+			syncPickerToInput()
+			return m, nil
+		case "esc":
+			m.mode = modeNormal
+			m.statusMsg = "Cancelled"
+			m.statusKind = statusInfo
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 3*time.Second)
+		case "tab":
+			cmd := m.form.nextField()
+			return m, cmd
+		case "enter":
+			// Save from picker
+			m.form.inputs[fieldSchedule].SetValue(m.form.picker.Expression())
+			m.form.picker.focused = false
+			// Fall through to enter/save handling below
+		case "shift+tab":
+			cmd := m.form.prevField()
+			return m, cmd
+		default:
+			return m, nil
+		}
+	}
+
+	// Handle completer navigation when suggestions are visible
+	if m.form.activeField == fieldWorkDir && m.form.completer.active {
+		switch key {
+		case "down":
+			m.form.completer.selectNext()
+			m.form.inputs[fieldWorkDir].SetValue(m.form.completer.selectedValue())
+			m.form.inputs[fieldWorkDir].CursorEnd()
+			return m, nil
+		case "up":
+			m.form.completer.selectPrev()
+			m.form.inputs[fieldWorkDir].SetValue(m.form.completer.selectedValue())
+			m.form.inputs[fieldWorkDir].CursorEnd()
+			return m, nil
+		case "enter":
+			if m.form.completer.selected >= 0 {
+				val := m.form.completer.selectedValue()
+				m.form.inputs[fieldWorkDir].SetValue(val)
+				m.form.inputs[fieldWorkDir].CursorEnd()
+				m.form.completer.update(val)
+				return m, nil
+			}
+			// No selection — fall through to save
+		}
+	}
+
+	switch key {
 	case "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
@@ -312,9 +385,12 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	default:
 		cmd := m.form.updateInput(msg)
+		// Update path completer when typing in Work Dir
+		if m.form.activeField == fieldWorkDir {
+			m.form.completer.update(m.form.inputs[fieldWorkDir].Value())
+		}
 		return m, cmd
 	}
-	return m, nil
 }
 
 func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

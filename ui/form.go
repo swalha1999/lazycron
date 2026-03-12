@@ -40,6 +40,8 @@ type formModel struct {
 	activeField int
 	editing     bool
 	editIndex   int
+	picker      pickerModel
+	completer   completerModel
 }
 
 func newForm() formModel {
@@ -54,6 +56,8 @@ func newForm() formModel {
 		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 		f.inputs[i] = ti
 	}
+	f.picker = newPicker()
+	f.inputs[fieldSchedule].SetValue(f.picker.Expression())
 	return f
 }
 
@@ -100,24 +104,62 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.inputs[fieldWorkDir].SetValue(workDir)
 	f.inputs[fieldLogFile].SetValue(logFile)
 
+	f.picker = newPicker()
+	f.picker.ParseExpression(job.Schedule)
+
 	return f
 }
 
 // focusActive focuses the current active field and returns the blink cmd.
 func (f *formModel) focusActive() tea.Cmd {
+	f.picker.focused = false
 	return f.inputs[f.activeField].Focus()
 }
 
 func (f *formModel) nextField() tea.Cmd {
-	f.inputs[f.activeField].Blur()
+	// If on schedule textinput, tab into picker
+	if f.activeField == fieldSchedule && !f.picker.focused {
+		f.inputs[fieldSchedule].Blur()
+		f.syncInputToPicker()
+		f.picker.focused = true
+		return nil
+	}
+	if f.picker.focused {
+		f.picker.focused = false
+	} else {
+		f.inputs[f.activeField].Blur()
+	}
+	f.completer.reset()
 	f.activeField = (f.activeField + 1) % fieldCount
-	return f.inputs[f.activeField].Focus()
+	return f.focusActive()
 }
 
 func (f *formModel) prevField() tea.Cmd {
+	if f.picker.focused {
+		f.picker.focused = false
+		return f.inputs[fieldSchedule].Focus()
+	}
 	f.inputs[f.activeField].Blur()
-	f.activeField = (f.activeField - 1 + fieldCount) % fieldCount
-	return f.inputs[f.activeField].Focus()
+	f.completer.reset()
+	prev := (f.activeField - 1 + fieldCount) % fieldCount
+	if prev == fieldSchedule {
+		f.activeField = fieldSchedule
+		f.syncInputToPicker()
+		f.picker.focused = true
+		return nil
+	}
+	f.activeField = prev
+	return f.focusActive()
+}
+
+// syncInputToPicker parses the schedule textinput value into the picker.
+func (f *formModel) syncInputToPicker() {
+	expr := strings.TrimSpace(f.inputs[fieldSchedule].Value())
+	if expr == "" {
+		return
+	}
+	cronExpr := cron.HumanToCron(expr)
+	f.picker.ParseExpression(cronExpr)
 }
 
 // updateInput passes a message to the active textinput (for key handling and cursor blink).
@@ -190,31 +232,46 @@ func renderForm(f *formModel, width int) string {
 		label := formLabelStyle.Render(fmt.Sprintf("  %-10s", fieldLabels[i]+":"))
 
 		f.inputs[i].Width = inputWidth
-		rendered := lipgloss.NewStyle().
-			PaddingLeft(1).
-			PaddingRight(1).
-			Render(f.inputs[i].View())
+			rendered := lipgloss.NewStyle().
+				PaddingLeft(1).
+				PaddingRight(1).
+				Render(f.inputs[i].View())
 
-		b.WriteString(label + " " + rendered)
-		b.WriteString("\n")
+			b.WriteString(label + " " + rendered)
+			b.WriteString("\n")
 
-		// Show schedule conversion hint
-		if i == fieldSchedule && f.inputs[fieldSchedule].Value() != "" {
-			cronExpr := cron.HumanToCron(f.inputs[fieldSchedule].Value())
-			if cronExpr != f.inputs[fieldSchedule].Value() {
-				hint := mutedItemStyle.Render(fmt.Sprintf("             → %s", cronExpr))
-				b.WriteString("  " + hint + "\n")
-			}
-			human := cron.CronToHuman(cronExpr)
-			if human != cronExpr {
-				hint := mutedItemStyle.Render(fmt.Sprintf("             = %s", human))
-				b.WriteString("  " + hint + "\n")
-			}
+		if i == fieldSchedule {
+			b.WriteString(renderPicker(&f.picker, inputWidth))
+			b.WriteString("\n")
+		}
+
+		if i == fieldWorkDir && f.completer.active {
+			b.WriteString(renderCompletions(&f.completer, inputWidth))
+			b.WriteString("\n")
 		}
 	}
 
 	b.WriteString("\n")
-	b.WriteString(mutedItemStyle.Render("  tab: next field • shift+tab: prev • enter: save • esc: cancel"))
+	if f.picker.focused {
+		b.WriteString("  " +
+			helpBinding("←/→", "column") + helpSep() +
+			helpBinding("↑/↓", "scroll") + helpSep() +
+			helpBinding("space", "mode") + helpSep() +
+			helpBinding("tab", "next") + helpSep() +
+			helpBinding("esc", "cancel"))
+	} else if f.activeField == fieldWorkDir && f.completer.active {
+		b.WriteString("  " +
+			helpBinding("↑/↓", "select") + helpSep() +
+			helpBinding("enter", "confirm") + helpSep() +
+			helpBinding("tab", "next field") + helpSep() +
+			helpBinding("esc", "cancel"))
+	} else {
+		b.WriteString("  " +
+			helpBinding("tab", "next field") + helpSep() +
+			helpBinding("shift+tab", "prev") + helpSep() +
+			helpBinding("enter", "save") + helpSep() +
+			helpBinding("esc", "cancel"))
+	}
 
 	content := b.String()
 
