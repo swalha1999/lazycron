@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/swalha1999/lazycron/cron"
 )
 
@@ -244,6 +245,10 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.form.prevField()
 	case "backspace":
 		m.form.handleBackspace()
+	case "left":
+		m.form.cursorLeft()
+	case "right":
+		m.form.cursorRight()
 	default:
 		if len(msg.String()) == 1 || msg.String() == " " {
 			r := []rune(msg.String())
@@ -299,46 +304,35 @@ func (m Model) View() string {
 	// Main content area: fill remaining space after top bar (1 line) and bottom bar
 	contentHeight := m.height - 1 - lipgloss.Height(bottomBar)
 
+	panels := renderPanels(m.jobs, m.selected, m.width, contentHeight)
+
+	var content string
 	switch m.mode {
 	case modeForm:
-		return lipgloss.JoinVertical(lipgloss.Left,
-			topBar,
-			renderForm(&m.form, m.width, contentHeight),
-			bottomBar,
-		)
+		fg := renderForm(&m.form, m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeConfirmDelete:
 		jobName := ""
 		if len(m.jobs) > 0 {
 			jobName = m.jobs[m.selected].Name
 		}
-		panels := renderPanels(m.jobs, m.selected, m.width, contentHeight)
-		overlay := renderConfirmDialog(
-			fmt.Sprintf("Delete job '%s'?", jobName),
-			m.width, contentHeight,
-		)
-		// Simple overlay: just show the confirm dialog over the panels
-		_ = panels
-		return lipgloss.JoinVertical(lipgloss.Left,
-			topBar,
-			overlay,
-			bottomBar,
-		)
+		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName))
+		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeHelp:
-		return lipgloss.JoinVertical(lipgloss.Left,
-			topBar,
-			renderHelpScreen(m.width, contentHeight),
-			bottomBar,
-		)
+		fg := renderHelpScreen()
+		content = overlay(panels, fg, m.width, contentHeight)
 
 	default:
-		return lipgloss.JoinVertical(lipgloss.Left,
-			topBar,
-			renderPanels(m.jobs, m.selected, m.width, contentHeight),
-			bottomBar,
-		)
+		content = panels
 	}
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		topBar,
+		content,
+		bottomBar,
+	)
 }
 
 func renderPanels(jobs []cron.Job, selected, width, height int) string {
@@ -450,7 +444,7 @@ func helpSep() string {
 	return helpDescStyle.Render("  ")
 }
 
-func renderHelpScreen(width, height int) string {
+func renderHelpScreen() string {
 	bindings := []struct{ key, desc string }{
 		{"n", "Create new job"},
 		{"enter / e", "Edit selected job"},
@@ -472,8 +466,43 @@ func renderHelpScreen(width, height int) string {
 	}
 
 	content := b.String()
-	box := formStyle.Width(44).Render(content)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+	return formStyle.Width(44).Render(content)
+}
+
+// overlay centers the fgBox on top of bg, preserving bg on both sides.
+func overlay(bg, fgBox string, width, height int) string {
+	bgLines := strings.Split(bg, "\n")
+	fgLines := strings.Split(fgBox, "\n")
+
+	// Pad bg to height
+	for len(bgLines) < height {
+		bgLines = append(bgLines, strings.Repeat(" ", width))
+	}
+
+	fgHeight := len(fgLines)
+	fgWidth := lipgloss.Width(fgBox)
+
+	// Center position
+	topOffset := (height - fgHeight) / 2
+	leftOffset := (width - fgWidth) / 2
+	if leftOffset < 0 {
+		leftOffset = 0
+	}
+	rightOffset := leftOffset + fgWidth
+
+	for i, fgLine := range fgLines {
+		row := topOffset + i
+		if row >= 0 && row < len(bgLines) {
+			bgLine := bgLines[row]
+			// Left portion of bg (ANSI-aware truncate to leftOffset chars)
+			left := ansi.Truncate(bgLine, leftOffset, "")
+			// Right portion of bg (skip leftOffset+fgWidth chars)
+			right := ansi.TruncateLeft(bgLine, rightOffset, "")
+			bgLines[row] = left + fgLine + right
+		}
+	}
+
+	return strings.Join(bgLines[:height], "\n")
 }
 
 func max(a, b int) int {

@@ -35,6 +35,7 @@ var fieldHints = [fieldCount]string{
 
 type formModel struct {
 	fields      [fieldCount]string
+	cursors     [fieldCount]int
 	activeField int
 	editing     bool // true = edit mode, false = new job
 	editIndex   int  // index of job being edited
@@ -78,25 +79,51 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.fields[fieldWorkDir] = workDir
 	f.fields[fieldLogFile] = logFile
 
+	for i := range f.fields {
+		f.cursors[i] = len([]rune(f.fields[i]))
+	}
+
 	return f
 }
 
 func (f *formModel) nextField() {
 	f.activeField = (f.activeField + 1) % fieldCount
+	f.cursors[f.activeField] = len([]rune(f.fields[f.activeField]))
 }
 
 func (f *formModel) prevField() {
 	f.activeField = (f.activeField - 1 + fieldCount) % fieldCount
+	f.cursors[f.activeField] = len([]rune(f.fields[f.activeField]))
 }
 
 func (f *formModel) handleChar(ch rune) {
-	f.fields[f.activeField] += string(ch)
+	runes := []rune(f.fields[f.activeField])
+	pos := f.cursors[f.activeField]
+	runes = append(runes[:pos], append([]rune{ch}, runes[pos:]...)...)
+	f.fields[f.activeField] = string(runes)
+	f.cursors[f.activeField]++
 }
 
 func (f *formModel) handleBackspace() {
-	s := f.fields[f.activeField]
-	if len(s) > 0 {
-		f.fields[f.activeField] = s[:len(s)-1]
+	runes := []rune(f.fields[f.activeField])
+	pos := f.cursors[f.activeField]
+	if pos > 0 {
+		runes = append(runes[:pos-1], runes[pos:]...)
+		f.fields[f.activeField] = string(runes)
+		f.cursors[f.activeField]--
+	}
+}
+
+func (f *formModel) cursorLeft() {
+	if f.cursors[f.activeField] > 0 {
+		f.cursors[f.activeField]--
+	}
+}
+
+func (f *formModel) cursorRight() {
+	runes := []rune(f.fields[f.activeField])
+	if f.cursors[f.activeField] < len(runes) {
+		f.cursors[f.activeField]++
 	}
 }
 
@@ -162,7 +189,7 @@ func (f *formModel) buildPreview() string {
 	return fmt.Sprintf("%s %s", cronExpr, finalCmd)
 }
 
-func renderForm(f *formModel, width, height int) string {
+func renderForm(f *formModel, width int) string {
 	formWidth := width - 10
 	if formWidth > 80 {
 		formWidth = 80
@@ -189,10 +216,19 @@ func renderForm(f *formModel, width, height int) string {
 
 		var rendered string
 		if i == f.activeField {
-			cursor := "█"
+			runes := []rune(value)
+			pos := f.cursors[i]
+			before := string(runes[:pos])
+			after := ""
+			cursorChar := " "
+			if pos < len(runes) {
+				cursorChar = string(runes[pos])
+				after = string(runes[pos+1:])
+			}
+			cursor := lipgloss.NewStyle().Reverse(true).Render(cursorChar)
 			rendered = formActiveInputStyle.
 				Width(formWidth - 16).
-				Render(value + cursor)
+				Render(before + cursor + after)
 		} else {
 			if f.fields[i] == "" {
 				rendered = formInactiveInputStyle.
@@ -236,20 +272,14 @@ func renderForm(f *formModel, width, height int) string {
 
 	content := b.String()
 
-	return lipgloss.Place(
-		width, height,
-		lipgloss.Center, lipgloss.Center,
-		formStyle.Width(formWidth).Render(content),
-	)
+	return formStyle.Width(formWidth).Render(content)
 }
 
-func renderConfirmDialog(message string, width, height int) string {
+func renderConfirmDialog(message string) string {
 	content := confirmTitleStyle.Render("Confirm") + "\n\n" +
 		detailValueStyle.Render(message) + "\n\n" +
 		helpKeyStyle.Render("y") + helpDescStyle.Render(" yes  ") +
 		helpKeyStyle.Render("n") + helpDescStyle.Render(" no")
 
-	dialog := confirmStyle.Width(40).Render(content)
-
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, dialog)
+	return confirmStyle.Width(40).Render(content)
 }

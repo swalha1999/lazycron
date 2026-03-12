@@ -115,7 +115,6 @@ var (
 
 	formActiveInputStyle = lipgloss.NewStyle().
 				Foreground(colorFg).
-				Background(lipgloss.Color("#45475a")).
 				PaddingLeft(1).
 				PaddingRight(1)
 
