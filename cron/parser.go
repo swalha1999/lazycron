@@ -139,6 +139,19 @@ func splitCronLine(line string) (schedule, command string, ok bool) {
 		return "", "", false
 	}
 	schedule = strings.Join(fields[:5], " ")
-	command = strings.TrimSpace(line[strings.Index(line, fields[4])+len(fields[4]):])
+
+	// Walk past the first 5 whitespace-separated fields to find where the command starts.
+	pos := 0
+	for i := 0; i < 5; i++ {
+		// Skip leading whitespace
+		for pos < len(line) && (line[pos] == ' ' || line[pos] == '\t') {
+			pos++
+		}
+		// Skip the field
+		for pos < len(line) && line[pos] != ' ' && line[pos] != '\t' {
+			pos++
+		}
+	}
+	command = strings.TrimSpace(line[pos:])
 	return schedule, command, true
 }

@@ -50,11 +50,10 @@ func CheckCrontabAvailable() error {
 }
 
 // RunJobNow runs a job command immediately in a shell.
-func RunJobNow(command string) error {
+// Returns the combined stdout/stderr output and any error.
+func RunJobNow(command string) (string, error) {
 	cmd := exec.Command("sh", "-c", command)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s\n%s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	output := strings.TrimSpace(string(out))
+	return output, err
 }

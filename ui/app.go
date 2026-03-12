@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +18,7 @@ const (
 	modeForm
 	modeConfirmDelete
 	modeHelp
+	modeRunOutput
 )
 
 type statusType int
@@ -38,6 +40,12 @@ type Model struct {
 
 	statusMsg  string
 	statusKind statusType
+	statusID   int
+
+	runOutput       string
+	runJobName      string
+	runOutputFailed bool
+	runOutputScroll int
 }
 
 type jobsLoadedMsg struct {
@@ -50,8 +58,19 @@ type jobSavedMsg struct {
 }
 
 type jobRanMsg struct {
-	name string
-	err  error
+	name   string
+	output string
+	err    error
+}
+
+type clearStatusMsg struct {
+	id int
+}
+
+func clearStatusAfter(id int, d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg {
+		return clearStatusMsg{id: id}
+	})
 }
 
 func NewModel() Model {
@@ -83,8 +102,8 @@ func saveJobs(jobs []cron.Job) tea.Cmd {
 
 func runJob(name, command string) tea.Cmd {
 	return func() tea.Msg {
-		err := cron.RunJobNow(command)
-		return jobRanMsg{name: name, err: err}
+		output, err := cron.RunJobNow(command)
+		return jobRanMsg{name: name, output: output, err: err}
 	}
 }
 
@@ -99,12 +118,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = msg.err.Error()
 			m.statusKind = statusError
-		} else {
-			m.jobs = msg.jobs
-			if len(m.jobs) > 0 {
-				m.statusMsg = fmt.Sprintf("Loaded %d job(s)", len(m.jobs))
-				m.statusKind = statusInfo
-			}
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+		m.jobs = msg.jobs
+		if len(m.jobs) > 0 {
+			m.statusMsg = fmt.Sprintf("Loaded %d job(s)", len(m.jobs))
+			m.statusKind = statusInfo
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 2*time.Second)
 		}
 		return m, nil
 
@@ -112,29 +134,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.statusMsg = "Save failed: " + msg.err.Error()
 			m.statusKind = statusError
-		} else {
-			m.statusMsg = "Crontab saved"
-			m.statusKind = statusSuccess
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
 		}
 		return m, nil
 
 	case jobRanMsg:
+		m.statusID++
 		if msg.err != nil {
-			m.statusMsg = fmt.Sprintf("Run failed: %s", msg.err.Error())
-			m.statusKind = statusError
-		} else {
-			m.statusMsg = fmt.Sprintf("Job '%s' ran successfully", msg.name)
-			m.statusKind = statusSuccess
+			m.runOutput = msg.output
+			if m.runOutput == "" {
+				m.runOutput = msg.err.Error()
+			}
+			m.runJobName = msg.name
+			m.runOutputFailed = true
+			m.mode = modeRunOutput
+			m.runOutputScroll = 0
+			m.statusMsg = ""
+			return m, nil
+		}
+		if msg.output != "" {
+			m.runOutput = msg.output
+			m.runJobName = msg.name
+			m.runOutputFailed = false
+			m.mode = modeRunOutput
+			m.runOutputScroll = 0
+			m.statusMsg = ""
+			return m, nil
+		}
+		m.statusMsg = fmt.Sprintf("Job '%s' ran successfully", msg.name)
+		m.statusKind = statusSuccess
+		return m, clearStatusAfter(m.statusID, 4*time.Second)
+
+	case clearStatusMsg:
+		if msg.id == m.statusID {
+			m.statusMsg = ""
+			m.statusKind = statusNone
 		}
 		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
+
+	// Forward other messages to form textinput (for cursor blink)
+	if m.mode == modeForm {
+		cmd := m.form.updateInput(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
 	switch m.mode {
 	case modeForm:
 		return m.handleFormKey(msg)
@@ -142,6 +197,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeHelp:
 		return m.handleHelpKey(msg)
+	case modeRunOutput:
+		return m.handleRunOutputKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -149,31 +206,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		return m, tea.Quit
 
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
 		}
-		m.statusMsg = ""
 
 	case "down", "j":
 		if m.selected < len(m.jobs)-1 {
 			m.selected++
 		}
-		m.statusMsg = ""
 
 	case "n":
 		m.mode = modeForm
 		m.form = newForm()
 		m.statusMsg = ""
+		return m, m.form.focusActive()
 
 	case "enter", "e":
 		if len(m.jobs) > 0 {
 			m.mode = modeForm
 			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
 			m.statusMsg = ""
+			return m, m.form.focusActive()
 		}
 
 	case "d":
@@ -191,7 +248,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMsg = fmt.Sprintf("Job '%s' %s", m.jobs[m.selected].Name, status)
 			m.statusKind = statusSuccess
-			return m, saveJobs(m.jobs)
+			m.statusID++
+			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 
 	case "r":
@@ -201,6 +259,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusKind = statusInfo
 			return m, runJob(job.Name, job.Command)
 		}
+
+	case "R":
+		m.statusMsg = "Refreshing..."
+		m.statusKind = statusInfo
+		return m, loadJobs
 
 	case "?":
 		m.mode = modeHelp
@@ -215,18 +278,19 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
 		m.statusKind = statusInfo
-		return m, nil
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
 
 	case "enter":
 		job, err := m.form.buildJob()
 		if err != nil {
 			m.statusMsg = err.Error()
 			m.statusKind = statusError
-			return m, nil
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
 		}
 
 		if m.form.editing {
-			// Preserve enabled state from original job
 			job.Enabled = m.jobs[m.form.editIndex].Enabled
 			m.jobs[m.form.editIndex] = job
 			m.statusMsg = fmt.Sprintf("Updated job '%s'", job.Name)
@@ -237,25 +301,18 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.statusKind = statusSuccess
 		m.mode = modeNormal
-		return m, saveJobs(m.jobs)
+		m.statusID++
+		return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 
 	case "tab":
-		m.form.nextField()
+		cmd := m.form.nextField()
+		return m, cmd
 	case "shift+tab":
-		m.form.prevField()
-	case "backspace":
-		m.form.handleBackspace()
-	case "left":
-		m.form.cursorLeft()
-	case "right":
-		m.form.cursorRight()
+		cmd := m.form.prevField()
+		return m, cmd
 	default:
-		if len(msg.String()) == 1 || msg.String() == " " {
-			r := []rune(msg.String())
-			if len(r) == 1 {
-				m.form.handleChar(r[0])
-			}
-		}
+		cmd := m.form.updateInput(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -272,12 +329,15 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Deleted job '%s'", name)
 			m.statusKind = statusSuccess
 			m.mode = modeNormal
-			return m, saveJobs(m.jobs)
+			m.statusID++
+			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 	case "n", "N", "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
 		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
 	}
 	return m, nil
 }
@@ -286,6 +346,21 @@ func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "?":
 		m.mode = modeNormal
+	}
+	return m, nil
+}
+
+func (m Model) handleRunOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.mode = modeNormal
+		m.runOutputScroll = 0
+	case "j", "down":
+		m.runOutputScroll++
+	case "k", "up":
+		if m.runOutputScroll > 0 {
+			m.runOutputScroll--
+		}
 	}
 	return m, nil
 }
@@ -322,6 +397,10 @@ func (m Model) View() string {
 
 	case modeHelp:
 		fg := renderHelpScreen()
+		content = overlay(panels, fg, m.width, contentHeight)
+
+	case modeRunOutput:
+		fg := renderRunOutput(m.runJobName, m.runOutput, m.runOutputFailed, m.runOutputScroll, m.width, contentHeight)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	default:
@@ -382,6 +461,8 @@ func renderTopBar(m mode, width int) string {
 		modeStr = modeStyle.Render("CONFIRM")
 	case modeHelp:
 		modeStr = modeStyle.Render("HELP")
+	case modeRunOutput:
+		modeStr = modeStyle.Render("OUTPUT")
 	}
 
 	spacer := strings.Repeat(" ", max(0, width-lipgloss.Width(title)-lipgloss.Width(modeStr)))
@@ -399,6 +480,7 @@ func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int)
 			helpBinding("d", "delete") + helpSep() +
 			helpBinding("space", "toggle") + helpSep() +
 			helpBinding("r", "run") + helpSep() +
+			helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
 	case modeForm:
@@ -411,6 +493,9 @@ func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int)
 			helpBinding("n", "cancel")
 	case modeHelp:
 		help = helpBinding("esc", "back")
+	case modeRunOutput:
+		help = helpBinding("j/k", "scroll") + helpSep() +
+			helpBinding("esc", "close")
 	}
 
 	// Status message
@@ -451,6 +536,7 @@ func renderHelpScreen() string {
 		{"d", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
+		{"R", "Refresh from crontab"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
 		{"?", "Show/hide help"},
@@ -467,6 +553,74 @@ func renderHelpScreen() string {
 
 	content := b.String()
 	return formStyle.Width(44).Render(content)
+}
+
+func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight int) string {
+	boxWidth := width - 10
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+
+	var b strings.Builder
+
+	// Title with status indicator
+	if failed {
+		b.WriteString(errorStyle.Render("  ✗ Run Failed: " + name))
+	} else {
+		b.WriteString(successStyle.Render("  ✓ Run Output: " + name))
+	}
+	b.WriteString("\n\n")
+
+	if output == "" {
+		b.WriteString(mutedItemStyle.Render("  (no output)"))
+		b.WriteString("\n")
+	} else {
+		// Word-wrap each line of output
+		var allLines []string
+		for _, rawLine := range strings.Split(output, "\n") {
+			if rawLine == "" {
+				allLines = append(allLines, "")
+			} else {
+				wrapped := wrapText(rawLine, boxWidth-8)
+				allLines = append(allLines, wrapped...)
+			}
+		}
+
+		// Calculate visible window
+		visibleLines := maxHeight - 10
+		if visibleLines < 3 {
+			visibleLines = 3
+		}
+
+		startLine := scroll
+		if len(allLines) <= visibleLines {
+			startLine = 0
+		} else if startLine > len(allLines)-visibleLines {
+			startLine = len(allLines) - visibleLines
+		}
+
+		endLine := startLine + visibleLines
+		if endLine > len(allLines) {
+			endLine = len(allLines)
+		}
+
+		for _, line := range allLines[startLine:endLine] {
+			b.WriteString("  " + detailValueStyle.Render(line) + "\n")
+		}
+
+		if len(allLines) > visibleLines {
+			scrollInfo := fmt.Sprintf("  [lines %d–%d of %d]", startLine+1, endLine, len(allLines))
+			b.WriteString(mutedItemStyle.Render(scrollInfo) + "\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(mutedItemStyle.Render("  esc: close • j/k: scroll"))
+
+	return formStyle.Width(boxWidth).Render(b.String())
 }
 
 // overlay centers the fgBox on top of bg, preserving bg on both sides.

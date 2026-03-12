@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/swalha1999/lazycron/cron"
 )
 
 const (
-	fieldName    = 0
-	fieldCommand = 1
+	fieldName     = 0
+	fieldCommand  = 1
 	fieldSchedule = 2
 	fieldWorkDir  = 3
 	fieldLogFile  = 4
@@ -34,15 +36,25 @@ var fieldHints = [fieldCount]string{
 }
 
 type formModel struct {
-	fields      [fieldCount]string
-	cursors     [fieldCount]int
+	inputs      [fieldCount]textinput.Model
 	activeField int
-	editing     bool // true = edit mode, false = new job
-	editIndex   int  // index of job being edited
+	editing     bool
+	editIndex   int
 }
 
 func newForm() formModel {
-	return formModel{}
+	f := formModel{}
+	for i := 0; i < fieldCount; i++ {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = fieldHints[i]
+		ti.CharLimit = 512
+		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
+		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
+		f.inputs[i] = ti
+	}
+	return f
 }
 
 func newFormForEdit(job cron.Job, index int) formModel {
@@ -50,14 +62,23 @@ func newFormForEdit(job cron.Job, index int) formModel {
 		editing:   true,
 		editIndex: index,
 	}
-	f.fields[fieldName] = job.Name
+
+	for i := 0; i < fieldCount; i++ {
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.Placeholder = fieldHints[i]
+		ti.CharLimit = 512
+		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
+		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
+		f.inputs[i] = ti
+	}
 
 	// Try to extract workdir and logfile from command
 	cmd := job.Command
 	workDir := ""
 	logFile := ""
 
-	// Extract log file: >> /path 2>&1
 	if idx := strings.Index(cmd, " >> "); idx != -1 {
 		logPart := cmd[idx:]
 		cmd = strings.TrimSpace(cmd[:idx])
@@ -66,7 +87,6 @@ func newFormForEdit(job cron.Job, index int) formModel {
 		logFile = strings.TrimSpace(logPart)
 	}
 
-	// Extract workdir: cd /path &&
 	if strings.HasPrefix(cmd, "cd ") {
 		if idx := strings.Index(cmd, " && "); idx != -1 {
 			workDir = strings.TrimPrefix(cmd[:idx], "cd ")
@@ -74,65 +94,45 @@ func newFormForEdit(job cron.Job, index int) formModel {
 		}
 	}
 
-	f.fields[fieldCommand] = cmd
-	f.fields[fieldSchedule] = job.Schedule
-	f.fields[fieldWorkDir] = workDir
-	f.fields[fieldLogFile] = logFile
-
-	for i := range f.fields {
-		f.cursors[i] = len([]rune(f.fields[i]))
-	}
+	f.inputs[fieldName].SetValue(job.Name)
+	f.inputs[fieldCommand].SetValue(cmd)
+	f.inputs[fieldSchedule].SetValue(job.Schedule)
+	f.inputs[fieldWorkDir].SetValue(workDir)
+	f.inputs[fieldLogFile].SetValue(logFile)
 
 	return f
 }
 
-func (f *formModel) nextField() {
+// focusActive focuses the current active field and returns the blink cmd.
+func (f *formModel) focusActive() tea.Cmd {
+	return f.inputs[f.activeField].Focus()
+}
+
+func (f *formModel) nextField() tea.Cmd {
+	f.inputs[f.activeField].Blur()
 	f.activeField = (f.activeField + 1) % fieldCount
-	f.cursors[f.activeField] = len([]rune(f.fields[f.activeField]))
+	return f.inputs[f.activeField].Focus()
 }
 
-func (f *formModel) prevField() {
+func (f *formModel) prevField() tea.Cmd {
+	f.inputs[f.activeField].Blur()
 	f.activeField = (f.activeField - 1 + fieldCount) % fieldCount
-	f.cursors[f.activeField] = len([]rune(f.fields[f.activeField]))
+	return f.inputs[f.activeField].Focus()
 }
 
-func (f *formModel) handleChar(ch rune) {
-	runes := []rune(f.fields[f.activeField])
-	pos := f.cursors[f.activeField]
-	runes = append(runes[:pos], append([]rune{ch}, runes[pos:]...)...)
-	f.fields[f.activeField] = string(runes)
-	f.cursors[f.activeField]++
-}
-
-func (f *formModel) handleBackspace() {
-	runes := []rune(f.fields[f.activeField])
-	pos := f.cursors[f.activeField]
-	if pos > 0 {
-		runes = append(runes[:pos-1], runes[pos:]...)
-		f.fields[f.activeField] = string(runes)
-		f.cursors[f.activeField]--
-	}
-}
-
-func (f *formModel) cursorLeft() {
-	if f.cursors[f.activeField] > 0 {
-		f.cursors[f.activeField]--
-	}
-}
-
-func (f *formModel) cursorRight() {
-	runes := []rune(f.fields[f.activeField])
-	if f.cursors[f.activeField] < len(runes) {
-		f.cursors[f.activeField]++
-	}
+// updateInput passes a message to the active textinput (for key handling and cursor blink).
+func (f *formModel) updateInput(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	f.inputs[f.activeField], cmd = f.inputs[f.activeField].Update(msg)
+	return cmd
 }
 
 func (f *formModel) buildJob() (cron.Job, error) {
-	name := strings.TrimSpace(f.fields[fieldName])
-	command := strings.TrimSpace(f.fields[fieldCommand])
-	schedule := strings.TrimSpace(f.fields[fieldSchedule])
-	workDir := strings.TrimSpace(f.fields[fieldWorkDir])
-	logFile := strings.TrimSpace(f.fields[fieldLogFile])
+	name := strings.TrimSpace(f.inputs[fieldName].Value())
+	command := strings.TrimSpace(f.inputs[fieldCommand].Value())
+	schedule := strings.TrimSpace(f.inputs[fieldSchedule].Value())
+	workDir := strings.TrimSpace(f.inputs[fieldWorkDir].Value())
+	logFile := strings.TrimSpace(f.inputs[fieldLogFile].Value())
 
 	if name == "" {
 		return cron.Job{}, fmt.Errorf("name is required")
@@ -144,13 +144,11 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		return cron.Job{}, fmt.Errorf("schedule is required")
 	}
 
-	// Convert human schedule to cron
 	cronExpr := cron.HumanToCron(schedule)
 	if err := cron.ValidateCron(cronExpr); err != nil {
 		return cron.Job{}, fmt.Errorf("invalid schedule: %w", err)
 	}
 
-	// Build final command
 	finalCmd := command
 	if workDir != "" {
 		finalCmd = fmt.Sprintf("cd %s && %s", workDir, finalCmd)
@@ -167,27 +165,6 @@ func (f *formModel) buildJob() (cron.Job, error) {
 	}, nil
 }
 
-func (f *formModel) buildPreview() string {
-	schedule := strings.TrimSpace(f.fields[fieldSchedule])
-	command := strings.TrimSpace(f.fields[fieldCommand])
-	workDir := strings.TrimSpace(f.fields[fieldWorkDir])
-	logFile := strings.TrimSpace(f.fields[fieldLogFile])
-
-	if schedule == "" && command == "" {
-		return ""
-	}
-
-	cronExpr := cron.HumanToCron(schedule)
-	finalCmd := command
-	if workDir != "" {
-		finalCmd = fmt.Sprintf("cd %s && %s", workDir, finalCmd)
-	}
-	if logFile != "" {
-		finalCmd = fmt.Sprintf("%s >> %s 2>&1", finalCmd, logFile)
-	}
-
-	return fmt.Sprintf("%s %s", cronExpr, finalCmd)
-}
 
 func renderForm(f *formModel, width int) string {
 	formWidth := width - 10
@@ -203,52 +180,28 @@ func renderForm(f *formModel, width int) string {
 		title = "Edit Job"
 	}
 
+	inputWidth := formWidth - 16
+
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render("  " + title))
 	b.WriteString("\n\n")
 
 	for i := 0; i < fieldCount; i++ {
 		label := formLabelStyle.Render(fmt.Sprintf("  %-10s", fieldLabels[i]+":"))
-		value := f.fields[i]
-		if value == "" && i != f.activeField {
-			value = fieldHints[i]
-		}
 
-		var rendered string
-		if i == f.activeField {
-			runes := []rune(value)
-			pos := f.cursors[i]
-			before := string(runes[:pos])
-			after := ""
-			cursorChar := " "
-			if pos < len(runes) {
-				cursorChar = string(runes[pos])
-				after = string(runes[pos+1:])
-			}
-			cursor := lipgloss.NewStyle().Reverse(true).Render(cursorChar)
-			rendered = formActiveInputStyle.
-				Width(formWidth - 16).
-				Render(before + cursor + after)
-		} else {
-			if f.fields[i] == "" {
-				rendered = formInactiveInputStyle.
-					Width(formWidth - 16).
-					Foreground(colorMuted).
-					Render(value)
-			} else {
-				rendered = formInactiveInputStyle.
-					Width(formWidth - 16).
-					Render(value)
-			}
-		}
+		f.inputs[i].Width = inputWidth
+		rendered := lipgloss.NewStyle().
+			PaddingLeft(1).
+			PaddingRight(1).
+			Render(f.inputs[i].View())
 
 		b.WriteString(label + " " + rendered)
 		b.WriteString("\n")
 
 		// Show schedule conversion hint
-		if i == fieldSchedule && f.fields[fieldSchedule] != "" {
-			cronExpr := cron.HumanToCron(f.fields[fieldSchedule])
-			if cronExpr != f.fields[fieldSchedule] {
+		if i == fieldSchedule && f.inputs[fieldSchedule].Value() != "" {
+			cronExpr := cron.HumanToCron(f.inputs[fieldSchedule].Value())
+			if cronExpr != f.inputs[fieldSchedule].Value() {
 				hint := mutedItemStyle.Render(fmt.Sprintf("             → %s", cronExpr))
 				b.WriteString("  " + hint + "\n")
 			}
@@ -260,14 +213,7 @@ func renderForm(f *formModel, width int) string {
 		}
 	}
 
-	// Preview
-	preview := f.buildPreview()
-	if preview != "" {
-		b.WriteString("\n")
-		b.WriteString(formPreviewStyle.Render("  Preview: " + preview))
-	}
-
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	b.WriteString(mutedItemStyle.Render("  tab: next field • shift+tab: prev • enter: save • esc: cancel"))
 
 	content := b.String()

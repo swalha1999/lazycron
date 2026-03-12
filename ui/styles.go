@@ -123,11 +123,6 @@ var (
 				PaddingLeft(1).
 				PaddingRight(1)
 
-	formPreviewStyle = lipgloss.NewStyle().
-				Foreground(colorMauve).
-				MarginTop(1).
-				Italic(true)
-
 	// Confirm dialog
 	confirmStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
