@@ -78,6 +78,23 @@ var (
 	mutedItemStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
+	historyFailedStyle = lipgloss.NewStyle().
+				Foreground(colorRed)
+
+	historyFailedSelectedStyle = lipgloss.NewStyle().
+					Foreground(colorRed).
+					Bold(true)
+
+	historySuccessStyle = lipgloss.NewStyle().
+				Foreground(colorGreen)
+
+	historySuccessSelectedStyle = lipgloss.NewStyle().
+					Foreground(colorGreen).
+					Bold(true)
+
+	warnStyle = lipgloss.NewStyle().
+			Foreground(colorYellow)
+
 	enabledDotStyle = lipgloss.NewStyle().
 			Foreground(colorGreen)
 

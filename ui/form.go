@@ -15,8 +15,7 @@ const (
 	fieldCommand  = 1
 	fieldSchedule = 2
 	fieldWorkDir  = 3
-	fieldLogFile  = 4
-	fieldCount    = 5
+	fieldCount    = 4
 )
 
 var fieldLabels = [fieldCount]string{
@@ -24,7 +23,6 @@ var fieldLabels = [fieldCount]string{
 	"Command",
 	"Schedule",
 	"Work Dir",
-	"Log File",
 }
 
 var fieldHints = [fieldCount]string{
@@ -32,7 +30,6 @@ var fieldHints = [fieldCount]string{
 	"Shell command to execute",
 	"Cron expression or 'every day at 9am'",
 	"Optional: working directory",
-	"Optional: path to log file",
 }
 
 type formModel struct {
@@ -44,17 +41,21 @@ type formModel struct {
 	completer   completerModel
 }
 
+func newInput(i int) textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = fieldHints[i]
+	ti.CharLimit = 512
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
+	return ti
+}
+
 func newForm() formModel {
 	f := formModel{}
 	for i := 0; i < fieldCount; i++ {
-		ti := textinput.New()
-		ti.Prompt = ""
-		ti.Placeholder = fieldHints[i]
-		ti.CharLimit = 512
-		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
-		f.inputs[i] = ti
+		f.inputs[i] = newInput(i)
 	}
 	f.picker = newPicker()
 	f.inputs[fieldSchedule].SetValue(f.picker.Expression())
@@ -66,31 +67,13 @@ func newFormForEdit(job cron.Job, index int) formModel {
 		editing:   true,
 		editIndex: index,
 	}
-
 	for i := 0; i < fieldCount; i++ {
-		ti := textinput.New()
-		ti.Prompt = ""
-		ti.Placeholder = fieldHints[i]
-		ti.CharLimit = 512
-		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
-		f.inputs[i] = ti
+		f.inputs[i] = newInput(i)
 	}
 
-	// Try to extract workdir and logfile from command
+	// Extract workdir from command
 	cmd := job.Command
 	workDir := ""
-	logFile := ""
-
-	if idx := strings.Index(cmd, " >> "); idx != -1 {
-		logPart := cmd[idx:]
-		cmd = strings.TrimSpace(cmd[:idx])
-		logPart = strings.TrimPrefix(logPart, " >> ")
-		logPart = strings.TrimSuffix(logPart, " 2>&1")
-		logFile = strings.TrimSpace(logPart)
-	}
-
 	if strings.HasPrefix(cmd, "cd ") {
 		if idx := strings.Index(cmd, " && "); idx != -1 {
 			workDir = strings.TrimPrefix(cmd[:idx], "cd ")
@@ -102,7 +85,6 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.inputs[fieldCommand].SetValue(cmd)
 	f.inputs[fieldSchedule].SetValue(job.Schedule)
 	f.inputs[fieldWorkDir].SetValue(workDir)
-	f.inputs[fieldLogFile].SetValue(logFile)
 
 	f.picker = newPicker()
 	f.picker.ParseExpression(job.Schedule)
@@ -177,7 +159,6 @@ func (f *formModel) buildJob() (cron.Job, error) {
 	command := strings.TrimSpace(f.inputs[fieldCommand].Value())
 	schedule := strings.TrimSpace(f.inputs[fieldSchedule].Value())
 	workDir := strings.TrimSpace(f.inputs[fieldWorkDir].Value())
-	logFile := strings.TrimSpace(f.inputs[fieldLogFile].Value())
 
 	if name == "" {
 		return cron.Job{}, fmt.Errorf("name is required")
@@ -198,18 +179,15 @@ func (f *formModel) buildJob() (cron.Job, error) {
 	if workDir != "" {
 		finalCmd = fmt.Sprintf("cd %s && %s", workDir, finalCmd)
 	}
-	if logFile != "" {
-		finalCmd = fmt.Sprintf("%s >> %s 2>&1", finalCmd, logFile)
-	}
 
 	return cron.Job{
 		Name:     name,
 		Schedule: cronExpr,
 		Command:  finalCmd,
 		Enabled:  true,
+		Wrapped:  true,
 	}, nil
 }
-
 
 func renderForm(f *formModel, width int) string {
 	formWidth := width - 10
@@ -235,13 +213,13 @@ func renderForm(f *formModel, width int) string {
 		label := formLabelStyle.Render(fmt.Sprintf("  %-10s", fieldLabels[i]+":"))
 
 		f.inputs[i].Width = inputWidth
-			rendered := lipgloss.NewStyle().
-				PaddingLeft(1).
-				PaddingRight(1).
-				Render(f.inputs[i].View())
+		rendered := lipgloss.NewStyle().
+			PaddingLeft(1).
+			PaddingRight(1).
+			Render(f.inputs[i].View())
 
-			b.WriteString(label + " " + rendered)
-			b.WriteString("\n")
+		b.WriteString(label + " " + rendered)
+		b.WriteString("\n")
 
 		if i == fieldSchedule {
 			b.WriteString(renderPicker(&f.picker, inputWidth))
@@ -277,9 +255,7 @@ func renderForm(f *formModel, width int) string {
 			helpBinding("esc", "cancel"))
 	}
 
-	content := b.String()
-
-	return formStyle.Width(formWidth).Render(content)
+	return formStyle.Width(formWidth).Render(b.String())
 }
 
 func renderConfirmDialog(message string) string {

@@ -35,6 +35,13 @@ func renderDetail(job *cron.Job, width int) string {
 	b.WriteString(renderDetailRow("Expression", mutedItemStyle.Render(job.Schedule)))
 	b.WriteString("\n")
 
+	// Format warning
+	if !job.Wrapped {
+		b.WriteString("\n")
+		b.WriteString("  " + warnStyle.Render("⚠ Outdated format") + "  " + mutedItemStyle.Render("press ") + helpKeyStyle.Render("U") + mutedItemStyle.Render(" to update"))
+		b.WriteString("\n")
+	}
+
 	// Command
 	b.WriteString("\n")
 	b.WriteString(detailHeaderStyle.Render("  Command"))
@@ -78,6 +85,16 @@ func renderHistoryDetail(entry *history.Entry, width int) string {
 	// Job name
 	b.WriteString(renderDetailRow("Job", detailValueStyle.Render(entry.JobName)))
 	b.WriteString("\n")
+
+	// Status
+	if entry.Success != nil {
+		if *entry.Success {
+			b.WriteString(renderDetailRow("Status", enabledDotStyle.Render("● Success")))
+		} else {
+			b.WriteString(renderDetailRow("Status", errorStyle.Render("✗ Failed")))
+		}
+		b.WriteString("\n")
+	}
 
 	// Timestamp
 	b.WriteString(renderDetailRow("Ran at", detailValueStyle.Render(entry.Timestamp)))

@@ -16,6 +16,7 @@ type Entry struct {
 	JobName   string `json:"job_name"`
 	Timestamp string `json:"timestamp"`
 	Output    string `json:"output"`
+	Success   *bool  `json:"success,omitempty"`
 	FilePath  string `json:"-"`
 }
 
@@ -60,7 +61,7 @@ func LoadEntry(path string) (Entry, error) {
 }
 
 // WriteEntry writes a history entry to disk.
-func WriteEntry(jobName, output string) error {
+func WriteEntry(jobName, output string, success bool) error {
 	if err := record.EnsureDirs(); err != nil {
 		return err
 	}
@@ -70,6 +71,7 @@ func WriteEntry(jobName, output string) error {
 		JobName:   jobName,
 		Timestamp: now.Format(time.RFC3339),
 		Output:    output,
+		Success:   &success,
 	}
 
 	data, err := json.MarshalIndent(e, "", "  ")

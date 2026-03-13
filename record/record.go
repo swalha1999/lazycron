@@ -15,13 +15,14 @@ type Entry struct {
 	JobName   string `json:"job_name"`
 	Timestamp string `json:"timestamp"`
 	Output    string `json:"output"`
+	Success   *bool  `json:"success,omitempty"`
 }
 
 // Run is the entrypoint when the binary is invoked as "record".
-// Usage: <command> | record "job-name"
+// Usage: <command> | record "job-name" [exit-code]
 func Run(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: record <job-name>")
+		fmt.Fprintln(os.Stderr, "usage: record <job-name> [exit-code]")
 		os.Exit(1)
 	}
 
@@ -38,6 +39,12 @@ func Run(args []string) {
 		JobName:   jobName,
 		Timestamp: now.Format(time.RFC3339),
 		Output:    string(data),
+	}
+
+	// Parse optional exit code argument
+	if len(args) >= 2 {
+		success := args[1] == "0"
+		entry.Success = &success
 	}
 
 	histDir := HistoryDir()

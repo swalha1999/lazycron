@@ -74,7 +74,13 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			cmd = cmd[:cmdWidth-1] + "…"
 		}
 
-		line := fmt.Sprintf(" %s %-*s  %s", dot, maxNameWidth, name, mutedItemStyle.Render(schedule))
+		// Warning indicator for jobs not using the current record format
+		warn := ""
+		if !job.Wrapped {
+			warn = " " + warnStyle.Render("⚠")
+		}
+
+		line := fmt.Sprintf(" %s %-*s  %s%s", dot, maxNameWidth, name, mutedItemStyle.Render(schedule), warn)
 
 		if i == selected {
 			line = selectedStyle.Render("▶ " + line)

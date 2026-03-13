@@ -44,12 +44,34 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 
 		ago := relativeTime(entry.Timestamp)
 
-		line := fmt.Sprintf(" %-*s  %s", maxNameWidth, name, mutedItemStyle.Render(ago))
+		// Determine success/failure status
+		failed := entry.Success != nil && !*entry.Success
+		succeeded := entry.Success != nil && *entry.Success
+		var prefix string
+		if failed {
+			prefix = "✗ "
+		} else if succeeded {
+			prefix = "✓ "
+		} else {
+			prefix = "  "
+		}
+
+		line := fmt.Sprintf("%-*s  %s", maxNameWidth, name, mutedItemStyle.Render(ago))
 
 		if i == selected && focused {
-			line = selectedStyle.Render("▶ " + line)
+			if failed {
+				line = historyFailedSelectedStyle.Render("▶ " + line)
+			} else if succeeded {
+				line = historySuccessSelectedStyle.Render("▶ " + line)
+			} else {
+				line = selectedStyle.Render("▶ " + line)
+			}
+		} else if failed {
+			line = historyFailedStyle.Render(prefix + line)
+		} else if succeeded {
+			line = historySuccessStyle.Render(prefix + line)
 		} else {
-			line = normalStyle.Render("  " + line)
+			line = normalStyle.Render(prefix + line)
 		}
 
 		b.WriteString(line)

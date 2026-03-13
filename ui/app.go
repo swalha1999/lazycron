@@ -87,6 +87,8 @@ type clearStatusMsg struct {
 	id int
 }
 
+type historyTickMsg struct{}
+
 func clearStatusAfter(id int, d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg {
 		return clearStatusMsg{id: id}
@@ -100,8 +102,14 @@ func NewModel() Model {
 	}
 }
 
+func historyTick() tea.Cmd {
+	return tea.Tick(time.Minute, func(time.Time) tea.Msg {
+		return historyTickMsg{}
+	})
+}
+
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadJobs, loadHistory)
+	return tea.Batch(loadJobs, loadHistory, historyTick())
 }
 
 func loadJobs() tea.Msg {
@@ -132,9 +140,9 @@ func loadHistory() tea.Msg {
 	return historyLoadedMsg{entries: entries, err: err}
 }
 
-func saveHistory(jobName, output string) tea.Cmd {
+func saveHistory(jobName, output string, success bool) tea.Cmd {
 	return func() tea.Msg {
-		err := history.WriteEntry(jobName, output)
+		err := history.WriteEntry(jobName, output, success)
 		return historySavedMsg{err: err}
 	}
 }
@@ -171,6 +179,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case historyTickMsg:
+		return m, tea.Batch(loadHistory, historyTick())
+
 	case historyLoadedMsg:
 		if msg.err == nil {
 			m.history = msg.entries
@@ -190,7 +201,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if output == "" && msg.err != nil {
 			output = msg.err.Error()
 		}
-		saveCmd := saveHistory(msg.name, output)
+		success := msg.err == nil
+		saveCmd := saveHistory(msg.name, output, success)
 
 		if msg.err != nil {
 			m.runOutput = msg.output
@@ -260,7 +272,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 
-	case "tab":
+	case "tab", "left", "h", "right", "l":
 		if m.focusPanel == panelJobs {
 			m.focusPanel = panelHistory
 		} else {
@@ -329,6 +341,22 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
 			m.statusKind = statusInfo
 			return m, runJob(job.Name, job.Command)
+		}
+
+	case "U":
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
+			job := &m.jobs[m.selected]
+			if job.Wrapped {
+				m.statusMsg = fmt.Sprintf("Job '%s' is already up to date", job.Name)
+				m.statusKind = statusInfo
+				m.statusID++
+				return m, clearStatusAfter(m.statusID, 3*time.Second)
+			}
+			job.Wrapped = true
+			m.statusMsg = fmt.Sprintf("Updated '%s' to latest format", job.Name)
+			m.statusKind = statusSuccess
+			m.statusID++
+			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 
 	case "R":
@@ -679,7 +707,8 @@ func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int)
 			helpBinding("d", "delete") + helpSep() +
 			helpBinding("space", "toggle") + helpSep() +
 			helpBinding("r", "run") + helpSep() +
-			helpBinding("tab", "panel") + helpSep() +
+			helpBinding("U", "update fmt") + helpSep() +
+			helpBinding("←/→", "panel") + helpSep() +
 			helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
@@ -736,7 +765,8 @@ func renderHelpScreen() string {
 		{"d", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
-		{"tab", "Switch panel (Jobs/History)"},
+		{"U", "Update job to latest format"},
+		{"←/→/tab", "Switch panel (Jobs/History)"},
 		{"R", "Refresh from crontab"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
