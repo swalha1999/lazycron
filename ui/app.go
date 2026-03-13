@@ -34,6 +34,7 @@ const (
 const (
 	panelJobs    = 0
 	panelHistory = 1
+	panelDetail  = 2
 )
 
 type Model struct {
@@ -56,7 +57,9 @@ type Model struct {
 	history         []history.Entry
 	historySelected int
 	focusPanel      int
+	lastLeftPanel   int
 	historyScroll   int
+	detailScroll    int
 }
 
 type jobsLoadedMsg struct {
@@ -272,34 +275,62 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m, tea.Quit
 
-	case "tab", "left", "h", "right", "l":
-		if m.focusPanel == panelJobs {
-			m.focusPanel = panelHistory
-		} else {
-			m.focusPanel = panelJobs
+	case "tab", "right", "l":
+		m.focusPanel = (m.focusPanel + 1) % 3
+		if m.focusPanel != panelDetail {
+			m.lastLeftPanel = m.focusPanel
 		}
+		return m, nil
+	case "shift+tab", "left", "h":
+		m.focusPanel = (m.focusPanel + 2) % 3
+		if m.focusPanel != panelDetail {
+			m.lastLeftPanel = m.focusPanel
+		}
+		return m, nil
+	case "1":
+		m.focusPanel = panelJobs
+		m.lastLeftPanel = panelJobs
+		return m, nil
+	case "2":
+		m.focusPanel = panelHistory
+		m.lastLeftPanel = panelHistory
+		return m, nil
+	case "3":
+		m.focusPanel = panelDetail
 		return m, nil
 
 	case "up", "k":
-		if m.focusPanel == panelJobs {
+		switch m.focusPanel {
+		case panelJobs:
 			if m.selected > 0 {
 				m.selected--
+				m.detailScroll = 0
 			}
-		} else {
+		case panelHistory:
 			if m.historySelected > 0 {
 				m.historySelected--
+				m.detailScroll = 0
+			}
+		case panelDetail:
+			if m.detailScroll > 0 {
+				m.detailScroll--
 			}
 		}
 
 	case "down", "j":
-		if m.focusPanel == panelJobs {
+		switch m.focusPanel {
+		case panelJobs:
 			if m.selected < len(m.jobs)-1 {
 				m.selected++
+				m.detailScroll = 0
 			}
-		} else {
+		case panelHistory:
 			if m.historySelected < len(m.history)-1 {
 				m.historySelected++
+				m.detailScroll = 0
 			}
+		case panelDetail:
+			m.detailScroll++
 		}
 
 	case "n":
@@ -626,31 +657,36 @@ func (m Model) renderPanels(height int) string {
 
 	// Top-left: Jobs panel
 	listContent := renderJobList(m.jobs, m.selected, listWidth-4, jobsHeight)
+	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
-	if m.focusPanel == panelJobs {
+	if jobsActive {
 		jobsPanelStyle = activePanelStyle
 	}
 	jobsPanel := jobsPanelStyle.
 		Width(listWidth).
 		Height(jobsHeight).
-		Render(panelTitleStyle.Render(" Jobs") + "\n" + listContent)
+		Render(listContent)
+	jobsPanel = injectBorderTitle(jobsPanel, "1", "Jobs", jobsActive)
 
 	// Bottom-left: History panel
 	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory)
+	historyActive := m.focusPanel == panelHistory
 	historyPanelStyle := panelStyle
-	if m.focusPanel == panelHistory {
+	if historyActive {
 		historyPanelStyle = activePanelStyle
 	}
 	historyPanel := historyPanelStyle.
 		Width(listWidth).
 		Height(historyHeight).
-		Render(panelTitleStyle.Render(" History") + "\n" + historyContent)
+		Render(historyContent)
+	historyPanel = injectBorderTitle(historyPanel, "2", "History", historyActive)
 
 	leftPanel := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, historyPanel)
 
-	// Right panel: show job or history detail based on focus
+	// Right panel: show job or history detail based on last left panel focus
 	var detailContent string
-	if m.focusPanel == panelHistory && len(m.history) > 0 {
+	showHistory := m.focusPanel == panelHistory || (m.focusPanel == panelDetail && m.lastLeftPanel == panelHistory)
+	if showHistory && len(m.history) > 0 {
 		var entry *history.Entry
 		if m.historySelected >= 0 && m.historySelected < len(m.history) {
 			entry = &m.history[m.historySelected]
@@ -664,16 +700,74 @@ func (m Model) renderPanels(height int) string {
 		detailContent = renderDetail(selectedJob, detailWidth-4)
 	}
 
+	// Apply scroll to detail content only when it overflows
+	detailLines := strings.Split(detailContent, "\n")
+	visibleHeight := innerHeight - 2 // account for padding
+	if len(detailLines) > visibleHeight {
+		maxScroll := len(detailLines) - visibleHeight
+		if m.detailScroll > maxScroll {
+			m.detailScroll = maxScroll
+		}
+		if m.detailScroll > 0 {
+			detailContent = strings.Join(detailLines[m.detailScroll:], "\n")
+		}
+	} else {
+		m.detailScroll = 0
+	}
+
+	detailActive := m.focusPanel == panelDetail
 	rightPanelStyle := panelStyle
-	if m.focusPanel == panelJobs && len(m.history) == 0 {
-		rightPanelStyle = panelStyle
+	if detailActive {
+		rightPanelStyle = activePanelStyle
 	}
 	rightPanel := rightPanelStyle.
 		Width(detailWidth).
 		Height(innerHeight).
-		Render(panelTitleStyle.Render(" Details") + "\n" + detailContent)
+		Render(detailContent)
+	rightPanel = injectBorderTitle(rightPanel, "3", "Details", detailActive)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+}
+
+// injectBorderTitle replaces the top border line to embed "[N] Title" in it.
+func injectBorderTitle(rendered, number, title string, active bool) string {
+	lines := strings.Split(rendered, "\n")
+	if len(lines) == 0 {
+		return rendered
+	}
+
+	borderColor := colorBorder
+	if active {
+		borderColor = colorActiveBorder
+	}
+
+	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
+	numberStyle := lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
+	titleTextStyle := panelTitleStyle
+	if !active {
+		titleTextStyle = lipgloss.NewStyle().Foreground(colorMuted).Bold(true)
+	}
+
+	// Build the title segment: ─[N] Title─
+	titleSegment := borderStyle.Render("─") +
+		numberStyle.Render("["+number+"]") +
+		borderStyle.Render("─") +
+		titleTextStyle.Render(title) +
+		borderStyle.Render("─")
+
+	// Get the visual width of the original top border line
+	topLineWidth := ansi.StringWidth(lines[0])
+	titleWidth := ansi.StringWidth(titleSegment)
+
+	// Build: ╭ + titleSegment + remaining ─s + ╮
+	remaining := topLineWidth - 2 - titleWidth // -2 for ╭ and ╮
+	if remaining < 0 {
+		remaining = 0
+	}
+	newTop := borderStyle.Render("╭") + titleSegment + borderStyle.Render(strings.Repeat("─", remaining)+"╮")
+
+	lines[0] = newTop
+	return strings.Join(lines, "\n")
 }
 
 func renderTopBar(m mode, width int) string {
@@ -708,7 +802,6 @@ func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int)
 			helpBinding("space", "toggle") + helpSep() +
 			helpBinding("r", "run") + helpSep() +
 			helpBinding("U", "update fmt") + helpSep() +
-			helpBinding("←/→", "panel") + helpSep() +
 			helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
@@ -766,7 +859,7 @@ func renderHelpScreen() string {
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
 		{"U", "Update job to latest format"},
-		{"←/→/tab", "Switch panel (Jobs/History)"},
+		{"1/2/3/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
