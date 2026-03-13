@@ -1,8 +1,6 @@
 # lazycron
 
-A TUI cron job manager inspired by [lazygit](https://github.com/jesseduffield/lazygit). Manage your crontab visually from the terminal.
-
-![lazycron screenshot](screenshot.png)
+A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax.
 
 ## Install
 
@@ -20,31 +18,21 @@ go build -o lazycron .
 
 ## Features
 
-- View all cron jobs in a split-panel TUI
+### 3-Panel Layout
+- **Jobs** — lists all cron jobs with enabled/disabled status and human-readable schedules
+- **History** — shows execution history with timestamps, success/failure indicators, and relative times
+- **Details** — displays full job info (schedule, command, next 3 runs) or history entry output
+
+Switch panels with `1`/`2`/`3` or arrow keys.
+
+### Job Management
 - Create, edit, and delete jobs with a form overlay
-- Toggle jobs enabled/disabled
-- Run jobs immediately
-- Human-readable schedule input (`every day at 9am` → `0 9 * * *`)
-- Shows next 3 scheduled run times
-- Reads/writes directly to your system crontab
+- Toggle jobs enabled/disabled with `space`
+- Run any job immediately and see its output in a scrollable modal
+- Reads and writes directly to your system crontab
 
-## Keybindings
-
-| Key       | Action                |
-|-----------|-----------------------|
-| `n`       | New job               |
-| `enter`   | Edit selected job     |
-| `d`       | Delete selected job   |
-| `space`   | Toggle enable/disable |
-| `r`       | Run job now           |
-| `j` / `↓` | Move down            |
-| `k` / `↑` | Move up              |
-| `?`       | Show all keybindings  |
-| `q`       | Quit                  |
-
-## Schedule Input
-
-The schedule field accepts both raw cron expressions and human-readable strings:
+### Human-Readable Schedules
+The schedule field accepts plain English alongside raw cron expressions:
 
 | Input                    | Cron Expression |
 |--------------------------|-----------------|
@@ -56,14 +44,39 @@ The schedule field accepts both raw cron expressions and human-readable strings:
 | `every weekday at 9am`   | `0 9 * * 1-5`   |
 | `0 */2 * * *`            | `0 */2 * * *`   |
 
+### Visual Cron Picker
+An interactive 5-column picker for building cron expressions field by field. Supports wildcard (`*`), interval (`*/N`), and specific value modes with live preview.
+
+### Directory Completer
+The work directory field includes a fuzzy-matching directory browser with drill-in/drill-out navigation, breadcrumbs, and scroll support.
+
+### Execution History
+Job runs are recorded to `~/.lazycron/history/` as JSON files, capturing output, exit codes, and timestamps. History refreshes automatically and is viewable in the History panel.
+
+### Format Migration
+Jobs created by older versions can be upgraded to the current recording format with `U`, enabling proper output and exit code capture.
+
+## Keybindings
+
+| Key | Action |
+|---|---|
+| `n` | New job |
+| `enter` / `e` | Edit selected job |
+| `d` | Delete selected job |
+| `space` | Toggle enable/disable |
+| `r` | Run job now |
+| `U` | Update job to latest format |
+| `R` | Refresh from crontab |
+| `1` / `2` / `3` | Switch panel |
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `?` | Show all keybindings |
+| `q` | Quit |
+
 ## Requirements
 
 - macOS or Linux
 - `crontab` command available on PATH
-
-## Roadmap
-
-- **V2**: Claude-powered job scheduling — describe what you want in plain English and let AI generate the cron expression and command.
 
 ## License
 
