@@ -591,7 +591,7 @@ func (m Model) View() string {
 	topBar := renderTopBar(m.mode, m.width)
 
 	// Bottom bar
-	bottomBar := renderBottomBar(m.mode, m.statusMsg, m.statusKind, m.width)
+	bottomBar := renderBottomBar(m.mode, m.focusPanel, m.statusMsg, m.statusKind, m.width)
 
 	// Main content area: fill remaining space after top bar (1 line) and bottom bar
 	contentHeight := m.height - 1 - lipgloss.Height(bottomBar)
@@ -792,17 +792,21 @@ func renderTopBar(m mode, width int) string {
 	return topBarStyle.Width(width).Render(bar)
 }
 
-func renderBottomBar(m mode, statusMsg string, statusKind statusType, width int) string {
+func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind statusType, width int) string {
 	var help string
 	switch m {
 	case modeNormal:
-		help = helpBinding("n", "new") + helpSep() +
-			helpBinding("enter", "edit") + helpSep() +
-			helpBinding("d", "delete") + helpSep() +
-			helpBinding("space", "toggle") + helpSep() +
-			helpBinding("r", "run") + helpSep() +
-			helpBinding("U", "update fmt") + helpSep() +
-			helpBinding("R", "refresh") + helpSep() +
+		help = helpBinding("↑/↓", "move") + helpSep() +
+			helpBinding("←/→", "panel") + helpSep() +
+			helpBinding("n", "new") + helpSep()
+		if focusPanel == panelJobs {
+			help += helpBinding("enter", "edit") + helpSep() +
+				helpBinding("d", "delete") + helpSep() +
+				helpBinding("space", "toggle") + helpSep() +
+				helpBinding("r", "run") + helpSep() +
+				helpBinding("U", "update fmt") + helpSep()
+		}
+		help += helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
 	case modeForm:
