@@ -5,6 +5,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/swalha1999/lazycron/backend"
+	"github.com/swalha1999/lazycron/config"
+	sshclient "github.com/swalha1999/lazycron/ssh"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -37,10 +40,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusID++
 			return m, clearStatusAfter(m.statusID, 5*time.Second)
 		}
+		m.manager.InvalidateCache(m.manager.ActiveIndex())
 		return m, nil
 
 	case historyTickMsg:
-		return m, tea.Batch(loadHistory, historyTick())
+		b := m.manager.ActiveBackend()
+		return m, tea.Batch(loadHistory(b), historyTick())
 
 	case historyLoadedMsg:
 		if msg.err == nil {
@@ -50,19 +55,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case historySavedMsg:
 		if msg.err == nil {
-			return m, loadHistory
+			b := m.manager.ActiveBackend()
+			return m, loadHistory(b)
 		}
 		return m, nil
 
 	case jobRanMsg:
 		m.statusID++
-		// Save to history regardless of success/failure
 		output := msg.output
 		if output == "" && msg.err != nil {
 			output = msg.err.Error()
 		}
 		success := msg.err == nil
-		saveCmd := saveHistory(msg.name, output, success)
+		b := m.manager.ActiveBackend()
+		saveCmd := saveHistory(b, msg.name, output, success)
 
 		if msg.err != nil {
 			m.runOutput = msg.output
@@ -89,6 +95,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusKind = statusSuccess
 		return m, tea.Batch(saveCmd, clearStatusAfter(m.statusID, 4*time.Second))
 
+	case serverConnectedMsg:
+		if msg.err != nil {
+			m.serverSwitching = false
+			m.statusMsg = fmt.Sprintf("Connection failed: %s", msg.err)
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+		return m, loadServerData(m.manager, msg.index)
+
+	case serverDataLoadedMsg:
+		m.serverSwitching = false
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to load data: %s", msg.err)
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+		m.manager.SetCache(msg.index, &backend.CachedData{
+			Jobs:      msg.jobs,
+			History:   msg.history,
+			FetchedAt: time.Now(),
+		})
+		if msg.index == m.manager.ActiveIndex() {
+			m.jobs = msg.jobs
+			m.history = msg.history
+			m.selected = 0
+			m.historySelected = 0
+			serverName := m.manager.ServerAt(msg.index).Name
+			m.statusMsg = fmt.Sprintf("Switched to %s", serverName)
+			m.statusKind = statusSuccess
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 3*time.Second)
+		}
+		return m, nil
+
 	case clearStatusMsg:
 		if msg.id == m.statusID {
 			m.statusMsg = ""
@@ -101,8 +143,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward other messages to form textinput (for cursor blink)
-	if m.mode == modeForm {
+	switch m.mode {
+	case modeForm:
 		cmd := m.form.updateInput(msg)
+		return m, cmd
+	case modeAddServer:
+		cmd := m.serverForm.updateInput(msg)
 		return m, cmd
 	}
 
@@ -118,10 +164,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	case modeConfirmDelete:
 		return m.handleConfirmKey(msg)
+	case modeConfirmDeleteServer:
+		return m.handleConfirmDeleteServerKey(msg)
 	case modeHelp:
 		return m.handleHelpKey(msg)
 	case modeRunOutput:
 		return m.handleRunOutputKey(msg)
+	case modeAddServer:
+		return m.handleAddServerKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -133,31 +183,38 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab", "right", "l":
-		m.focusPanel = (m.focusPanel + 1) % 3
-		if m.focusPanel != panelDetail {
+		m.focusPanel = (m.focusPanel + 1) % panelCount
+		if m.focusPanel != panelDetail && m.focusPanel != panelServers {
 			m.lastLeftPanel = m.focusPanel
 		}
 		return m, nil
 	case "shift+tab", "left", "h":
-		m.focusPanel = (m.focusPanel + 2) % 3
-		if m.focusPanel != panelDetail {
+		m.focusPanel = (m.focusPanel + panelCount - 1) % panelCount
+		if m.focusPanel != panelDetail && m.focusPanel != panelServers {
 			m.lastLeftPanel = m.focusPanel
 		}
 		return m, nil
 	case "1":
+		m.focusPanel = panelServers
+		return m, nil
+	case "2":
 		m.focusPanel = panelJobs
 		m.lastLeftPanel = panelJobs
 		return m, nil
-	case "2":
+	case "3":
 		m.focusPanel = panelHistory
 		m.lastLeftPanel = panelHistory
 		return m, nil
-	case "3":
+	case "4":
 		m.focusPanel = panelDetail
 		return m, nil
 
 	case "up", "k":
 		switch m.focusPanel {
+		case panelServers:
+			if m.serverSelected > 0 {
+				m.serverSelected--
+			}
 		case panelJobs:
 			if m.selected > 0 {
 				m.selected--
@@ -176,6 +233,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "down", "j":
 		switch m.focusPanel {
+		case panelServers:
+			if m.serverSelected < m.manager.ServerCount()-1 {
+				m.serverSelected++
+			}
 		case panelJobs:
 			if m.selected < len(m.jobs)-1 {
 				m.selected++
@@ -190,13 +251,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScroll++
 		}
 
-	case "n":
-		m.mode = modeForm
-		m.form = newForm()
-		m.statusMsg = ""
-		return m, m.form.focusActive()
-
-	case "enter", "e":
+	case "enter":
+		if m.focusPanel == panelServers {
+			return m.switchToServer(m.serverSelected)
+		}
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeForm
 			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
@@ -204,13 +262,89 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.form.focusActive()
 		}
 
-	case "d":
+	case "e":
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
+			m.mode = modeForm
+			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
+			m.statusMsg = ""
+			return m, m.form.focusActive()
+		}
+
+	case "a":
+		if m.focusPanel == panelServers {
+			m.mode = modeAddServer
+			m.serverForm = newServerForm()
+			m.statusMsg = ""
+			return m, m.serverForm.focusActive()
+		}
+
+	case "c":
+		if m.focusPanel == panelServers {
+			idx := m.serverSelected
+			if idx == 0 {
+				return m, nil // Local is always connected
+			}
+			info := m.manager.ServerAt(idx)
+			if info.Status == backend.ConnDisconnected || info.Status == backend.ConnError {
+				m.statusMsg = fmt.Sprintf("Connecting to %s...", info.Name)
+				m.statusKind = statusInfo
+				return m, connectServer(m.manager, idx)
+			}
+		}
+
+	case "D":
+		if m.focusPanel == panelServers {
+			idx := m.serverSelected
+			if idx == 0 {
+				return m, nil
+			}
+			info := m.manager.ServerAt(idx)
+			if info.Status == backend.ConnConnected || info.Status == backend.ConnConnecting {
+				b := m.manager.BackendAt(idx)
+				if b != nil {
+					b.Close()
+				}
+				m.manager.SetServerStatus(idx, backend.ConnDisconnected, "")
+				m.manager.InvalidateCache(idx)
+				m.statusMsg = fmt.Sprintf("Disconnected from %s", info.Name)
+				m.statusKind = statusInfo
+				m.statusID++
+				if m.manager.ActiveIndex() == idx {
+					m.manager.SwitchTo(0)
+					b := m.manager.ActiveBackend()
+					return m, tea.Batch(
+						loadJobs(b), loadHistory(b),
+						clearStatusAfter(m.statusID, 3*time.Second),
+					)
+				}
+				return m, clearStatusAfter(m.statusID, 3*time.Second)
+			}
+		}
+
+	case "n":
+		if m.focusPanel != panelServers {
+			m.mode = modeForm
+			m.form = newForm()
+			m.statusMsg = ""
+			return m, m.form.focusActive()
+		}
+
+	case "d":
+		if m.focusPanel == panelServers {
+			if m.serverSelected == 0 {
+				return m, nil // Can't remove local
+			}
+			m.mode = modeConfirmDeleteServer
+			m.statusMsg = ""
+		} else if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeConfirmDelete
 			m.statusMsg = ""
 		}
 
 	case " ":
+		if m.focusPanel == panelServers {
+			return m.switchToServer(m.serverSelected)
+		}
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.jobs[m.selected].Enabled = !m.jobs[m.selected].Enabled
 			status := "enabled"
@@ -220,7 +354,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Job '%s' %s", m.jobs[m.selected].Name, status)
 			m.statusKind = statusSuccess
 			m.statusID++
-			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+			b := m.manager.ActiveBackend()
+			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 
 	case "r":
@@ -228,7 +363,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			job := m.jobs[m.selected]
 			m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
 			m.statusKind = statusInfo
-			return m, runJob(job.Name, job.Command)
+			b := m.manager.ActiveBackend()
+			return m, runJob(b, job.Name, job.Command)
 		}
 
 	case "U":
@@ -244,13 +380,15 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Updated '%s' to latest format", job.Name)
 			m.statusKind = statusSuccess
 			m.statusID++
-			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+			b := m.manager.ActiveBackend()
+			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 
 	case "R":
 		m.statusMsg = "Refreshing..."
 		m.statusKind = statusInfo
-		return m, tea.Batch(loadJobs, loadHistory)
+		b := m.manager.ActiveBackend()
+		return m, tea.Batch(loadJobs(b), loadHistory(b))
 
 	case "?":
 		m.mode = modeHelp
@@ -259,10 +397,144 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) switchToServer(index int) (tea.Model, tea.Cmd) {
+	if index == m.manager.ActiveIndex() {
+		return m, nil
+	}
+
+	info := m.manager.ServerAt(index)
+
+	if index == 0 {
+		m.manager.SwitchTo(0)
+		b := m.manager.ActiveBackend()
+		m.statusMsg = "Switched to local"
+		m.statusKind = statusSuccess
+		m.statusID++
+		return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 3*time.Second))
+	}
+
+	if info.Status == backend.ConnConnected {
+		m.manager.SwitchTo(index)
+		if cached := m.manager.GetCache(index); cached != nil {
+			m.jobs = cached.Jobs
+			m.history = cached.History
+			m.selected = 0
+			m.historySelected = 0
+		}
+		return m, loadServerData(m.manager, index)
+	}
+
+	m.serverSwitching = true
+	m.manager.SwitchTo(index)
+	m.statusMsg = fmt.Sprintf("Connecting to %s...", info.Name)
+	m.statusKind = statusInfo
+	return m, connectServer(m.manager, index)
+}
+
+func (m Model) handleAddServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "esc":
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+
+	case "enter":
+		srv, err := m.serverForm.buildServerConfig()
+		if err != nil {
+			m.statusMsg = err.Error()
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+
+		// Save to config file
+		if err := config.AddServer(srv); err != nil {
+			m.statusMsg = "Failed to save config: " + err.Error()
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+
+		// Add to manager
+		info := backend.ServerInfo{
+			Name:   srv.Name,
+			Host:   srv.Host,
+			Port:   srv.Port,
+			User:   srv.User,
+			Status: backend.ConnDisconnected,
+		}
+		client := sshclient.NewClient(srv.Host, srv.Port, srv.User, srv.Password, config.ExpandHome(srv.KeyPath), srv.UseAgent)
+		remote := backend.NewRemoteBackend(srv.Name, client)
+		m.manager.AddServer(info, remote)
+
+		m.mode = modeNormal
+		m.statusMsg = fmt.Sprintf("Added server '%s'", srv.Name)
+		m.statusKind = statusSuccess
+		m.statusID++
+		m.serverSelected = m.manager.ServerCount() - 1
+		return m, clearStatusAfter(m.statusID, 4*time.Second)
+
+	case "tab":
+		cmd := m.serverForm.nextField()
+		return m, cmd
+	case "shift+tab":
+		cmd := m.serverForm.prevField()
+		return m, cmd
+	default:
+		cmd := m.serverForm.updateInput(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		idx := m.serverSelected
+		if idx <= 0 || idx >= m.manager.ServerCount() {
+			m.mode = modeNormal
+			return m, nil
+		}
+		serverName := m.manager.ServerAt(idx).Name
+
+		// Remove from config file
+		config.RemoveServer(serverName)
+
+		// Remove from manager (also closes backend)
+		switchedToLocal := m.manager.ActiveIndex() == idx
+		m.manager.RemoveServer(idx)
+
+		// Fix selection
+		if m.serverSelected >= m.manager.ServerCount() {
+			m.serverSelected = m.manager.ServerCount() - 1
+		}
+
+		m.mode = modeNormal
+		m.statusMsg = fmt.Sprintf("Removed server '%s'", serverName)
+		m.statusKind = statusSuccess
+		m.statusID++
+
+		if switchedToLocal {
+			b := m.manager.ActiveBackend()
+			return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 4*time.Second))
+		}
+		return m, clearStatusAfter(m.statusID, 4*time.Second)
+
+	case "n", "N", "esc":
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	return m, nil
+}
+
 func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// Handle picker-specific keys when picker is focused
 	if m.form.picker.focused {
 		syncPickerToInput := func() {
 			m.form.inputs[fieldSchedule].SetValue(m.form.picker.Expression())
@@ -296,10 +568,8 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := m.form.nextField()
 			return m, cmd
 		case "enter":
-			// Save from picker
 			m.form.inputs[fieldSchedule].SetValue(m.form.picker.Expression())
 			m.form.picker.focused = false
-			// Fall through to enter/save handling below
 		case "shift+tab":
 			cmd := m.form.prevField()
 			return m, cmd
@@ -308,7 +578,6 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Handle completer navigation when suggestions are visible
 	if m.form.activeField == fieldWorkDir && m.form.completer.active {
 		switch key {
 		case "down":
@@ -318,7 +587,6 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.completer.selectPrev()
 			return m, nil
 		case "enter", "right":
-			// Drill into selected directory
 			if m.form.completer.selected >= 0 {
 				path := m.form.completer.drillIn()
 				if path != "" {
@@ -327,18 +595,15 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			// No selection: right does nothing, enter falls through to save
 			if key == "right" {
 				return m, nil
 			}
 		case "left":
-			// Drill out to parent directory
 			path := m.form.completer.drillOut()
 			m.form.inputs[fieldWorkDir].SetValue(path)
 			m.form.inputs[fieldWorkDir].CursorEnd()
 			return m, nil
 		case "esc":
-			// Close suggestions, keep typed value
 			m.form.completer.reset()
 			return m, nil
 		}
@@ -361,6 +626,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.statusID, 5*time.Second)
 		}
 
+		b := m.manager.ActiveBackend()
 		if m.form.editing {
 			job.Enabled = m.jobs[m.form.editIndex].Enabled
 			m.jobs[m.form.editIndex] = job
@@ -373,7 +639,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusKind = statusSuccess
 		m.mode = modeNormal
 		m.statusID++
-		return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+		return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 
 	case "tab":
 		cmd := m.form.nextField()
@@ -383,7 +649,6 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	default:
 		cmd := m.form.updateInput(msg)
-		// Update path completer when typing in Work Dir
 		if m.form.activeField == fieldWorkDir {
 			m.form.completer.update(m.form.inputs[fieldWorkDir].Value())
 		}
@@ -404,7 +669,8 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusKind = statusSuccess
 			m.mode = modeNormal
 			m.statusID++
-			return m, tea.Batch(saveJobs(m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+			b := m.manager.ActiveBackend()
+			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 	case "n", "N", "esc":
 		m.mode = modeNormal

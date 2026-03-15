@@ -15,13 +15,11 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	// Top bar
-	topBar := renderTopBar(m.mode, m.width)
+	serverName := m.manager.ServerAt(m.manager.ActiveIndex()).Name
+	topBar := renderTopBar(m.mode, serverName, m.width)
 
-	// Bottom bar
 	bottomBar := renderBottomBar(m.mode, m.focusPanel, m.statusMsg, m.statusKind, m.width)
 
-	// Main content area: fill remaining space after top bar (1 line) and bottom bar
 	contentHeight := m.height - 1 - lipgloss.Height(bottomBar)
 
 	panels := m.renderPanels(contentHeight)
@@ -40,6 +38,14 @@ func (m Model) View() string {
 		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName))
 		content = overlay(panels, fg, m.width, contentHeight)
 
+	case modeConfirmDeleteServer:
+		serverName := ""
+		if m.serverSelected > 0 && m.serverSelected < m.manager.ServerCount() {
+			serverName = m.manager.ServerAt(m.serverSelected).Name
+		}
+		fg := renderConfirmDialog(fmt.Sprintf("Remove server '%s'?", serverName))
+		content = overlay(panels, fg, m.width, contentHeight)
+
 	case modeHelp:
 		fg := renderHelpScreen()
 		content = overlay(panels, fg, m.width, contentHeight)
@@ -48,8 +54,20 @@ func (m Model) View() string {
 		fg := renderRunOutput(m.runJobName, m.runOutput, m.runOutputFailed, m.runOutputScroll, m.width, contentHeight)
 		content = overlay(panels, fg, m.width, contentHeight)
 
+	case modeAddServer:
+		fg := renderServerForm(&m.serverForm, m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
+
 	default:
 		content = panels
+	}
+
+	// Overlay "Connecting..." when switching servers
+	if m.serverSwitching {
+		connectingBox := formStyle.Width(30).Render(
+			connectingDotStyle.Render("● ") + "Connecting...",
+		)
+		content = overlay(content, connectingBox, m.width, contentHeight)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -61,20 +79,35 @@ func (m Model) View() string {
 
 func (m Model) renderPanels(height int) string {
 	listWidth := m.width * 2 / 5
-	detailWidth := m.width - listWidth - 4 // account for borders
+	detailWidth := m.width - listWidth - 4
 
 	if listWidth < 20 {
 		listWidth = 20
 	}
 
-	innerHeight := height - 2 // border (top + bottom)
+	innerHeight := height - 2
 	if innerHeight < 3 {
 		innerHeight = 3
 	}
 
-	// Split left panel into jobs (top) and history (bottom)
-	jobsHeight := innerHeight / 2
-	historyHeight := innerHeight - jobsHeight - 2 // -2 for border between panels
+	// Server panel height: compact
+	serverCount := m.manager.ServerCount()
+	serverInnerHeight := serverCount
+	if serverInnerHeight > 6 {
+		serverInnerHeight = 6
+	}
+	if serverInnerHeight < 1 {
+		serverInnerHeight = 1
+	}
+
+	// Remaining height for jobs + history
+	remainingHeight := innerHeight - serverInnerHeight - 2
+	if remainingHeight < 6 {
+		remainingHeight = 6
+	}
+
+	jobsHeight := remainingHeight / 2
+	historyHeight := remainingHeight - jobsHeight - 2
 
 	if jobsHeight < 3 {
 		jobsHeight = 3
@@ -83,65 +116,51 @@ func (m Model) renderPanels(height int) string {
 		historyHeight = 3
 	}
 
-	// Top-left: Jobs panel
+	// [1] Servers panel
+	servers := m.manager.Servers()
+	serverContent := renderServerList(servers, m.serverSelected, m.manager.ActiveIndex(), listWidth-4, serverInnerHeight, m.focusPanel == panelServers)
+	serversActive := m.focusPanel == panelServers
+	serversPanelStyle := panelStyle
+	if serversActive {
+		serversPanelStyle = activePanelStyle
+	}
+	serversBox := serversPanelStyle.
+		Width(listWidth).
+		Height(serverInnerHeight).
+		Render(serverContent)
+	serversBox = injectBorderTitle(serversBox, "1", "Servers", serversActive)
+
+	// [2] Jobs panel
 	listContent := renderJobList(m.jobs, m.selected, listWidth-4, jobsHeight)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
 	if jobsActive {
 		jobsPanelStyle = activePanelStyle
 	}
-	jobsPanel := jobsPanelStyle.
+	jobsBox := jobsPanelStyle.
 		Width(listWidth).
 		Height(jobsHeight).
 		Render(listContent)
-	jobsPanel = injectBorderTitle(jobsPanel, "1", "Jobs", jobsActive)
+	jobsBox = injectBorderTitle(jobsBox, "2", "Jobs", jobsActive)
 
-	// Bottom-left: History panel
+	// [3] History panel
 	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory)
 	historyActive := m.focusPanel == panelHistory
 	historyPanelStyle := panelStyle
 	if historyActive {
 		historyPanelStyle = activePanelStyle
 	}
-	historyPanel := historyPanelStyle.
+	historyBox := historyPanelStyle.
 		Width(listWidth).
 		Height(historyHeight).
 		Render(historyContent)
-	historyPanel = injectBorderTitle(historyPanel, "2", "History", historyActive)
+	historyBox = injectBorderTitle(historyBox, "3", "History", historyActive)
 
-	leftPanel := lipgloss.JoinVertical(lipgloss.Left, jobsPanel, historyPanel)
+	leftPanel := lipgloss.JoinVertical(lipgloss.Left, serversBox, jobsBox, historyBox)
 
-	// Right panel: show job or history detail based on last left panel focus
-	var detailContent string
-	showHistory := m.focusPanel == panelHistory || (m.focusPanel == panelDetail && m.lastLeftPanel == panelHistory)
-	if showHistory && len(m.history) > 0 {
-		var entry *history.Entry
-		if m.historySelected >= 0 && m.historySelected < len(m.history) {
-			entry = &m.history[m.historySelected]
-		}
-		detailContent = renderHistoryDetail(entry, detailWidth-4)
-	} else {
-		var selectedJob *cron.Job
-		if m.selected >= 0 && m.selected < len(m.jobs) {
-			selectedJob = &m.jobs[m.selected]
-		}
-		detailContent = renderDetail(selectedJob, detailWidth-4)
-	}
-
-	// Apply scroll to detail content only when it overflows
-	detailLines := strings.Split(detailContent, "\n")
-	visibleHeight := innerHeight - 2 // account for padding
-	if len(detailLines) > visibleHeight {
-		maxScroll := len(detailLines) - visibleHeight
-		if m.detailScroll > maxScroll {
-			m.detailScroll = maxScroll
-		}
-		if m.detailScroll > 0 {
-			detailContent = strings.Join(detailLines[m.detailScroll:], "\n")
-		}
-	} else {
-		m.detailScroll = 0
-	}
+	// [4] Details panel
+	detailContent := m.buildDetailContent(detailWidth - 4)
+	detailContent = m.applyDetailScroll(detailContent, innerHeight)
 
 	detailActive := m.focusPanel == panelDetail
 	rightPanelStyle := panelStyle
@@ -152,9 +171,41 @@ func (m Model) renderPanels(height int) string {
 		Width(detailWidth).
 		Height(innerHeight).
 		Render(detailContent)
-	rightPanel = injectBorderTitle(rightPanel, "3", "Details", detailActive)
+	rightPanel = injectBorderTitle(rightPanel, "4", "Details", detailActive)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+}
+
+func (m Model) buildDetailContent(width int) string {
+	showHistory := m.focusPanel == panelHistory || (m.focusPanel == panelDetail && m.lastLeftPanel == panelHistory)
+	if showHistory && len(m.history) > 0 {
+		var entry *history.Entry
+		if m.historySelected >= 0 && m.historySelected < len(m.history) {
+			entry = &m.history[m.historySelected]
+		}
+		return renderHistoryDetail(entry, width)
+	}
+	var selectedJob *cron.Job
+	if m.selected >= 0 && m.selected < len(m.jobs) {
+		selectedJob = &m.jobs[m.selected]
+	}
+	return renderDetail(selectedJob, width)
+}
+
+func (m Model) applyDetailScroll(detailContent string, innerHeight int) string {
+	detailLines := strings.Split(detailContent, "\n")
+	visibleHeight := innerHeight - 2
+	if len(detailLines) > visibleHeight {
+		maxScroll := len(detailLines) - visibleHeight
+		scroll := m.detailScroll
+		if scroll > maxScroll {
+			scroll = maxScroll
+		}
+		if scroll > 0 {
+			detailContent = strings.Join(detailLines[scroll:], "\n")
+		}
+	}
+	return detailContent
 }
 
 // injectBorderTitle replaces the top border line to embed "[N] Title" in it.
@@ -176,19 +227,16 @@ func injectBorderTitle(rendered, number, title string, active bool) string {
 		titleTextStyle = lipgloss.NewStyle().Foreground(colorMuted).Bold(true)
 	}
 
-	// Build the title segment: ─[N] Title─
 	titleSegment := borderStyle.Render("─") +
 		numberStyle.Render("["+number+"]") +
 		borderStyle.Render("─") +
 		titleTextStyle.Render(title) +
 		borderStyle.Render("─")
 
-	// Get the visual width of the original top border line
 	topLineWidth := ansi.StringWidth(lines[0])
 	titleWidth := ansi.StringWidth(titleSegment)
 
-	// Build: ╭ + titleSegment + remaining ─s + ╮
-	remaining := topLineWidth - 2 - titleWidth // -2 for ╭ and ╮
+	remaining := topLineWidth - 2 - titleWidth
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -203,7 +251,6 @@ func overlay(bg, fgBox string, width, height int) string {
 	bgLines := strings.Split(bg, "\n")
 	fgLines := strings.Split(fgBox, "\n")
 
-	// Pad bg to height
 	for len(bgLines) < height {
 		bgLines = append(bgLines, strings.Repeat(" ", width))
 	}
@@ -211,7 +258,6 @@ func overlay(bg, fgBox string, width, height int) string {
 	fgHeight := len(fgLines)
 	fgWidth := lipgloss.Width(fgBox)
 
-	// Center position
 	topOffset := (height - fgHeight) / 2
 	leftOffset := (width - fgWidth) / 2
 	if leftOffset < 0 {
@@ -223,9 +269,7 @@ func overlay(bg, fgBox string, width, height int) string {
 		row := topOffset + i
 		if row >= 0 && row < len(bgLines) {
 			bgLine := bgLines[row]
-			// Left portion of bg (ANSI-aware truncate to leftOffset chars)
 			left := ansi.Truncate(bgLine, leftOffset, "")
-			// Right portion of bg (skip leftOffset+fgWidth chars)
 			right := ansi.TruncateLeft(bgLine, rightOffset, "")
 			bgLines[row] = left + fgLine + right
 		}
