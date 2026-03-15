@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 )
@@ -13,6 +14,8 @@ const (
 	modeConfirmDelete
 	modeHelp
 	modeRunOutput
+	modeAddServer
+	modeConfirmDeleteServer
 )
 
 type statusType int
@@ -25,12 +28,16 @@ const (
 )
 
 const (
-	panelJobs    = 0
-	panelHistory = 1
-	panelDetail  = 2
+	panelServers = 0
+	panelJobs    = 1
+	panelHistory = 2
+	panelDetail  = 3
+	panelCount   = 4
 )
 
 type Model struct {
+	manager *backend.Manager
+
 	jobs     []cron.Job
 	selected int
 	mode     mode
@@ -53,11 +60,18 @@ type Model struct {
 	lastLeftPanel   int
 	historyScroll   int
 	detailScroll    int
+
+	// Server panel state
+	serverSelected  int
+	serverSwitching bool
+	serverForm      serverFormModel
 }
 
-func NewModel() Model {
+func NewModel(mgr *backend.Manager) Model {
 	return Model{
-		selected: 0,
-		mode:     modeNormal,
+		manager:    mgr,
+		selected:   0,
+		mode:       modeNormal,
+		focusPanel: panelServers,
 	}
 }

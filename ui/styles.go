@@ -101,6 +101,16 @@ var (
 	disabledDotStyle = lipgloss.NewStyle().
 				Foreground(colorMuted)
 
+	// Connection status dots
+	connectedDotStyle = lipgloss.NewStyle().
+				Foreground(colorGreen)
+
+	connectingDotStyle = lipgloss.NewStyle().
+				Foreground(colorYellow)
+
+	connErrorDotStyle = lipgloss.NewStyle().
+				Foreground(colorRed)
+
 	// Detail panel
 	detailLabelStyle = lipgloss.NewStyle().
 				Foreground(colorCyan).

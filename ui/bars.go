@@ -7,24 +7,29 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func renderTopBar(m mode, width int) string {
+func renderTopBar(m mode, serverName string, width int) string {
 	title := titleStyle.Render("lazycron")
+	serverTag := lipgloss.NewStyle().Foreground(colorCyan).Render("[" + serverName + "]")
+
 	var modeStr string
 	switch m {
 	case modeNormal:
 		modeStr = modeStyle.Render("NORMAL")
 	case modeForm:
 		modeStr = modeStyle.Render("EDIT")
-	case modeConfirmDelete:
+	case modeConfirmDelete, modeConfirmDeleteServer:
 		modeStr = modeStyle.Render("CONFIRM")
 	case modeHelp:
 		modeStr = modeStyle.Render("HELP")
 	case modeRunOutput:
 		modeStr = modeStyle.Render("OUTPUT")
+	case modeAddServer:
+		modeStr = modeStyle.Render("ADD SERVER")
 	}
 
-	spacer := strings.Repeat(" ", max(0, width-lipgloss.Width(title)-lipgloss.Width(modeStr)))
-	bar := title + spacer + modeStr
+	leftPart := title + "  " + serverTag
+	spacer := strings.Repeat(" ", max(0, width-lipgloss.Width(leftPart)-lipgloss.Width(modeStr)))
+	bar := leftPart + spacer + modeStr
 
 	return topBarStyle.Width(width).Render(bar)
 }
@@ -34,24 +39,32 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 	switch m {
 	case modeNormal:
 		help = helpBinding("↑/↓", "move") + helpSep() +
-			helpBinding("←/→", "panel") + helpSep() +
-			helpBinding("n", "new") + helpSep()
-		if focusPanel == panelJobs {
-			help += helpBinding("enter", "edit") + helpSep() +
+			helpBinding("←/→", "panel") + helpSep()
+		if focusPanel == panelServers {
+			help += helpBinding("enter/space", "switch") + helpSep() +
+				helpBinding("a", "add") + helpSep() +
+				helpBinding("c", "connect") + helpSep() +
+				helpBinding("d", "remove") + helpSep() +
+				helpBinding("D", "disconnect") + helpSep()
+		} else if focusPanel == panelJobs {
+			help += helpBinding("n", "new") + helpSep() +
+				helpBinding("enter", "edit") + helpSep() +
 				helpBinding("d", "delete") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
 				helpBinding("U", "update fmt") + helpSep()
+		} else {
+			help += helpBinding("n", "new") + helpSep()
 		}
 		help += helpBinding("R", "refresh") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
-	case modeForm:
+	case modeForm, modeAddServer:
 		help = helpBinding("tab", "next") + helpSep() +
 			helpBinding("shift+tab", "prev") + helpSep() +
 			helpBinding("enter", "save") + helpSep() +
 			helpBinding("esc", "cancel")
-	case modeConfirmDelete:
+	case modeConfirmDelete, modeConfirmDeleteServer:
 		help = helpBinding("y", "confirm") + helpSep() +
 			helpBinding("n", "cancel")
 	case modeHelp:
@@ -60,7 +73,6 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpBinding("esc", "close")
 	}
 
-	// Status message
 	var status string
 	if statusMsg != "" {
 		switch statusKind {
@@ -93,13 +105,21 @@ func helpSep() string {
 
 func renderHelpScreen() string {
 	bindings := []struct{ key, desc string }{
+		{"", "── Server Panel ──"},
+		{"enter", "Switch to selected server"},
+		{"a", "Add new server"},
+		{"c", "Connect to server"},
+		{"D", "Disconnect server"},
+		{"d", "Remove server"},
+		{"", "── Jobs Panel ──"},
 		{"n", "Create new job"},
 		{"enter / e", "Edit selected job"},
 		{"d", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
 		{"U", "Update job to latest format"},
-		{"1/2/3/tab", "Switch panel"},
+		{"", "── General ──"},
+		{"1/2/3/4/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
@@ -110,13 +130,18 @@ func renderHelpScreen() string {
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render("  Keybindings") + "\n\n")
 	for _, bind := range bindings {
-		key := helpKeyStyle.Render(fmt.Sprintf("  %-14s", bind.key))
-		desc := detailValueStyle.Render(bind.desc)
-		b.WriteString(key + " " + desc + "\n")
+		if bind.key == "" {
+			// Section header
+			b.WriteString("  " + formLabelStyle.Render(bind.desc) + "\n")
+		} else {
+			key := helpKeyStyle.Render(fmt.Sprintf("  %-14s", bind.key))
+			desc := detailValueStyle.Render(bind.desc)
+			b.WriteString(key + " " + desc + "\n")
+		}
 	}
 
 	content := b.String()
-	return formStyle.Width(44).Render(content)
+	return formStyle.Width(48).Render(content)
 }
 
 func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight int) string {
@@ -130,7 +155,6 @@ func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight 
 
 	var b strings.Builder
 
-	// Title with status indicator
 	if failed {
 		b.WriteString(errorStyle.Render("  ✗ Run Failed: " + name))
 	} else {
@@ -142,7 +166,6 @@ func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight 
 		b.WriteString(mutedItemStyle.Render("  (no output)"))
 		b.WriteString("\n")
 	} else {
-		// Word-wrap each line of output
 		var allLines []string
 		for _, rawLine := range strings.Split(output, "\n") {
 			if rawLine == "" {
@@ -153,7 +176,6 @@ func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight 
 			}
 		}
 
-		// Calculate visible window
 		visibleLines := maxHeight - 10
 		if visibleLines < 3 {
 			visibleLines = 3
