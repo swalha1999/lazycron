@@ -57,8 +57,7 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 	case modeHelp:
 		help = helpBinding("esc", "back")
 	case modeRunOutput:
-		help = helpBinding("j/k", "scroll") + helpSep() +
-			helpBinding("esc", "close")
+		help = helpBinding("esc", "close")
 	}
 
 	// Status message
@@ -183,7 +182,7 @@ func renderRunOutput(name, output string, failed bool, scroll, width, maxHeight 
 	}
 
 	b.WriteString("\n")
-	b.WriteString(mutedItemStyle.Render("  esc: close • j/k: scroll"))
+	b.WriteString(mutedItemStyle.Render("  esc: close"))
 
 	return formStyle.Width(boxWidth).Render(b.String())
 }
