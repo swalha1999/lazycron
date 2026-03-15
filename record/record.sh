@@ -1,0 +1,53 @@
+#!/bin/sh
+# record — lazycron history recorder
+# Captures stdin and writes a JSON history entry.
+# Usage: <command> | record <job-name> [exit-code]
+
+if [ $# -lt 1 ]; then
+  echo "usage: record <job-name> [exit-code]" >&2
+  exit 1
+fi
+
+JOB="$1"
+EXIT="${2:-0}"
+OUTPUT="$(cat)"
+
+DIR="$HOME/.lazycron/history"
+mkdir -p "$DIR"
+
+STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
+SAFE="$(printf '%s' "$JOB" | tr '/ ' '__')"
+
+if [ "$EXIT" = "0" ]; then
+  SUCCESS="true"
+else
+  SUCCESS="false"
+fi
+
+# JSON-escape: backslashes, quotes, carriage returns, tabs, then newlines
+json_escape() {
+  RS="$(printf '\036')"
+  printf '%s' "$1" | \
+    sed -e 's/\\/\\\\/g' \
+        -e 's/"/\\"/g' \
+        -e "s/$(printf '\r')/\\\\r/g" \
+        -e "s/$(printf '\t')/\\\\t/g" | \
+    tr '\n' "$RS" | \
+    sed "s/$RS/\\\\n/g"
+}
+
+ESC_JOB="$(json_escape "$JOB")"
+ESC_OUTPUT="$(json_escape "$OUTPUT")"
+
+{
+  printf '{\n'
+  printf '  "job_name": "'
+  printf '%s' "$ESC_JOB"
+  printf '",\n'
+  printf '  "timestamp": "%s",\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
+  printf '  "output": "'
+  printf '%s' "$ESC_OUTPUT"
+  printf '",\n'
+  printf '  "success": %s\n' "$SUCCESS"
+  printf '}\n'
+} > "$DIR/${STAMP}_${SAFE}.json"
