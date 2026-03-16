@@ -13,7 +13,6 @@ type ServerConfig struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port,omitempty"`
 	User     string `yaml:"user"`
-	Password string `yaml:"password,omitempty"`
 	KeyPath  string `yaml:"key_path,omitempty"`
 	UseAgent bool   `yaml:"use_agent,omitempty"`
 }
@@ -79,7 +78,7 @@ func Save(cfg *Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // AddServer appends a server to the config and saves.

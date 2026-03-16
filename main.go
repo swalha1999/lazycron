@@ -40,7 +40,7 @@ func main() {
 				User:   srv.User,
 				Status: backend.ConnDisconnected,
 			}
-			client := sshclient.NewClient(srv.Host, port, srv.User, srv.Password, config.ExpandHome(srv.KeyPath), srv.UseAgent)
+			client := sshclient.NewClient(srv.Host, port, srv.User, "", config.ExpandHome(srv.KeyPath), srv.UseAgent)
 			remote := backend.NewRemoteBackend(srv.Name, client)
 			mgr.AddServer(info, remote)
 		}

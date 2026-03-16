@@ -26,6 +26,11 @@ func NewRemoteBackend(name string, client *sshclient.Client) *RemoteBackend {
 
 func (b *RemoteBackend) Name() string { return b.name }
 
+// SetPassword sets the password on the underlying SSH client for runtime auth.
+func (b *RemoteBackend) SetPassword(pw string) {
+	b.client.SetPassword(pw)
+}
+
 func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	output, err := b.client.Run("crontab -l 2>/dev/null || true")
 	if err != nil {

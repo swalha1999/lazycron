@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/swalha1999/lazycron/cron"
@@ -56,6 +57,11 @@ func (m Model) View() string {
 
 	case modeAddServer:
 		fg := renderServerForm(&m.serverForm, m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
+
+	case modePasswordPrompt:
+		info := m.manager.ServerAt(m.passwordServerIdx)
+		fg := renderPasswordPrompt(&m.passwordInput, info.Name, info.Host, info.User, m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	default:
@@ -276,6 +282,43 @@ func overlay(bg, fgBox string, width, height int) string {
 	}
 
 	return strings.Join(bgLines[:height], "\n")
+}
+
+func renderPasswordPrompt(input *textinput.Model, serverName, host, user string, width int) string {
+	formWidth := width - 10
+	if formWidth > 50 {
+		formWidth = 50
+	}
+	if formWidth < 40 {
+		formWidth = 40
+	}
+
+	inputWidth := formWidth - 6
+
+	var b strings.Builder
+	b.WriteString(formTitleStyle.Render("  Password Required"))
+	b.WriteString("\n\n")
+	b.WriteString(mutedItemStyle.Render(fmt.Sprintf("  Server: %s (%s)", serverName, host)))
+	b.WriteString("\n\n")
+
+	label := formLabelStyle.Render("  Password: ")
+	input.Width = inputWidth
+	rendered := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		Render(input.View())
+	b.WriteString(label + rendered)
+	b.WriteString("\n\n")
+
+	b.WriteString(mutedItemStyle.Render("  For better security, use SSH keys instead."))
+	b.WriteString("\n")
+	b.WriteString(mutedItemStyle.Render(fmt.Sprintf("  Tip: ssh-copy-id %s@%s", user, host)))
+	b.WriteString("\n\n")
+	b.WriteString("  " +
+		helpBinding("enter", "connect") + helpSep() +
+		helpBinding("esc", "cancel"))
+
+	return formStyle.Width(formWidth).Render(b.String())
 }
 
 func max(a, b int) int {

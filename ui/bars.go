@@ -25,6 +25,8 @@ func renderTopBar(m mode, serverName string, width int) string {
 		modeStr = modeStyle.Render("OUTPUT")
 	case modeAddServer:
 		modeStr = modeStyle.Render("ADD SERVER")
+	case modePasswordPrompt:
+		modeStr = modeStyle.Render("PASSWORD")
 	}
 
 	leftPart := title + "  " + serverTag
@@ -63,6 +65,9 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpBinding("tab", "next") + helpSep() +
 			helpBinding("shift+tab", "prev") + helpSep() +
 			helpBinding("enter", "save") + helpSep() +
+			helpBinding("esc", "cancel")
+	case modePasswordPrompt:
+		help = helpBinding("enter", "connect") + helpSep() +
 			helpBinding("esc", "cancel")
 	case modeConfirmDelete, modeConfirmDeleteServer:
 		help = helpBinding("y", "confirm") + helpSep() +

@@ -12,12 +12,11 @@ import (
 )
 
 const (
-	srvFieldName     = 0
-	srvFieldHost     = 1
-	srvFieldPort     = 2
-	srvFieldUser     = 3
-	srvFieldPassword = 4
-	srvFieldCount    = 5
+	srvFieldName  = 0
+	srvFieldHost  = 1
+	srvFieldPort  = 2
+	srvFieldUser  = 3
+	srvFieldCount = 4
 )
 
 var srvFieldLabels = [srvFieldCount]string{
@@ -25,7 +24,6 @@ var srvFieldLabels = [srvFieldCount]string{
 	"Host",
 	"Port",
 	"User",
-	"Password",
 }
 
 var srvFieldHints = [srvFieldCount]string{
@@ -33,7 +31,6 @@ var srvFieldHints = [srvFieldCount]string{
 	"Hostname or IP address",
 	"SSH port (default: 22)",
 	"SSH username",
-	"Optional (keys auto-detected)",
 }
 
 type serverFormModel struct {
@@ -51,10 +48,6 @@ func newServerForm() serverFormModel {
 		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
 		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
 		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
-		if i == srvFieldPassword {
-			ti.EchoMode = textinput.EchoPassword
-			ti.EchoCharacter = '*'
-		}
 		f.inputs[i] = ti
 	}
 	f.inputs[srvFieldPort].SetValue("22")
@@ -88,7 +81,6 @@ func (f *serverFormModel) buildServerConfig() (config.ServerConfig, error) {
 	host := strings.TrimSpace(f.inputs[srvFieldHost].Value())
 	portStr := strings.TrimSpace(f.inputs[srvFieldPort].Value())
 	user := strings.TrimSpace(f.inputs[srvFieldUser].Value())
-	password := f.inputs[srvFieldPassword].Value()
 
 	if name == "" {
 		return config.ServerConfig{}, fmt.Errorf("name is required")
@@ -110,11 +102,10 @@ func (f *serverFormModel) buildServerConfig() (config.ServerConfig, error) {
 	}
 
 	return config.ServerConfig{
-		Name:     name,
-		Host:     host,
-		Port:     port,
-		User:     user,
-		Password: password,
+		Name: name,
+		Host: host,
+		Port: port,
+		User: user,
 	}, nil
 }
 
@@ -147,7 +138,8 @@ func renderServerForm(f *serverFormModel, width int) string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(mutedItemStyle.Render("  SSH keys are auto-detected from ~/.ssh/") + "\n\n")
+	b.WriteString(mutedItemStyle.Render("  SSH keys are auto-detected from ~/.ssh/") + "\n")
+	b.WriteString(mutedItemStyle.Render("  Password will be prompted at connect time if needed.") + "\n\n")
 	b.WriteString("  " +
 		helpBinding("tab", "next field") + helpSep() +
 		helpBinding("shift+tab", "prev") + helpSep() +

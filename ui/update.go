@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -98,6 +99,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case serverConnectedMsg:
 		if msg.err != nil {
 			m.serverSwitching = false
+			// If auth failed, prompt for password
+			var authErr *sshclient.AuthError
+			if errors.As(msg.err, &authErr) {
+				m.mode = modePasswordPrompt
+				m.passwordInput = newPasswordInput()
+				m.passwordServerIdx = msg.index
+				m.statusMsg = "Authentication failed — enter password or configure SSH keys"
+				m.statusKind = statusInfo
+				return m, m.passwordInput.Focus()
+			}
 			m.statusMsg = fmt.Sprintf("Connection failed: %s", msg.err)
 			m.statusKind = statusError
 			m.statusID++
@@ -150,6 +161,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modeAddServer:
 		cmd := m.serverForm.updateInput(msg)
 		return m, cmd
+	case modePasswordPrompt:
+		var cmd tea.Cmd
+		m.passwordInput, cmd = m.passwordInput.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -172,6 +187,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleRunOutputKey(msg)
 	case modeAddServer:
 		return m.handleAddServerKey(msg)
+	case modePasswordPrompt:
+		return m.handlePasswordPromptKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -466,7 +483,7 @@ func (m Model) handleAddServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			User:   srv.User,
 			Status: backend.ConnDisconnected,
 		}
-		client := sshclient.NewClient(srv.Host, srv.Port, srv.User, srv.Password, config.ExpandHome(srv.KeyPath), srv.UseAgent)
+		client := sshclient.NewClient(srv.Host, srv.Port, srv.User, "", config.ExpandHome(srv.KeyPath), srv.UseAgent)
 		remote := backend.NewRemoteBackend(srv.Name, client)
 		m.manager.AddServer(info, remote)
 
@@ -485,6 +502,36 @@ func (m Model) handleAddServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	default:
 		cmd := m.serverForm.updateInput(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) handlePasswordPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+
+	case "enter":
+		password := m.passwordInput.Value()
+		if password == "" {
+			m.statusMsg = "Password cannot be empty"
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 3*time.Second)
+		}
+		m.mode = modeNormal
+		m.serverSwitching = true
+		m.statusMsg = "Connecting..."
+		m.statusKind = statusInfo
+		return m, connectServerWithPassword(m.manager, m.passwordServerIdx, password)
+
+	default:
+		var cmd tea.Cmd
+		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		return m, cmd
 	}
 }

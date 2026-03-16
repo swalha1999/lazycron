@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
@@ -16,6 +18,7 @@ const (
 	modeRunOutput
 	modeAddServer
 	modeConfirmDeleteServer
+	modePasswordPrompt
 )
 
 type statusType int
@@ -65,6 +68,23 @@ type Model struct {
 	serverSelected  int
 	serverSwitching bool
 	serverForm      serverFormModel
+
+	// Password prompt state
+	passwordInput      textinput.Model
+	passwordServerIdx  int
+}
+
+func newPasswordInput() textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = "Enter password"
+	ti.CharLimit = 256
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '*'
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
+	return ti
 }
 
 func NewModel(mgr *backend.Manager) Model {

@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,6 +13,15 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// ErrHostKeyVerification is returned when known_hosts is missing or unreadable.
+var ErrHostKeyVerification = errors.New("host key verification failed")
+
+// AuthError is returned when SSH authentication fails, signaling that a
+// password may be needed.
+type AuthError struct {
+	Err error
+}
 
 // Client wraps an SSH connection with convenience methods.
 type Client struct {
@@ -24,6 +34,14 @@ type Client struct {
 
 	mu   sync.Mutex
 	conn *ssh.Client
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("authentication failed: %v", e.Err)
+}
+
+func (e *AuthError) Unwrap() error {
+	return e.Err
 }
 
 // NewClient creates a new SSH client (does not connect immediately).
@@ -39,6 +57,13 @@ func NewClient(host string, port int, user, password, keyPath string, useAgent b
 		keyPath:  keyPath,
 		useAgent: useAgent,
 	}
+}
+
+// SetPassword sets the password for authentication at runtime (not persisted).
+func (c *Client) SetPassword(pw string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.password = pw
 }
 
 // Connect establishes the SSH connection.
@@ -102,14 +127,16 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("no SSH auth methods available")
 	}
 
-	hostKeyCallback := ssh.InsecureIgnoreHostKey()
-	// Try known_hosts if available
 	home, _ := os.UserHomeDir()
 	knownHostsPath := home + "/.ssh/known_hosts"
-	if _, err := os.Stat(knownHostsPath); err == nil {
-		if cb, err := knownhosts.New(knownHostsPath); err == nil {
-			hostKeyCallback = cb
-		}
+	if _, err := os.Stat(knownHostsPath); err != nil {
+		return fmt.Errorf("%w: %s not found — for your security, run \"ssh %s@%s\" first to verify and save the server's host key",
+			ErrHostKeyVerification, knownHostsPath, c.user, c.host)
+	}
+	hostKeyCallback, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		return fmt.Errorf("%w: failed to parse %s — %v",
+			ErrHostKeyVerification, knownHostsPath, err)
 	}
 
 	config := &ssh.ClientConfig{
@@ -121,6 +148,13 @@ func (c *Client) Connect() error {
 	addr := fmt.Sprintf("%s:%d", c.host, c.port)
 	conn, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			return &AuthError{Err: err}
+		}
+		if strings.Contains(err.Error(), "key is unknown") {
+			return fmt.Errorf("%w: server %s not in known_hosts — run \"ssh %s@%s\" first to verify and save its host key",
+				ErrHostKeyVerification, c.host, c.user, c.host)
+		}
 		return fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
 

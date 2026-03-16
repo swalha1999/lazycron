@@ -105,11 +105,20 @@ func saveHistory(b backend.Backend, jobName, output string, success bool) tea.Cm
 }
 
 func connectServer(mgr *backend.Manager, index int) tea.Cmd {
+	return connectServerWithPassword(mgr, index, "")
+}
+
+func connectServerWithPassword(mgr *backend.Manager, index int, password string) tea.Cmd {
 	return func() tea.Msg {
 		mgr.SetServerStatus(index, backend.ConnConnecting, "")
 		b := mgr.BackendAt(index)
 		if b == nil {
 			return serverConnectedMsg{index: index, err: nil}
+		}
+		if password != "" {
+			if rb, ok := b.(*backend.RemoteBackend); ok {
+				rb.SetPassword(password)
+			}
 		}
 		err := b.EnsureRecordScript()
 		if err != nil {
