@@ -86,19 +86,21 @@ func Parse(data []byte) (*Template, error) {
 	return &t, nil
 }
 
-// Apply substitutes variable values into the template's command and returns
-// a resolved command string. Values is a map of variable name to value.
+// Apply substitutes variable values into the template's command and schedule,
+// returning the resolved command and schedule strings.
 // Missing values fall back to the variable's default.
-func (t *Template) Apply(values map[string]string) string {
-	cmd := t.Command
+func (t *Template) Apply(values map[string]string) (command, schedule string) {
+	command = t.Command
+	schedule = t.Schedule
 	for _, v := range t.Variables {
 		val, ok := values[v.Name]
 		if !ok || val == "" {
 			val = v.Default
 		}
-		cmd = strings.ReplaceAll(cmd, "$"+v.Name, val)
+		command = strings.ReplaceAll(command, "$"+v.Name, val)
+		schedule = strings.ReplaceAll(schedule, "$"+v.Name, val)
 	}
-	return cmd
+	return command, schedule
 }
 
 // ByCategory groups a slice of templates by their category.

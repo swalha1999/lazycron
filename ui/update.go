@@ -863,8 +863,7 @@ func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			// Build the job from the template
 			values := tp.buildValues()
-			resolvedCmd := tp.selectedTmpl.Apply(values)
-			cronExpr := tp.selectedTmpl.Schedule
+			resolvedCmd, cronExpr := tp.selectedTmpl.Apply(values)
 
 			// Extract work dir from "cd <path> && <command>" pattern
 			workDir := ""

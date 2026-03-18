@@ -125,8 +125,8 @@ func runTemplatesApply(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	resolvedCmd := tmpl.Apply(values)
-	cronExpr := cron.HumanToCron(tmpl.Schedule)
+	resolvedCmd, resolvedSchedule := tmpl.Apply(values)
+	cronExpr := cron.HumanToCron(resolvedSchedule)
 
 	// Use template name as job name, prompt for override
 	fmt.Printf("Job name [%s]: ", tmpl.Name)

@@ -56,26 +56,35 @@ func TestParseInvalid(t *testing.T) {
 
 func TestApply(t *testing.T) {
 	tmpl := &Template{
-		Command: "pg_dump $DB_NAME > $DIR/backup.sql",
+		Command:  "pg_dump $DB_NAME > $DIR/backup.sql",
+		Schedule: "0 3 */$INTERVAL * *",
 		Variables: []Variable{
 			{Name: "DB_NAME", Default: "mydb"},
 			{Name: "DIR", Default: "/backups"},
+			{Name: "INTERVAL", Default: "1"},
 		},
 	}
 
 	// With explicit values
-	result := tmpl.Apply(map[string]string{
-		"DB_NAME": "production",
-		"DIR":     "/mnt/backups",
+	cmd, sched := tmpl.Apply(map[string]string{
+		"DB_NAME":  "production",
+		"DIR":      "/mnt/backups",
+		"INTERVAL": "2",
 	})
-	if result != "pg_dump production > /mnt/backups/backup.sql" {
-		t.Errorf("unexpected result: %q", result)
+	if cmd != "pg_dump production > /mnt/backups/backup.sql" {
+		t.Errorf("unexpected command: %q", cmd)
+	}
+	if sched != "0 3 */2 * *" {
+		t.Errorf("unexpected schedule: %q", sched)
 	}
 
 	// Falls back to defaults
-	result = tmpl.Apply(map[string]string{})
-	if result != "pg_dump mydb > /backups/backup.sql" {
-		t.Errorf("unexpected result with defaults: %q", result)
+	cmd, sched = tmpl.Apply(map[string]string{})
+	if cmd != "pg_dump mydb > /backups/backup.sql" {
+		t.Errorf("unexpected command with defaults: %q", cmd)
+	}
+	if sched != "0 3 */1 * *" {
+		t.Errorf("unexpected schedule with defaults: %q", sched)
 	}
 }
 

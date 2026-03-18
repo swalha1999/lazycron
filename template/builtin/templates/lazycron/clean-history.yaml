@@ -1,9 +1,12 @@
 name: Clean History
 category: lazycron
 description: Delete lazycron history entries older than N days
-schedule: "0 3 * * 0"
+schedule: "0 3 */$EVERY_DAYS * *"
 command: "find $HOME/.lazycron/history -name '*.json' -mtime +$KEEP_DAYS -delete && echo \"Cleaned history older than $KEEP_DAYS days\""
 variables:
+  - name: EVERY_DAYS
+    prompt: "Run every N days"
+    default: "7"
   - name: KEEP_DAYS
     prompt: "Keep entries newer than (days)"
     default: "30"
