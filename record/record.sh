@@ -44,7 +44,10 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
   printf '  "job_name": "'
   printf '%s' "$ESC_JOB"
   printf '",\n'
-  printf '  "timestamp": "%s",\n' "$(date +%Y-%m-%dT%H:%M:%S%z)"
+  # Insert colon in timezone offset for RFC3339 compliance (+0200 -> +02:00)
+  __lc_tz="$(date +%z)"
+  __lc_ts="$(date +%Y-%m-%dT%H:%M:%S)$(echo "$__lc_tz" | sed 's/\(..\)$/:\1/')"
+  printf '  "timestamp": "%s",\n' "$__lc_ts"
   printf '  "output": "'
   printf '%s' "$ESC_OUTPUT"
   printf '",\n'
