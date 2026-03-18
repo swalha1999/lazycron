@@ -209,17 +209,37 @@ func (m Model) buildDetailContent(width int) string {
 func (m Model) applyDetailScroll(detailContent string, innerHeight int) string {
 	detailLines := strings.Split(detailContent, "\n")
 	visibleHeight := innerHeight - 2
-	if len(detailLines) > visibleHeight {
-		maxScroll := len(detailLines) - visibleHeight
-		scroll := m.detailScroll
-		if scroll > maxScroll {
-			scroll = maxScroll
-		}
-		if scroll > 0 {
-			detailContent = strings.Join(detailLines[scroll:], "\n")
-		}
+	totalLines := len(detailLines)
+
+	if totalLines <= visibleHeight {
+		return detailContent
 	}
-	return detailContent
+
+	maxScroll := totalLines - visibleHeight
+	scroll := m.detailScroll
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+
+	endIdx := scroll + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+
+	visible := detailLines[scroll:endIdx]
+
+	// Add scroll indicators
+	if scroll > 0 {
+		visible[0] = mutedItemStyle.Render(fmt.Sprintf("  ↑ scroll up (%d more)", scroll))
+	}
+	if endIdx < totalLines {
+		visible[len(visible)-1] = mutedItemStyle.Render(fmt.Sprintf("  ↓ scroll down (%d more)", totalLines-endIdx))
+	}
+
+	return strings.Join(visible, "\n")
 }
 
 // injectBorderTitle replaces the top border line to embed "[N] Title" in it.
