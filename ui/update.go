@@ -351,11 +351,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "n":
-		if m.focusPanel != panelServers {
-			m.mode = modeNewJobChoice
-			m.statusMsg = ""
-			return m, nil
-		}
+		m.mode = modeNewJobChoice
+		m.statusMsg = ""
+		return m, nil
 
 	case "d":
 		if m.focusPanel == panelServers {
