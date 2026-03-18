@@ -1,0 +1,12 @@
+name: Claude Code Review
+category: ai
+description: Run Claude Code to review recent changes in a repository
+schedule: "0 9 * * 1-5"
+command: "cd $REPO_PATH && claude -p 'Review the recent changes: run git diff HEAD~$COMMIT_COUNT and provide a code review with suggestions'"
+variables:
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
+  - name: COMMIT_COUNT
+    prompt: "Number of recent commits to review"
+    default: "5"

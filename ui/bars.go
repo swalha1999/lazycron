@@ -27,6 +27,10 @@ func renderTopBar(m mode, serverName string, width int) string {
 		modeStr = modeStyle.Render("ADD SERVER")
 	case modePasswordPrompt:
 		modeStr = modeStyle.Render("PASSWORD")
+	case modeNewJobChoice:
+		modeStr = modeStyle.Render("NEW JOB")
+	case modeTemplatePicker:
+		modeStr = modeStyle.Render("TEMPLATE")
 	}
 
 	leftPart := title + "  " + serverTag
@@ -76,6 +80,14 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpBinding("esc", "back")
 	case modeRunOutput:
 		help = helpBinding("esc", "close")
+	case modeNewJobChoice:
+		help = helpBinding("b", "blank") + helpSep() +
+			helpBinding("t", "template") + helpSep() +
+			helpBinding("esc", "cancel")
+	case modeTemplatePicker:
+		help = helpBinding("↑/↓", "select") + helpSep() +
+			helpBinding("enter", "choose") + helpSep() +
+			helpBinding("esc", "back")
 	}
 
 	var status string

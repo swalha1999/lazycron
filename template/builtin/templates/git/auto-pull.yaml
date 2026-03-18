@@ -1,0 +1,12 @@
+name: Auto Pull Repos
+category: git
+description: Pull latest changes from remote for a repository
+schedule: "*/30 * * * *"
+command: "cd $REPO_PATH && git fetch origin && git pull --ff-only origin $BRANCH"
+variables:
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
+  - name: BRANCH
+    prompt: "Branch name"
+    default: main

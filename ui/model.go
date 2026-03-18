@@ -19,6 +19,8 @@ const (
 	modeAddServer
 	modeConfirmDeleteServer
 	modePasswordPrompt
+	modeNewJobChoice
+	modeTemplatePicker
 )
 
 type statusType int
@@ -72,6 +74,9 @@ type Model struct {
 	// Password prompt state
 	passwordInput      textinput.Model
 	passwordServerIdx  int
+
+	// Template picker state
+	templatePicker templatePickerModel
 }
 
 func newPasswordInput() textinput.Model {

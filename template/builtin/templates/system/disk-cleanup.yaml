@@ -1,0 +1,12 @@
+name: Disk Cleanup
+category: system
+description: Remove temporary files and old caches to free disk space
+schedule: "0 4 * * 0"
+command: "find $TEMP_DIR -type f -atime +$DAYS -delete 2>/dev/null; echo \"Cleaned files older than $DAYS days from $TEMP_DIR\""
+variables:
+  - name: TEMP_DIR
+    prompt: "Directory to clean"
+    default: /tmp
+  - name: DAYS
+    prompt: "Delete files older than N days"
+    default: "7"

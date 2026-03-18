@@ -1,0 +1,12 @@
+name: HTTP Health Check
+category: monitoring
+description: Ping an HTTP endpoint and log failures
+schedule: "*/5 * * * *"
+command: "curl -sf --max-time $TIMEOUT $URL > /dev/null || echo \"ALERT: $URL is down at $(date)\""
+variables:
+  - name: URL
+    prompt: "Health check URL"
+    default: http://localhost:8080/health
+  - name: TIMEOUT
+    prompt: "Timeout in seconds"
+    default: "10"

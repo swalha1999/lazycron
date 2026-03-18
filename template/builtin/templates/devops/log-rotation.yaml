@@ -1,0 +1,15 @@
+name: Log Rotation
+category: devops
+description: Compress and rotate application logs older than N days
+schedule: "0 2 * * *"
+command: "find $LOG_DIR -name '*.log' -mtime +$KEEP_DAYS -exec gzip {} \\; && find $LOG_DIR -name '*.gz' -mtime +$DELETE_DAYS -delete"
+variables:
+  - name: LOG_DIR
+    prompt: "Log directory"
+    default: /var/log/app
+  - name: KEEP_DAYS
+    prompt: "Days before compressing"
+    default: "7"
+  - name: DELETE_DAYS
+    prompt: "Days before deleting compressed"
+    default: "30"

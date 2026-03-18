@@ -64,6 +64,14 @@ func (m Model) View() string {
 		fg := renderPasswordPrompt(&m.passwordInput, info.Name, info.Host, info.User, m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
+	case modeNewJobChoice:
+		fg := renderNewJobChoice(m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
+
+	case modeTemplatePicker:
+		fg := renderTemplatePicker(&m.templatePicker, m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
+
 	default:
 		content = panels
 	}

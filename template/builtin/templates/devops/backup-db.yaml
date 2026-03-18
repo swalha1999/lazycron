@@ -1,0 +1,18 @@
+name: Backup Database
+category: devops
+description: Dump a PostgreSQL database to a timestamped backup file
+schedule: "0 3 * * *"
+command: "pg_dump -h $DB_HOST -U $DB_USER $DB_NAME | gzip > $BACKUP_DIR/db_$(date +%F_%H%M).sql.gz"
+variables:
+  - name: DB_HOST
+    prompt: "Database host"
+    default: localhost
+  - name: DB_USER
+    prompt: "Database user"
+    default: postgres
+  - name: DB_NAME
+    prompt: "Database name"
+    default: mydb
+  - name: BACKUP_DIR
+    prompt: "Backup directory"
+    default: /var/backups/db

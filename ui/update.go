@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -165,6 +166,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		return m, cmd
+	case modeTemplatePicker:
+		if m.templatePicker.phase == phaseVariables && len(m.templatePicker.variableInputs) > 0 {
+			idx := m.templatePicker.activeVariable
+			var cmd tea.Cmd
+			m.templatePicker.variableInputs[idx], cmd = m.templatePicker.variableInputs[idx].Update(msg)
+			return m, cmd
+		}
 	}
 
 	return m, nil
@@ -189,6 +197,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAddServerKey(msg)
 	case modePasswordPrompt:
 		return m.handlePasswordPromptKey(msg)
+	case modeNewJobChoice:
+		return m.handleNewJobChoiceKey(msg)
+	case modeTemplatePicker:
+		return m.handleTemplatePickerKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}
@@ -340,10 +352,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		if m.focusPanel != panelServers {
-			m.mode = modeForm
-			m.form = newForm()
+			m.mode = modeNewJobChoice
 			m.statusMsg = ""
-			return m, m.form.focusActive()
+			return m, nil
 		}
 
 	case "d":
@@ -749,5 +760,166 @@ func (m Model) handleRunOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.runOutputScroll--
 		}
 	}
+	return m, nil
+}
+
+func (m Model) handleNewJobChoiceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "b", "1":
+		m.mode = modeForm
+		m.form = newForm()
+		m.statusMsg = ""
+		return m, m.form.focusActive()
+	case "t", "2":
+		m.mode = modeTemplatePicker
+		m.templatePicker = newTemplatePicker()
+		m.statusMsg = ""
+		return m, nil
+	case "esc", "q":
+		m.mode = modeNormal
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tp := &m.templatePicker
+	key := msg.String()
+
+	switch tp.phase {
+	case phaseChooseCategory:
+		switch key {
+		case "up", "k":
+			if tp.categorySelected > 0 {
+				tp.categorySelected--
+			}
+		case "down", "j":
+			if tp.categorySelected < len(tp.categories)-1 {
+				tp.categorySelected++
+			}
+		case "enter":
+			tp.selectCategory()
+		case "esc":
+			m.mode = modeNewJobChoice
+		}
+		return m, nil
+
+	case phaseChooseTemplate:
+		switch key {
+		case "up", "k":
+			if tp.templateSelected > 0 {
+				tp.templateSelected--
+			}
+		case "down", "j":
+			if tp.templateSelected < len(tp.templateList)-1 {
+				tp.templateSelected++
+			}
+		case "enter":
+			tp.selectTemplate()
+			// Focus the first variable input if we're in variable phase
+			if tp.phase == phaseVariables && len(tp.variableInputs) > 0 {
+				return m, tp.variableInputs[0].Focus()
+			}
+		case "esc":
+			tp.back()
+		}
+		return m, nil
+
+	case phaseVariables:
+		// Handle completer interactions when active on a path variable
+		if tp.activeVarIsPath() && tp.completer.active {
+			switch key {
+			case "down":
+				tp.completer.selectNext()
+				return m, nil
+			case "up":
+				tp.completer.selectPrev()
+				return m, nil
+			case "enter", "right":
+				if tp.completer.selected >= 0 {
+					path := tp.completer.drillIn()
+					if path != "" {
+						tp.variableInputs[tp.activeVariable].SetValue(path)
+						tp.variableInputs[tp.activeVariable].CursorEnd()
+					}
+					return m, nil
+				}
+				if key == "right" {
+					return m, nil
+				}
+				// enter with no selection falls through to create job
+			case "left":
+				path := tp.completer.drillOut()
+				tp.variableInputs[tp.activeVariable].SetValue(path)
+				tp.variableInputs[tp.activeVariable].CursorEnd()
+				return m, nil
+			case "esc":
+				tp.completer.reset()
+				return m, nil
+			}
+		}
+
+		switch key {
+		case "enter":
+			// Build the job from the template
+			values := tp.buildValues()
+			resolvedCmd := tp.selectedTmpl.Apply(values)
+			cronExpr := tp.selectedTmpl.Schedule
+
+			// Extract work dir from "cd <path> && <command>" pattern
+			workDir := ""
+			if strings.HasPrefix(resolvedCmd, "cd ") {
+				if idx := strings.Index(resolvedCmd, " && "); idx != -1 {
+					workDir = strings.TrimPrefix(resolvedCmd[:idx], "cd ")
+					resolvedCmd = strings.TrimSpace(resolvedCmd[idx+4:])
+				}
+			}
+
+			// Pre-fill the job form with template data
+			m.mode = modeForm
+			m.form = newForm()
+			m.form.inputs[fieldName].SetValue(tp.selectedTmpl.Name)
+			m.form.inputs[fieldCommand].SetValue(resolvedCmd)
+			m.form.inputs[fieldSchedule].SetValue(cronExpr)
+			m.form.inputs[fieldWorkDir].SetValue(workDir)
+			m.form.picker.ParseExpression(cronExpr)
+			return m, m.form.focusActive()
+
+		case "tab":
+			if len(tp.variableInputs) > 0 {
+				tp.variableInputs[tp.activeVariable].Blur()
+				tp.completer.reset()
+				tp.activeVariable = (tp.activeVariable + 1) % len(tp.variableInputs)
+				tp.activateCompleterForCurrentVar()
+				return m, tp.variableInputs[tp.activeVariable].Focus()
+			}
+		case "shift+tab":
+			if len(tp.variableInputs) > 0 {
+				tp.variableInputs[tp.activeVariable].Blur()
+				tp.completer.reset()
+				tp.activeVariable = (tp.activeVariable - 1 + len(tp.variableInputs)) % len(tp.variableInputs)
+				tp.activateCompleterForCurrentVar()
+				return m, tp.variableInputs[tp.activeVariable].Focus()
+			}
+		case "esc":
+			tp.completer.reset()
+			if !tp.back() {
+				m.mode = modeNewJobChoice
+			}
+		default:
+			// Forward to active variable input
+			if len(tp.variableInputs) > 0 {
+				var cmd tea.Cmd
+				tp.variableInputs[tp.activeVariable], cmd = tp.variableInputs[tp.activeVariable].Update(msg)
+				// Update completer as user types in a path variable
+				if tp.activeVarIsPath() {
+					tp.completer.update(tp.variableInputs[tp.activeVariable].Value())
+				}
+				return m, cmd
+			}
+		}
+		return m, nil
+	}
+
 	return m, nil
 }
