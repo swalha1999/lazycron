@@ -59,6 +59,9 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
 				helpBinding("U", "update fmt") + helpSep()
+		} else if focusPanel == panelHistory {
+			help += helpBinding("n", "new") + helpSep() +
+				helpBinding("D", "delete") + helpSep()
 		} else {
 			help += helpBinding("n", "new") + helpSep()
 		}
