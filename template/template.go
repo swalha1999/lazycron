@@ -16,6 +16,7 @@ const (
 	CategoryGit        Category = "git"
 	CategoryMonitoring Category = "monitoring"
 	CategorySystem     Category = "system"
+	CategoryLazycron   Category = "lazycron"
 )
 
 // AllCategories returns all available template categories in display order.
@@ -26,6 +27,7 @@ func AllCategories() []Category {
 		CategoryGit,
 		CategoryMonitoring,
 		CategorySystem,
+		CategoryLazycron,
 	}
 }
 
@@ -42,6 +44,8 @@ func CategoryLabel(c Category) string {
 		return "Monitoring"
 	case CategorySystem:
 		return "System"
+	case CategoryLazycron:
+		return "Lazycron"
 	default:
 		return string(c)
 	}
