@@ -21,6 +21,7 @@ const (
 	modePasswordPrompt
 	modeNewJobChoice
 	modeTemplatePicker
+	modeConfirmDeleteHistory
 )
 
 type statusType int

@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -189,6 +190,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case modeConfirmDeleteServer:
 		return m.handleConfirmDeleteServerKey(msg)
+	case modeConfirmDeleteHistory:
+		return m.handleConfirmDeleteHistoryKey(msg)
 	case modeHelp:
 		return m.handleHelpKey(msg)
 	case modeRunOutput:
@@ -359,6 +362,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = ""
 		} else if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeConfirmDelete
+			m.statusMsg = ""
+		} else if m.focusPanel == panelHistory && len(m.history) > 0 {
+			m.mode = modeConfirmDeleteHistory
 			m.statusMsg = ""
 		}
 
@@ -737,6 +743,34 @@ func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "esc", "?":
 		m.mode = modeNormal
+	}
+	return m, nil
+}
+
+func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if m.historySelected >= 0 && m.historySelected < len(m.history) {
+			entry := m.history[m.historySelected]
+			if entry.FilePath != "" {
+				os.Remove(entry.FilePath)
+			}
+			m.history = append(m.history[:m.historySelected], m.history[m.historySelected+1:]...)
+			if m.historySelected >= len(m.history) && m.historySelected > 0 {
+				m.historySelected--
+			}
+			m.statusMsg = fmt.Sprintf("Deleted history entry '%s'", entry.JobName)
+			m.statusKind = statusSuccess
+			m.mode = modeNormal
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 4*time.Second)
+		}
+	case "n", "N", "esc":
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
 	}
 	return m, nil
 }

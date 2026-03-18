@@ -47,6 +47,14 @@ func (m Model) View() string {
 		fg := renderConfirmDialog(fmt.Sprintf("Remove server '%s'?", serverName))
 		content = overlay(panels, fg, m.width, contentHeight)
 
+	case modeConfirmDeleteHistory:
+		entryName := ""
+		if m.historySelected >= 0 && m.historySelected < len(m.history) {
+			entryName = m.history[m.historySelected].JobName
+		}
+		fg := renderConfirmDialog(fmt.Sprintf("Delete history entry '%s'?", entryName))
+		content = overlay(panels, fg, m.width, contentHeight)
+
 	case modeHelp:
 		fg := renderHelpScreen()
 		content = overlay(panels, fg, m.width, contentHeight)

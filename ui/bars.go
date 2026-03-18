@@ -17,7 +17,7 @@ func renderTopBar(m mode, serverName string, width int) string {
 		modeStr = modeStyle.Render("NORMAL")
 	case modeForm:
 		modeStr = modeStyle.Render("EDIT")
-	case modeConfirmDelete, modeConfirmDeleteServer:
+	case modeConfirmDelete, modeConfirmDeleteServer, modeConfirmDeleteHistory:
 		modeStr = modeStyle.Render("CONFIRM")
 	case modeHelp:
 		modeStr = modeStyle.Render("HELP")
@@ -73,7 +73,7 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 	case modePasswordPrompt:
 		help = helpBinding("enter", "connect") + helpSep() +
 			helpBinding("esc", "cancel")
-	case modeConfirmDelete, modeConfirmDeleteServer:
+	case modeConfirmDelete, modeConfirmDeleteServer, modeConfirmDeleteHistory:
 		help = helpBinding("y", "confirm") + helpSep() +
 			helpBinding("n", "cancel")
 	case modeHelp:
