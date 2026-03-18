@@ -321,7 +321,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "D":
+	case "d":
 		if m.focusPanel == panelServers {
 			idx := m.serverSelected
 			if idx == 0 {
@@ -350,12 +350,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "n":
-		m.mode = modeNewJobChoice
-		m.statusMsg = ""
-		return m, nil
-
-	case "d":
+	case "D":
 		if m.focusPanel == panelServers {
 			if m.serverSelected == 0 {
 				return m, nil // Can't remove local

@@ -50,12 +50,12 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 			help += helpBinding("enter/space", "switch") + helpSep() +
 				helpBinding("a", "add") + helpSep() +
 				helpBinding("c", "connect") + helpSep() +
-				helpBinding("d", "remove") + helpSep() +
-				helpBinding("D", "disconnect") + helpSep()
+				helpBinding("d", "disconnect") + helpSep() +
+				helpBinding("D", "remove") + helpSep()
 		} else if focusPanel == panelJobs {
 			help += helpBinding("n", "new") + helpSep() +
 				helpBinding("enter", "edit") + helpSep() +
-				helpBinding("d", "delete") + helpSep() +
+				helpBinding("D", "delete") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
 				helpBinding("U", "update fmt") + helpSep()
@@ -126,12 +126,12 @@ func renderHelpScreen() string {
 		{"enter", "Switch to selected server"},
 		{"a", "Add new server"},
 		{"c", "Connect to server"},
-		{"D", "Disconnect server"},
-		{"d", "Remove server"},
+		{"d", "Disconnect server"},
+		{"D", "Remove server"},
 		{"", "── Jobs Panel ──"},
 		{"n", "Create new job"},
 		{"enter / e", "Edit selected job"},
-		{"d", "Delete selected job"},
+		{"D", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
 		{"U", "Update job to latest format"},
