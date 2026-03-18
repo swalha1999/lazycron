@@ -24,6 +24,7 @@ brews:
   - repository:
       owner: swalha1999
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     name: lazycron
     homepage: "https://github.com/swalha1999/lazycron"
     description: "A lazy TUI for managing cron jobs"
