@@ -2,13 +2,28 @@
 
 A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax. Comes with built-in job templates and a full CLI.
 
-## Install
+## Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/swalha1999/lazycron/main/install.sh | sh
+lazycron
+```
+
+## Other Install Methods
+
+**Homebrew:**
+
+```bash
+brew install swalha1999/tap/lazycron
+```
+
+**Go:**
 
 ```bash
 go install github.com/swalha1999/lazycron@latest
 ```
 
-Or build from source:
+**From source:**
 
 ```bash
 git clone https://github.com/swalha1999/lazycron.git
