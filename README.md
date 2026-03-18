@@ -1,6 +1,6 @@
 # lazycron
 
-A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax.
+A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax. Comes with built-in job templates and a full CLI.
 
 ## Install
 
@@ -18,18 +18,19 @@ go build -o lazycron .
 
 ## Features
 
-### 3-Panel Layout
+### 4-Panel Layout
+- **Servers** — local + remote SSH servers
 - **Jobs** — lists all cron jobs with enabled/disabled status and human-readable schedules
 - **History** — shows execution history with timestamps, success/failure indicators, and relative times
-- **Details** — displays full job info (schedule, command, next 3 runs) or history entry output
+- **Details** — displays full job info (schedule, command, next 3 runs) or history entry output with scrolling
 
-Switch panels with `1`/`2`/`3` or arrow keys.
+Switch panels with `1`/`2`/`3`/`4` or arrow keys.
 
 ### Job Management
-- Create, edit, and delete jobs with a form overlay
-- Toggle jobs enabled/disabled with `space`
-- Run any job immediately and see its output in a scrollable modal
+- Create jobs from scratch or from built-in templates (`n` → `b` blank / `t` template)
+- Edit, delete, toggle enabled/disabled, and run jobs immediately
 - Reads and writes directly to your system crontab
+- Manage cron jobs on remote servers via SSH
 
 ### Human-Readable Schedules
 The schedule field accepts plain English alongside raw cron expressions:
@@ -72,6 +73,92 @@ Jobs created by older versions can be upgraded to the current recording format w
 | `k` / `↑` | Move up |
 | `?` | Show all keybindings |
 | `q` | Quit |
+
+## Templates
+
+Press `n` then `t` to create a job from a built-in template, or use the CLI:
+
+```bash
+lazycron templates list                    # browse all templates
+lazycron templates list --category ai      # filter by category
+lazycron templates apply "Claude Code Review"  # apply interactively
+```
+
+### Built-in Templates
+
+| Category   | Template            | Description                                      |
+|------------|---------------------|--------------------------------------------------|
+| DevOps     | Backup Database     | Dump a PostgreSQL database to a timestamped file  |
+| DevOps     | Log Rotation        | Compress and rotate logs older than N days        |
+| AI / LLM   | Claude Code Review  | Run Claude Code to review recent repo changes     |
+| AI / LLM   | Claude Test Runner  | Run Claude Code to execute and analyze tests      |
+| Git / CI   | Auto Pull Repos     | Pull latest changes from remote on a schedule     |
+| Monitoring | HTTP Health Check   | Ping an HTTP endpoint and log failures            |
+| System     | Disk Cleanup        | Remove old temp files to free disk space          |
+| Lazycron   | Clean History       | Delete lazycron history entries older than N days  |
+
+### Custom Templates
+
+Add your own templates as YAML files in `~/.lazycron/templates/`. They appear alongside built-in templates in both the TUI and CLI.
+
+A template with the same name as a built-in overrides it.
+
+### Template Format
+
+```yaml
+name: My Template
+category: devops          # devops, ai, git, monitoring, system, lazycron
+description: Short description of what this template does
+schedule: "0 3 */$INTERVAL * *"
+command: "cd $REPO_PATH && run-backup --db $DB_NAME"
+variables:
+  - name: INTERVAL
+    prompt: "Run every N days"
+    default: "1"
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
+  - name: DB_NAME
+    prompt: "Database name"
+    default: mydb
+```
+
+**Fields:**
+
+| Field         | Required | Description                                             |
+|---------------|----------|---------------------------------------------------------|
+| `name`        | yes      | Display name, used as the default job name              |
+| `category`    | no       | Groups templates in the picker and `--category` filter  |
+| `description` | no       | Shown below the template name in the picker             |
+| `schedule`    | yes      | Cron expression — can contain `$VARIABLES`              |
+| `command`     | yes      | Shell command — can contain `$VARIABLES`                |
+| `variables`   | no       | List of customizable parameters                         |
+
+**Variable fields:**
+
+| Field     | Required | Description                                    |
+|-----------|----------|------------------------------------------------|
+| `name`    | yes      | Variable name, referenced as `$NAME` in schedule/command |
+| `prompt`  | no       | Label shown to the user when filling in the value |
+| `default` | no       | Pre-filled value if the user leaves it blank    |
+
+Variables named with `PATH`, `DIR`, `DIRECTORY`, or `FOLDER` automatically get directory autocomplete in the TUI.
+
+The `schedule` field supports variables just like `command` — use this to let users configure how often the job runs (e.g., `*/$INTERVAL * * * *`).
+
+If the resolved command starts with `cd <path> && ...`, the path is automatically extracted into the Work Dir field in the job form.
+
+## CLI
+
+```bash
+lazycron                    # launch TUI (default)
+lazycron list               # list all cron jobs
+lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
+lazycron run "backup"       # run a job by name
+lazycron templates list     # browse templates
+lazycron templates apply "Backup Database"  # apply a template
+lazycron --version          # show version
+```
 
 ## Requirements
 
