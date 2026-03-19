@@ -1,6 +1,9 @@
 package cron
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCronToHuman(t *testing.T) {
 	tests := []struct {
@@ -83,6 +86,122 @@ func TestOrdinal(t *testing.T) {
 			got := ordinal(tt.n)
 			if got != tt.want {
 				t.Errorf("ordinal(%d) = %q, want %q", tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- HumanToCron ---
+
+func TestHumanToCron(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"every minute", "* * * * *"},
+		{"every hour", "0 * * * *"},
+		{"every 5 minutes", "*/5 * * * *"},
+		{"every 1 minute", "*/1 * * * *"},
+		{"every 2 hours", "0 */2 * * *"},
+		{"every 1 hour", "0 */1 * * *"},
+		{"every day at 9am", "0 9 * * *"},
+		{"every day at 9:30am", "30 9 * * *"},
+		{"every day at 2pm", "0 14 * * *"},
+		{"every day at 2:30pm", "30 14 * * *"},
+		{"every day at 12am", "0 0 * * *"},
+		{"every day at 12pm", "0 12 * * *"},
+		{"every day at 14:30", "30 14 * * *"},
+		{"every day at 0:00", "0 0 * * *"},
+		{"every weekday at 9am", "0 9 * * 1-5"},
+		{"every weekday at 9:30am", "30 9 * * 1-5"},
+		{"every monday at 9am", "0 9 * * 1"},
+		{"every friday at 5pm", "0 17 * * 5"},
+		{"every sunday at 12pm", "0 12 * * 0"},
+		{"every saturday at 8:00", "0 8 * * 6"},
+		// Case insensitivity
+		{"Every Day At 9AM", "0 9 * * *"},
+		{"EVERY HOUR", "0 * * * *"},
+		// Pass-through for unrecognized patterns
+		{"0 9 * * *", "0 9 * * *"},
+		{"something else", "something else"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := HumanToCron(tt.input)
+			if got != tt.want {
+				t.Errorf("HumanToCron(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- parseTime ---
+
+func TestParseTime(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantHour   int
+		wantMinute int
+		wantOK     bool
+	}{
+		// 12-hour format
+		{"9am", 9, 0, true},
+		{"9:30am", 9, 30, true},
+		{"12pm", 12, 0, true},
+		{"12am", 0, 0, true},
+		{"11:59pm", 23, 59, true},
+		{"1pm", 13, 0, true},
+		{"9 am", 9, 0, true},
+		{"9:30 pm", 21, 30, true},
+		// 24-hour format
+		{"0:00", 0, 0, true},
+		{"9:00", 9, 0, true},
+		{"14:30", 14, 30, true},
+		{"23:59", 23, 59, true},
+		// Invalid
+		{"25:00", 0, 0, false},
+		{"9:60", 0, 0, false},
+		{"not-a-time", 0, 0, false},
+		{"", 0, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			h, m, ok := parseTime(tt.input)
+			if ok != tt.wantOK {
+				t.Fatalf("parseTime(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if h != tt.wantHour || m != tt.wantMinute {
+				t.Errorf("parseTime(%q) = (%d, %d), want (%d, %d)", tt.input, h, m, tt.wantHour, tt.wantMinute)
+			}
+		})
+	}
+}
+
+// --- HumanToCron/CronToHuman roundtrip ---
+
+func TestHumanCronRoundtrip(t *testing.T) {
+	// Human → Cron → Human should produce a recognizable description
+	inputs := []string{
+		"every minute",
+		"every hour",
+		"every 5 minutes",
+		"every day at 9am",
+		"every day at 2:30pm",
+	}
+	for _, input := range inputs {
+		t.Run(input, func(t *testing.T) {
+			cron := HumanToCron(input)
+			human := CronToHuman(cron)
+			// The round-tripped description should not be the raw cron expression
+			if human == cron {
+				t.Errorf("HumanToCron(%q) = %q, CronToHuman gave back raw cron", input, cron)
+			}
+			// Should produce some human-readable text
+			if strings.TrimSpace(human) == "" {
+				t.Errorf("CronToHuman(%q) returned empty string", cron)
 			}
 		})
 	}

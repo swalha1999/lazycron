@@ -426,9 +426,3 @@ func assertBool(t *testing.T, field string, got, want bool) {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

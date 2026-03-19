@@ -6,18 +6,39 @@ import (
 	"strings"
 )
 
+// These function variables wrap system calls so tests can replace them.
+var (
+	// runCrontab executes a crontab command with optional stdin.
+	runCrontab = func(stdin string, args ...string) (string, error) {
+		cmd := exec.Command("crontab", args...)
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
+		}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	// runShell executes a shell command and returns trimmed output.
+	runShell = func(command string) (string, error) {
+		cmd := exec.Command("sh", "-c", command)
+		out, err := cmd.CombinedOutput()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	// lookPath checks if a command exists in PATH.
+	lookPath = exec.LookPath
+)
+
 // ReadCrontab reads the current crontab.
 func ReadCrontab() (string, error) {
-	cmd := exec.Command("crontab", "-l")
-	out, err := cmd.CombinedOutput()
+	out, err := runCrontab("", "-l")
 	if err != nil {
-		outStr := string(out)
-		if strings.Contains(outStr, "no crontab for") {
+		if strings.Contains(out, "no crontab for") {
 			return "", nil
 		}
-		return "", fmt.Errorf("crontab -l: %s", strings.TrimSpace(outStr))
+		return "", fmt.Errorf("crontab -l: %s", strings.TrimSpace(out))
 	}
-	return string(out), nil
+	return out, nil
 }
 
 // FormatCrontab formats jobs into crontab file content.
@@ -36,18 +57,16 @@ func FormatCrontab(jobs []Job) string {
 // WriteCrontab writes jobs to crontab via `crontab -`.
 func WriteCrontab(jobs []Job) error {
 	content := FormatCrontab(jobs)
-	cmd := exec.Command("crontab", "-")
-	cmd.Stdin = strings.NewReader(content)
-	out, err := cmd.CombinedOutput()
+	out, err := runCrontab(content, "-")
 	if err != nil {
-		return fmt.Errorf("crontab -: %s", strings.TrimSpace(string(out)))
+		return fmt.Errorf("crontab -: %s", strings.TrimSpace(out))
 	}
 	return nil
 }
 
 // CheckCrontabAvailable checks if the crontab command exists.
 func CheckCrontabAvailable() error {
-	_, err := exec.LookPath("crontab")
+	_, err := lookPath("crontab")
 	if err != nil {
 		return fmt.Errorf("crontab command not found in PATH — lazycron requires crontab to be installed")
 	}
@@ -57,8 +76,5 @@ func CheckCrontabAvailable() error {
 // RunJobNow runs a job command immediately in a shell.
 // Returns the combined stdout/stderr output and any error.
 func RunJobNow(command string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
-	out, err := cmd.CombinedOutput()
-	output := strings.TrimSpace(string(out))
-	return output, err
+	return runShell(command)
 }
