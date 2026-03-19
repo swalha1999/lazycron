@@ -111,27 +111,36 @@ func selfUpdate(currentVersion string) tea.Cmd {
 			return selfUpdateMsg{err: fmt.Errorf("failed to set permissions: %w", err)}
 		}
 
-		// Replace: rename old binary out of the way, copy new one in
-		oldPath := currentExe + ".old"
-		os.Remove(oldPath)
-
-		if err := os.Rename(currentExe, oldPath); err != nil {
-			return selfUpdateMsg{err: fmt.Errorf("failed to replace binary (try running with sudo): %w", err)}
+		// Replace the installed binary — try direct first, fall back to sudo
+		if err := replaceBinary(newBinary, currentExe); err != nil {
+			return selfUpdateMsg{err: err}
 		}
-
-		if err := copyBinary(newBinary, currentExe); err != nil {
-			// Try to restore on failure
-			os.Rename(oldPath, currentExe)
-			return selfUpdateMsg{err: fmt.Errorf("failed to install new binary: %w", err)}
-		}
-
-		os.Remove(oldPath)
 
 		return selfUpdateMsg{newVersion: release.TagName}
 	}
 }
 
-func copyBinary(src, dst string) error {
+func replaceBinary(src, dst string) error {
+	// Try direct copy first
+	if err := directCopy(src, dst); err == nil {
+		return nil
+	}
+
+	// Fall back to sudo cp
+	cmd := exec.Command("sudo", "cp", src, dst)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to replace binary: %s", strings.TrimSpace(string(out)))
+	}
+
+	cmd = exec.Command("sudo", "chmod", "755", dst)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to set permissions: %s", strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+func directCopy(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
