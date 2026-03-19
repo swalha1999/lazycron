@@ -19,6 +19,16 @@ const githubRepo = "swalha1999/lazycron"
 type selfUpdateMsg struct {
 	newVersion string
 	err        error
+	// When sudo is needed, these are set instead of replacing directly
+	needsSudo  bool
+	tmpBinary  string
+	targetPath string
+}
+
+type selfUpdateSudoMsg struct {
+	newVersion string
+	tmpDir     string
+	err        error
 }
 
 func selfUpdate(currentVersion string) tea.Cmd {
@@ -61,30 +71,33 @@ func selfUpdate(currentVersion string) tea.Cmd {
 		filename := fmt.Sprintf("lazycron_%s_%s_%s.tar.gz", latestVersion, goos, goarch)
 		downloadURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", githubRepo, release.TagName, filename)
 
-		// Download to temp dir
+		// Download to temp dir (not cleaned up here if sudo is needed)
 		tmpDir, err := os.MkdirTemp("", "lazycron-update-*")
 		if err != nil {
 			return selfUpdateMsg{err: fmt.Errorf("failed to create temp dir: %w", err)}
 		}
-		defer os.RemoveAll(tmpDir)
 
 		tarPath := tmpDir + "/" + filename
 		dlResp, err := http.Get(downloadURL)
 		if err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to download update: %w", err)}
 		}
 		defer dlResp.Body.Close()
 
 		if dlResp.StatusCode != 200 {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to download update: HTTP %d", dlResp.StatusCode)}
 		}
 
 		out, err := os.Create(tarPath)
 		if err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to create temp file: %w", err)}
 		}
 		if _, err := io.Copy(out, dlResp.Body); err != nil {
 			out.Close()
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to download update: %w", err)}
 		}
 		out.Close()
@@ -92,52 +105,56 @@ func selfUpdate(currentVersion string) tea.Cmd {
 		// Extract tar.gz
 		extractCmd := exec.Command("tar", "-xzf", tarPath, "-C", tmpDir)
 		if err := extractCmd.Run(); err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to extract update: %w", err)}
 		}
 
-		// Replace current binary (resolve symlinks to find the real path)
+		// Resolve current binary path
 		currentExe, err := os.Executable()
 		if err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to find current executable: %w", err)}
 		}
 		currentExe, err = filepath.EvalSymlinks(currentExe)
 		if err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to resolve executable path: %w", err)}
 		}
 
 		newBinary := tmpDir + "/lazycron"
 
 		if err := os.Chmod(newBinary, 0755); err != nil {
+			os.RemoveAll(tmpDir)
 			return selfUpdateMsg{err: fmt.Errorf("failed to set permissions: %w", err)}
 		}
 
-		// Replace the installed binary — try direct first, fall back to sudo
-		if err := replaceBinary(newBinary, currentExe); err != nil {
-			return selfUpdateMsg{err: err}
+		// Try direct copy first
+		if err := directCopy(newBinary, currentExe); err == nil {
+			os.RemoveAll(tmpDir)
+			return selfUpdateMsg{newVersion: release.TagName}
 		}
 
-		return selfUpdateMsg{newVersion: release.TagName}
+		// Need sudo — keep tmpDir alive for the next phase
+		return selfUpdateMsg{
+			newVersion: release.TagName,
+			needsSudo:  true,
+			tmpBinary:  newBinary,
+			targetPath: currentExe,
+		}
 	}
 }
 
-func replaceBinary(src, dst string) error {
-	// Try direct copy first
-	if err := directCopy(src, dst); err == nil {
-		return nil
-	}
-
-	// Fall back to sudo cp
-	cmd := exec.Command("sudo", "cp", src, dst)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to replace binary: %s", strings.TrimSpace(string(out)))
-	}
-
-	cmd = exec.Command("sudo", "chmod", "755", dst)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to set permissions: %s", strings.TrimSpace(string(out)))
-	}
-
-	return nil
+// sudoInstall returns a tea.Cmd that pauses the TUI, runs sudo cp, and resumes.
+func sudoInstall(newVersion, tmpBinary, targetPath string) tea.Cmd {
+	tmpDir := filepath.Dir(tmpBinary)
+	c := exec.Command("sudo", "cp", tmpBinary, targetPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		defer os.RemoveAll(tmpDir)
+		if err != nil {
+			return selfUpdateSudoMsg{err: fmt.Errorf("sudo install failed: %w", err)}
+		}
+		return selfUpdateSudoMsg{newVersion: newVersion}
+	})
 }
 
 func directCopy(src, dst string) error {

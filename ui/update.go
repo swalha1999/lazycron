@@ -156,6 +156,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusKind = statusSuccess
 			return m, clearStatusAfter(m.statusID, 3*time.Second)
 		}
+		if msg.needsSudo {
+			m.statusMsg = "Need sudo to install — enter your password..."
+			m.statusKind = statusInfo
+			return m, sudoInstall(msg.newVersion, msg.tmpBinary, msg.targetPath)
+		}
+		m.statusMsg = fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion)
+		m.statusKind = statusSuccess
+		return m, clearStatusAfter(m.statusID, 8*time.Second)
+
+	case selfUpdateSudoMsg:
+		m.statusID++
+		if msg.err != nil {
+			m.statusMsg = "Update failed: " + msg.err.Error()
+			m.statusKind = statusError
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
 		m.statusMsg = fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion)
 		m.statusKind = statusSuccess
 		return m, clearStatusAfter(m.statusID, 8*time.Second)
