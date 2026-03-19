@@ -144,6 +144,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case selfUpdateMsg:
+		m.statusID++
+		if msg.err != nil {
+			m.statusMsg = "Update failed: " + msg.err.Error()
+			m.statusKind = statusError
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+		if msg.newVersion == "" {
+			m.statusMsg = "Already on the latest version"
+			m.statusKind = statusSuccess
+			return m, clearStatusAfter(m.statusID, 3*time.Second)
+		}
+		m.statusMsg = fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion)
+		m.statusKind = statusSuccess
+		return m, clearStatusAfter(m.statusID, 8*time.Second)
+
 	case clearStatusMsg:
 		if msg.id == m.statusID {
 			m.statusMsg = ""
@@ -421,6 +437,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusKind = statusInfo
 		b := m.manager.ActiveBackend()
 		return m, tea.Batch(loadJobs(b), loadHistory(b))
+
+	case "u":
+		m.statusMsg = "Checking for updates..."
+		m.statusKind = statusInfo
+		return m, selfUpdate(m.version)
 
 	case "?":
 		m.mode = modeHelp

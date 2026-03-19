@@ -73,7 +73,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	mgr := initBackendManager()
 
 	p := tea.NewProgram(
-		ui.NewModel(mgr),
+		ui.NewModel(mgr, Version),
 		tea.WithAltScreen(),
 	)
 

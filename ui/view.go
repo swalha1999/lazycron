@@ -17,7 +17,7 @@ func (m Model) View() string {
 	}
 
 	serverName := m.manager.ServerAt(m.manager.ActiveIndex()).Name
-	topBar := renderTopBar(m.mode, serverName, m.width)
+	topBar := renderTopBar(m.mode, serverName, m.version, m.width)
 
 	bottomBar := renderBottomBar(m.mode, m.focusPanel, m.statusMsg, m.statusKind, m.width)
 

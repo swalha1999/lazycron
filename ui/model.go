@@ -78,6 +78,9 @@ type Model struct {
 
 	// Template picker state
 	templatePicker templatePickerModel
+
+	// App version (for self-update)
+	version string
 }
 
 func newPasswordInput() textinput.Model {
@@ -93,11 +96,12 @@ func newPasswordInput() textinput.Model {
 	return ti
 }
 
-func NewModel(mgr *backend.Manager) Model {
+func NewModel(mgr *backend.Manager, version string) Model {
 	return Model{
 		manager:    mgr,
 		selected:   0,
 		mode:       modeNormal,
 		focusPanel: panelServers,
+		version:    version,
 	}
 }

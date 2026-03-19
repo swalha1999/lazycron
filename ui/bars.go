@@ -7,8 +7,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func renderTopBar(m mode, serverName string, width int) string {
+func renderTopBar(m mode, serverName string, version string, width int) string {
 	title := titleStyle.Render("lazycron")
+	versionTag := lipgloss.NewStyle().Foreground(colorMuted).Render(version)
 	serverTag := lipgloss.NewStyle().Foreground(colorCyan).Render("[" + serverName + "]")
 
 	var modeStr string
@@ -33,7 +34,7 @@ func renderTopBar(m mode, serverName string, width int) string {
 		modeStr = modeStyle.Render("TEMPLATE")
 	}
 
-	leftPart := title + "  " + serverTag
+	leftPart := title + " " + versionTag + "  " + serverTag
 	spacer := strings.Repeat(" ", max(0, width-lipgloss.Width(leftPart)-lipgloss.Width(modeStr)))
 	bar := leftPart + spacer + modeStr
 
@@ -66,6 +67,7 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 			help += helpBinding("n", "new") + helpSep()
 		}
 		help += helpBinding("R", "refresh") + helpSep() +
+			helpBinding("u", "update app") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
 	case modeForm, modeAddServer:
@@ -141,6 +143,7 @@ func renderHelpScreen() string {
 		{"", "── General ──"},
 		{"1/2/3/4/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},
+		{"u", "Update app to latest version"},
 		{"j / ↓", "Move down"},
 		{"k / ↑", "Move up"},
 		{"?", "Show/hide help"},
