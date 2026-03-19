@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 )
@@ -23,8 +25,19 @@ func renderDetail(job *cron.Job, width int) string {
 	b.WriteString(renderDetailRow("Status", status))
 	b.WriteString("\n")
 
-	// Name
-	b.WriteString(renderDetailRow("Name", detailValueStyle.Render(job.Name)))
+	// Name (with optional colored tag)
+	nameDisplay := detailValueStyle.Render(job.Name)
+	if job.Tag != "" {
+		tagColor := job.TagColor
+		if tagColor == "" {
+			tagColor = string(colorRed)
+		}
+		nameDisplay += " " + lipgloss.NewStyle().
+			Foreground(lipgloss.Color(tagColor)).
+			Bold(true).
+			Render(job.Tag)
+	}
+	b.WriteString(renderDetailRow("Name", nameDisplay))
 	b.WriteString("\n")
 
 	// Schedule

@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/swalha1999/lazycron/template"
 )
 
@@ -158,6 +159,26 @@ func (tp *templatePickerModel) buildValues() map[string]string {
 	return values
 }
 
+// renderTemplateName renders a template name with its optional colored tag.
+// It uses an inline copy of the base style (no margins) so the tag stays
+// on the same line as the name.
+func renderTemplateName(tmpl template.Template, base lipgloss.Style) string {
+	inline := base.Copy().UnsetMarginBottom().UnsetMarginTop()
+	name := inline.Render(tmpl.Name)
+	if tmpl.Tag == "" {
+		return name
+	}
+	color := tmpl.TagColor
+	if color == "" {
+		color = string(colorRed)
+	}
+	tag := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(color)).
+		Bold(true).
+		Render(tmpl.Tag)
+	return name + " " + tag
+}
+
 // renderNewJobChoice renders the "blank vs template" choice dialog.
 func renderNewJobChoice(width int) string {
 	formWidth := width - 10
@@ -229,17 +250,16 @@ func renderTemplatePicker(tp *templatePickerModel, width int) string {
 		b.WriteString("\n\n")
 
 		for i, tmpl := range tp.templateList {
-			name := tmpl.Name
 			desc := tmpl.Description
 			if len(desc) > formWidth-10 {
 				desc = desc[:formWidth-13] + "..."
 			}
 			if i == tp.templateSelected {
-				b.WriteString(selectedStyle.Render("> "+name))
+				b.WriteString("> " + renderTemplateName(tmpl, selectedStyle))
 				b.WriteString("\n")
 				b.WriteString("    " + mutedItemStyle.Render(desc))
 			} else {
-				b.WriteString(normalStyle.Render("  "+name))
+				b.WriteString("  " + renderTemplateName(tmpl, normalStyle))
 				b.WriteString("\n")
 				b.WriteString("    " + mutedItemStyle.Render(desc))
 			}
@@ -256,7 +276,7 @@ func renderTemplatePicker(tp *templatePickerModel, width int) string {
 		if tp.selectedTmpl == nil {
 			break
 		}
-		b.WriteString(formTitleStyle.Render("  " + tp.selectedTmpl.Name))
+		b.WriteString("  " + renderTemplateName(*tp.selectedTmpl, formTitleStyle))
 		b.WriteString("\n")
 		b.WriteString(mutedItemStyle.Render("  " + tp.selectedTmpl.Description))
 		b.WriteString("\n\n")

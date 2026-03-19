@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/swalha1999/lazycron/cron"
 )
 
@@ -52,8 +54,19 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			dot = disabledDotStyle.Render("○")
 		}
 
-		// Name (truncated)
+		// Name (truncated) with optional colored tag
 		name := job.Name
+		tagSuffix := ""
+		if job.Tag != "" {
+			tagColor := job.TagColor
+			if tagColor == "" {
+				tagColor = string(colorRed)
+			}
+			tagSuffix = " " + lipgloss.NewStyle().
+				Foreground(lipgloss.Color(tagColor)).
+				Bold(true).
+				Render(job.Tag)
+		}
 		if len(name) > maxNameWidth {
 			name = name[:maxNameWidth-1] + "…"
 		}
@@ -80,7 +93,7 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			warn = " " + warnStyle.Render("⚠")
 		}
 
-		line := fmt.Sprintf(" %s %-*s  %s%s", dot, maxNameWidth, name, mutedItemStyle.Render(schedule), warn)
+		line := fmt.Sprintf(" %s %-*s%s  %s%s", dot, maxNameWidth, name, tagSuffix, mutedItemStyle.Render(schedule), warn)
 
 		if i == selected {
 			line = selectedStyle.Render("▶ " + line)

@@ -13,7 +13,9 @@ type Job struct {
 	Schedule string
 	Command  string
 	Enabled  bool
-	Wrapped  bool // true if the raw command uses the current record wrapper format
+	Wrapped  bool   // true if the raw command uses the current record wrapper format
+	Tag      string // optional colored tag displayed after the name
+	TagColor string // hex color for the tag, e.g. "#f38ba8"
 }
 
 // recordBinPath returns the path to ~/.lazycron/bin/record.
@@ -78,7 +80,15 @@ func IsCurrentFormat(rawCommand string) bool {
 // including the name comment and optionally the disabled prefix.
 func (j Job) CrontabLine() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n", j.Name)
+	nameComment := j.Name
+	if j.Tag != "" {
+		color := j.TagColor
+		if color == "" {
+			color = "#f38ba8"
+		}
+		nameComment += " [" + j.Tag + ":" + color + "]"
+	}
+	fmt.Fprintf(&b, "# %s\n", nameComment)
 
 	wrapped := WrapWithRecord(j.Command, j.Name)
 	if !j.Enabled {
@@ -105,9 +115,11 @@ func Parse(output string) []Job {
 			continue
 		}
 
-		// Check if this is a name comment: # job-name
+		// Check if this is a name comment: # job-name [TAG:color]
 		if isNameComment(line) {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			tag, tagColor := "", ""
+			name, tag, tagColor = extractTag(name)
 			i++
 			if i < len(lines) {
 				jobLine := strings.TrimSpace(lines[i])
@@ -116,6 +128,8 @@ func Parse(output string) []Job {
 					continue
 				}
 				if job, ok := parseJobLine(jobLine, name); ok {
+					job.Tag = tag
+					job.TagColor = tagColor
 					jobs = append(jobs, job)
 					i++
 					continue
@@ -136,6 +150,22 @@ func Parse(output string) []Job {
 	}
 
 	return jobs
+}
+
+// extractTag parses a tag suffix from a name like "Job Name [PP:#f38ba8]".
+// Returns the clean name, tag text, and tag color.
+func extractTag(name string) (string, string, string) {
+	openIdx := strings.LastIndex(name, "[")
+	if openIdx == -1 || !strings.HasSuffix(name, "]") {
+		return name, "", ""
+	}
+	inner := name[openIdx+1 : len(name)-1]
+	parts := strings.SplitN(inner, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return name, "", ""
+	}
+	cleanName := strings.TrimSpace(name[:openIdx])
+	return cleanName, parts[0], parts[1]
 }
 
 func isNameComment(line string) bool {

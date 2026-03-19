@@ -1,6 +1,8 @@
 name: Claude Test Runner
 category: ai
 description: Run Claude Code to execute and analyze test results
+tag: PP
+tag_color: "#f38ba8"
 schedule: "30 8 * * 1-5"
 command: "cd $REPO_PATH && claude -p 'Run the test suite with $TEST_CMD, analyze any failures, and create a summary report'"
 variables:

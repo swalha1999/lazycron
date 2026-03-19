@@ -66,6 +66,8 @@ type Template struct {
 	Schedule    string     `yaml:"schedule"`
 	Command     string     `yaml:"command"`
 	Variables   []Variable `yaml:"variables,omitempty"`
+	Tag         string     `yaml:"tag,omitempty"`
+	TagColor    string     `yaml:"tag_color,omitempty"` // hex color, e.g. "#f38ba8"
 }
 
 // Parse parses a YAML template definition.

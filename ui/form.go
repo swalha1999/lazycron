@@ -39,6 +39,8 @@ type formModel struct {
 	editIndex   int
 	picker      pickerModel
 	completer   completerModel
+	tag         string // colored tag from template
+	tagColor    string // hex color for the tag
 }
 
 func newInput(i int) textinput.Model {
@@ -85,6 +87,8 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.inputs[fieldCommand].SetValue(cmd)
 	f.inputs[fieldSchedule].SetValue(job.Schedule)
 	f.inputs[fieldWorkDir].SetValue(workDir)
+	f.tag = job.Tag
+	f.tagColor = job.TagColor
 
 	f.picker = newPicker()
 	f.picker.ParseExpression(job.Schedule)
@@ -186,6 +190,8 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		Command:  finalCmd,
 		Enabled:  true,
 		Wrapped:  true,
+		Tag:      f.tag,
+		TagColor: f.tagColor,
 	}, nil
 }
 

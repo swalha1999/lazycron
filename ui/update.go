@@ -913,6 +913,8 @@ func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.form.inputs[fieldCommand].SetValue(resolvedCmd)
 			m.form.inputs[fieldSchedule].SetValue(cronExpr)
 			m.form.inputs[fieldWorkDir].SetValue(workDir)
+			m.form.tag = tp.selectedTmpl.Tag
+			m.form.tagColor = tp.selectedTmpl.TagColor
 			m.form.picker.ParseExpression(cronExpr)
 			return m, m.form.focusActive()
 

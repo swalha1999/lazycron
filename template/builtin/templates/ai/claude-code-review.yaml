@@ -1,6 +1,8 @@
 name: Claude Code Review
 category: ai
 description: Run Claude Code to review recent changes in a repository
+tag: PP
+tag_color: "#f38ba8"
 schedule: "0 9 * * 1-5"
 command: "cd $REPO_PATH && claude -p 'Review the recent changes: run git diff HEAD~$COMMIT_COUNT and provide a code review with suggestions'"
 variables:
