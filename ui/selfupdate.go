@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -22,6 +23,11 @@ type selfUpdateMsg struct {
 
 func selfUpdate(currentVersion string) tea.Cmd {
 	return func() tea.Msg {
+		// Refuse to update dev builds (e.g. go run .)
+		if currentVersion == "dev" || currentVersion == "" {
+			return selfUpdateMsg{err: fmt.Errorf("cannot self-update a dev build — install from a release first")}
+		}
+
 		// Fetch latest release info
 		url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", githubRepo)
 		resp, err := http.Get(url)
@@ -89,10 +95,14 @@ func selfUpdate(currentVersion string) tea.Cmd {
 			return selfUpdateMsg{err: fmt.Errorf("failed to extract update: %w", err)}
 		}
 
-		// Replace current binary
+		// Replace current binary (resolve symlinks to find the real path)
 		currentExe, err := os.Executable()
 		if err != nil {
 			return selfUpdateMsg{err: fmt.Errorf("failed to find current executable: %w", err)}
+		}
+		currentExe, err = filepath.EvalSymlinks(currentExe)
+		if err != nil {
+			return selfUpdateMsg{err: fmt.Errorf("failed to resolve executable path: %w", err)}
 		}
 
 		newBinary := tmpDir + "/lazycron"
