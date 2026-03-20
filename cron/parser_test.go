@@ -410,6 +410,107 @@ func TestFullRoundtrip_Disabled(t *testing.T) {
 	assertBool(t, "Wrapped", got.Wrapped, true)
 }
 
+// --- extractOnce ---
+
+func TestExtractOnce(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantName string
+		wantOnce bool
+	}{
+		{"with @once", "My Job @once", "My Job", true},
+		{"with @once and tag", "My Job @once [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", true},
+		{"no @once", "My Job", "My Job", false},
+		{"no @once with tag", "My Job [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotOnce := extractOnce(tt.input)
+			if gotName != tt.wantName {
+				t.Errorf("extractOnce(%q) name = %q, want %q", tt.input, gotName, tt.wantName)
+			}
+			if gotOnce != tt.wantOnce {
+				t.Errorf("extractOnce(%q) once = %v, want %v", tt.input, gotOnce, tt.wantOnce)
+			}
+		})
+	}
+}
+
+// --- Parse with @once ---
+
+func TestParse_OneShotJob(t *testing.T) {
+	input := "# deploy @once\n30 14 22 3 * " + wrapCmd("echo deploy", "deploy")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "deploy")
+	assertBool(t, "OneShot", j.OneShot, true)
+	assertEqual(t, "Schedule", j.Schedule, "30 14 22 3 *")
+}
+
+func TestParse_OneShotJobWithTag(t *testing.T) {
+	input := "# deploy @once [PROD:#f38ba8]\n30 14 22 3 * " + wrapCmd("echo deploy", "deploy")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "deploy")
+	assertBool(t, "OneShot", j.OneShot, true)
+	assertEqual(t, "Tag", j.Tag, "PROD")
+	assertEqual(t, "TagColor", j.TagColor, "#f38ba8")
+}
+
+func TestCrontabLine_OneShot(t *testing.T) {
+	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true}
+	line := j.CrontabLine()
+
+	if !strings.HasPrefix(line, "# deploy @once\n") {
+		t.Errorf("expected @once in name comment: %q", line)
+	}
+	if !strings.Contains(line, "--once") {
+		t.Errorf("expected --once in wrapped command: %q", line)
+	}
+}
+
+func TestCrontabLine_OneShotWithTag(t *testing.T) {
+	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true, Tag: "PROD", TagColor: "#f38ba8"}
+	line := j.CrontabLine()
+
+	if !strings.Contains(line, "# deploy @once [PROD:#f38ba8]") {
+		t.Errorf("expected @once before tag: %q", line)
+	}
+}
+
+func TestFullRoundtrip_OneShot(t *testing.T) {
+	original := Job{
+		Name:     "one-shot-test",
+		Schedule: "30 14 22 3 *",
+		Command:  "echo hello",
+		Enabled:  true,
+		Wrapped:  true,
+		OneShot:  true,
+	}
+
+	line := original.CrontabLine()
+	jobs := Parse(line)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after roundtrip, got %d", len(jobs))
+	}
+
+	got := jobs[0]
+	assertEqual(t, "Name", got.Name, original.Name)
+	assertEqual(t, "Schedule", got.Schedule, original.Schedule)
+	assertEqual(t, "Command", got.Command, original.Command)
+	assertBool(t, "Enabled", got.Enabled, original.Enabled)
+	assertBool(t, "OneShot", got.OneShot, true)
+}
+
 // --- helpers ---
 
 func assertEqual(t *testing.T, field, got, want string) {

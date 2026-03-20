@@ -41,6 +41,7 @@ type formModel struct {
 	completer   completerModel
 	tag         string // colored tag from template
 	tagColor    string // hex color for the tag
+	oneShot     bool   // one-shot mode: run once at a specific datetime
 }
 
 func newInput(i int) textinput.Model {
@@ -89,9 +90,12 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.inputs[fieldWorkDir].SetValue(workDir)
 	f.tag = job.Tag
 	f.tagColor = job.TagColor
+	f.oneShot = job.OneShot
 
 	f.picker = newPicker()
-	f.picker.ParseExpression(job.Schedule)
+	if !f.oneShot {
+		f.picker.ParseExpression(job.Schedule)
+	}
 
 	return f
 }
@@ -106,8 +110,8 @@ func (f *formModel) focusActive() tea.Cmd {
 }
 
 func (f *formModel) nextField() tea.Cmd {
-	// If on schedule textinput, tab into picker
-	if f.activeField == fieldSchedule && !f.picker.focused {
+	// If on schedule textinput and not one-shot, tab into picker
+	if f.activeField == fieldSchedule && !f.picker.focused && !f.oneShot {
 		f.inputs[fieldSchedule].Blur()
 		f.syncInputToPicker()
 		f.picker.focused = true
@@ -131,7 +135,7 @@ func (f *formModel) prevField() tea.Cmd {
 	f.inputs[f.activeField].Blur()
 	f.completer.reset()
 	prev := (f.activeField - 1 + fieldCount) % fieldCount
-	if prev == fieldSchedule {
+	if prev == fieldSchedule && !f.oneShot {
 		f.activeField = fieldSchedule
 		f.syncInputToPicker()
 		f.picker.focused = true
@@ -174,9 +178,18 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		return cron.Job{}, fmt.Errorf("schedule is required")
 	}
 
-	cronExpr := cron.HumanToCron(schedule)
-	if err := cron.ValidateCron(cronExpr); err != nil {
-		return cron.Job{}, fmt.Errorf("invalid schedule: %w", err)
+	var cronExpr string
+	if f.oneShot {
+		expr, _, err := cron.DatetimeToCron(schedule)
+		if err != nil {
+			return cron.Job{}, fmt.Errorf("invalid datetime: %w", err)
+		}
+		cronExpr = expr
+	} else {
+		cronExpr = cron.HumanToCron(schedule)
+		if err := cron.ValidateCron(cronExpr); err != nil {
+			return cron.Job{}, fmt.Errorf("invalid schedule: %w", err)
+		}
 	}
 
 	finalCmd := command
@@ -192,6 +205,7 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		Wrapped:  true,
 		Tag:      f.tag,
 		TagColor: f.tagColor,
+		OneShot:  f.oneShot,
 	}, nil
 }
 
@@ -213,10 +227,23 @@ func renderForm(f *formModel, width int) string {
 
 	var b strings.Builder
 	b.WriteString(formTitleStyle.Render("  " + title))
+	b.WriteString("  ")
+	if f.oneShot {
+		b.WriteString(lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONE-SHOT"))
+	} else {
+		b.WriteString(mutedItemStyle.Render("recurring"))
+	}
 	b.WriteString("\n\n")
 
 	for i := 0; i < fieldCount; i++ {
 		label := formLabelStyle.Render(fmt.Sprintf("  %-10s", fieldLabels[i]+":"))
+
+		// Override schedule placeholder in one-shot mode
+		if i == fieldSchedule && f.oneShot {
+			f.inputs[i].Placeholder = "Date/time: 'tomorrow at 3pm' or '2026-03-22 14:30'"
+		} else if i == fieldSchedule {
+			f.inputs[i].Placeholder = fieldHints[fieldSchedule]
+		}
 
 		f.inputs[i].Width = inputWidth
 		rendered := lipgloss.NewStyle().
@@ -227,7 +254,7 @@ func renderForm(f *formModel, width int) string {
 		b.WriteString(label + " " + rendered)
 		b.WriteString("\n")
 
-		if i == fieldSchedule {
+		if i == fieldSchedule && !f.oneShot {
 			b.WriteString(renderPicker(&f.picker, inputWidth))
 			b.WriteString("\n")
 		}
@@ -257,6 +284,7 @@ func renderForm(f *formModel, width int) string {
 		b.WriteString("  " +
 			helpBinding("tab", "next field") + helpSep() +
 			helpBinding("shift+tab", "prev") + helpSep() +
+			helpBinding("ctrl+o", "one-shot") + helpSep() +
 			helpBinding("enter", "save") + helpSep() +
 			helpBinding("esc", "cancel"))
 	}

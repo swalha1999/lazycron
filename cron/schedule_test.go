@@ -304,3 +304,103 @@ func TestNextRuns_ZeroCount(t *testing.T) {
 		t.Errorf("NextRuns with 0 count returned %d results", len(results))
 	}
 }
+
+// --- DatetimeToCron ---
+
+func TestDatetimeToCron_StrictFormats(t *testing.T) {
+	// Use a future date
+	future := time.Now().AddDate(1, 0, 0)
+	dateStr := future.Format("2006-01-02") + " 14:30"
+
+	expr, resolved, err := DatetimeToCron(dateStr)
+	if err != nil {
+		t.Fatalf("DatetimeToCron(%q) error: %v", dateStr, err)
+	}
+	if resolved.Hour() != 14 || resolved.Minute() != 30 {
+		t.Errorf("resolved time = %v, want 14:30", resolved)
+	}
+	expected := "30 14 " + future.Format("2") + " " + future.Format("1") + " *"
+	if expr != expected {
+		t.Errorf("DatetimeToCron = %q, want %q", expr, expected)
+	}
+}
+
+func TestDatetimeToCron_ISOFormat(t *testing.T) {
+	future := time.Now().AddDate(1, 0, 0)
+	dateStr := future.Format("2006-01-02") + "T09:00"
+
+	expr, _, err := DatetimeToCron(dateStr)
+	if err != nil {
+		t.Fatalf("DatetimeToCron(%q) error: %v", dateStr, err)
+	}
+	expected := "0 9 " + future.Format("2") + " " + future.Format("1") + " *"
+	if expr != expected {
+		t.Errorf("DatetimeToCron = %q, want %q", expr, expected)
+	}
+}
+
+func TestDatetimeToCron_TomorrowAt(t *testing.T) {
+	expr, resolved, err := DatetimeToCron("tomorrow at 3pm")
+	if err != nil {
+		t.Fatalf("DatetimeToCron('tomorrow at 3pm') error: %v", err)
+	}
+
+	tomorrow := time.Now().AddDate(0, 0, 1)
+	if resolved.Day() != tomorrow.Day() {
+		t.Errorf("resolved day = %d, want %d", resolved.Day(), tomorrow.Day())
+	}
+	if resolved.Hour() != 15 || resolved.Minute() != 0 {
+		t.Errorf("resolved time = %d:%d, want 15:00", resolved.Hour(), resolved.Minute())
+	}
+
+	expected := "0 15 " + tomorrow.Format("2") + " " + tomorrow.Format("1") + " *"
+	if expr != expected {
+		t.Errorf("DatetimeToCron = %q, want %q", expr, expected)
+	}
+}
+
+func TestDatetimeToCron_NextDayAt(t *testing.T) {
+	_, resolved, err := DatetimeToCron("next monday at 9am")
+	if err != nil {
+		t.Fatalf("DatetimeToCron('next monday at 9am') error: %v", err)
+	}
+	if resolved.Weekday() != time.Monday {
+		t.Errorf("resolved weekday = %v, want Monday", resolved.Weekday())
+	}
+	if resolved.Hour() != 9 || resolved.Minute() != 0 {
+		t.Errorf("resolved time = %d:%d, want 9:00", resolved.Hour(), resolved.Minute())
+	}
+}
+
+func TestDatetimeToCron_PastTimeError(t *testing.T) {
+	past := time.Now().AddDate(-1, 0, 0)
+	dateStr := past.Format("2006-01-02") + " 14:30"
+
+	_, _, err := DatetimeToCron(dateStr)
+	if err == nil {
+		t.Error("DatetimeToCron should return error for past time")
+	}
+}
+
+func TestDatetimeToCron_InvalidInput(t *testing.T) {
+	_, _, err := DatetimeToCron("not a date")
+	if err == nil {
+		t.Error("DatetimeToCron should return error for invalid input")
+	}
+}
+
+func TestDatetimeToCron_MonthDayAt(t *testing.T) {
+	// Use a month that's far in the future to ensure it's not in the past
+	future := time.Now().AddDate(1, 0, 0)
+	monthName := future.Format("January")
+	dayStr := future.Format("2")
+	input := monthName + " " + dayStr + " at 2:30pm"
+
+	_, resolved, err := DatetimeToCron(input)
+	if err != nil {
+		t.Fatalf("DatetimeToCron(%q) error: %v", input, err)
+	}
+	if resolved.Hour() != 14 || resolved.Minute() != 30 {
+		t.Errorf("resolved time = %d:%d, want 14:30", resolved.Hour(), resolved.Minute())
+	}
+}

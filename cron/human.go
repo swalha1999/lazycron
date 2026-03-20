@@ -15,6 +15,21 @@ func CronToHuman(expr string) string {
 	}
 	min, hour, dom, mon, dow := parts[0], parts[1], parts[2], parts[3], parts[4]
 
+	// Detect one-shot-style expression: all 4 date fields are specific values
+	if isValue(min) && isValue(hour) && isValue(dom) && isValue(mon) && dow == "*" {
+		h, _ := strconv.Atoi(hour)
+		m, _ := strconv.Atoi(min)
+		d, _ := strconv.Atoi(dom)
+		mo, _ := strconv.Atoi(mon)
+		now := time.Now()
+		year := now.Year()
+		t := time.Date(year, time.Month(mo), d, h, m, 0, 0, time.Local)
+		if t.Before(now) {
+			t = time.Date(year+1, time.Month(mo), d, h, m, 0, 0, time.Local)
+		}
+		return t.Format("Jan 02, 2006 at 3:04 PM")
+	}
+
 	// Build the frequency part (how often within a day): minute + hour
 	freq := describeFrequency(min, hour)
 

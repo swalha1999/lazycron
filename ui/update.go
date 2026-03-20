@@ -709,6 +709,17 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "ctrl+o":
+		m.form.oneShot = !m.form.oneShot
+		if m.form.oneShot {
+			// Clear schedule field for fresh datetime input
+			m.form.inputs[fieldSchedule].SetValue("")
+			m.form.picker.focused = false
+		} else {
+			m.form.inputs[fieldSchedule].SetValue(m.form.picker.Expression())
+		}
+		return m, nil
+
 	case "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"

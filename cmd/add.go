@@ -20,6 +20,7 @@ var (
 	addCommand  string
 	addWorkDir  string
 	addDisabled bool
+	addOnce     bool
 )
 
 func init() {
@@ -28,6 +29,7 @@ func init() {
 	addCmd.Flags().StringVarP(&addCommand, "command", "c", "", "Command to run (required)")
 	addCmd.Flags().StringVarP(&addWorkDir, "workdir", "w", "", "Working directory (optional)")
 	addCmd.Flags().BoolVar(&addDisabled, "disabled", false, "Create the job in disabled state")
+	addCmd.Flags().BoolVar(&addOnce, "once", false, "Run once at the specified datetime and then disable")
 
 	addCmd.MarkFlagRequired("name")
 	addCmd.MarkFlagRequired("schedule")
@@ -41,9 +43,18 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cronExpr := cron.HumanToCron(addSchedule)
-	if err := cron.ValidateCron(cronExpr); err != nil {
-		return fmt.Errorf("invalid schedule %q: %w", addSchedule, err)
+	var cronExpr string
+	if addOnce {
+		expr, _, err := cron.DatetimeToCron(addSchedule)
+		if err != nil {
+			return fmt.Errorf("invalid datetime %q: %w", addSchedule, err)
+		}
+		cronExpr = expr
+	} else {
+		cronExpr = cron.HumanToCron(addSchedule)
+		if err := cron.ValidateCron(cronExpr); err != nil {
+			return fmt.Errorf("invalid schedule %q: %w", addSchedule, err)
+		}
 	}
 
 	finalCmd := addCommand
@@ -57,6 +68,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		Command:  finalCmd,
 		Enabled:  !addDisabled,
 		Wrapped:  true,
+		OneShot:  addOnce,
 	}
 
 	raw, err := cron.ReadCrontab()

@@ -16,6 +16,7 @@ type Job struct {
 	Wrapped  bool   // true if the raw command uses the current record wrapper format
 	Tag      string // optional colored tag displayed after the name
 	TagColor string // hex color for the tag, e.g. "#f38ba8"
+	OneShot  bool   // true if this job should run once and then self-disable
 }
 
 // recordBinPath returns the path to ~/.lazycron/bin/record.
@@ -34,6 +35,13 @@ const wrapEndMarker = `; } 2>&1); __lc_ec=$?;`
 // and piped through the record binary for history tracking.
 func WrapWithRecord(command, jobName string) string {
 	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec"`,
+		wrapPrefix, command, wrapEndMarker, recordBinPath(), jobName)
+}
+
+// WrapWithRecordOnce wraps a command like WrapWithRecord but appends --once
+// so the record script auto-disables the crontab entry after execution.
+func WrapWithRecordOnce(command, jobName string) string {
+	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec" --once`,
 		wrapPrefix, command, wrapEndMarker, recordBinPath(), jobName)
 }
 
@@ -81,6 +89,9 @@ func IsCurrentFormat(rawCommand string) bool {
 func (j Job) CrontabLine() string {
 	var b strings.Builder
 	nameComment := j.Name
+	if j.OneShot {
+		nameComment += " @once"
+	}
 	if j.Tag != "" {
 		color := j.TagColor
 		if color == "" {
@@ -90,7 +101,12 @@ func (j Job) CrontabLine() string {
 	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
-	wrapped := WrapWithRecord(j.Command, j.Name)
+	var wrapped string
+	if j.OneShot {
+		wrapped = WrapWithRecordOnce(j.Command, j.Name)
+	} else {
+		wrapped = WrapWithRecord(j.Command, j.Name)
+	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
 	} else {
@@ -118,6 +134,8 @@ func Parse(output string) []Job {
 		// Check if this is a name comment: # job-name [TAG:color]
 		if isNameComment(line) {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			var oneShot bool
+			name, oneShot = extractOnce(name)
 			tag, tagColor := "", ""
 			name, tag, tagColor = extractTag(name)
 			i++
@@ -130,6 +148,7 @@ func Parse(output string) []Job {
 				if job, ok := parseJobLine(jobLine, name); ok {
 					job.Tag = tag
 					job.TagColor = tagColor
+					job.OneShot = oneShot
 					jobs = append(jobs, job)
 					i++
 					continue
@@ -150,6 +169,22 @@ func Parse(output string) []Job {
 	}
 
 	return jobs
+}
+
+// extractOnce checks for the @once marker in a name comment.
+// Returns the clean name (without @once) and whether it was present.
+func extractOnce(name string) (string, bool) {
+	const marker = " @once"
+	if idx := strings.Index(name, marker); idx != -1 {
+		// Ensure @once is followed by nothing, whitespace, or [
+		after := name[idx+len(marker):]
+		after = strings.TrimSpace(after)
+		if after == "" || strings.HasPrefix(after, "[") {
+			clean := strings.TrimSpace(name[:idx] + " " + after)
+			return clean, true
+		}
+	}
+	return name, false
 }
 
 // extractTag parses a tag suffix from a name like "Job Name [PP:#f38ba8]".

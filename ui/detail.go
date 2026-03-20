@@ -25,6 +25,16 @@ func renderDetail(job *cron.Job, width int) string {
 	b.WriteString(renderDetailRow("Status", status))
 	b.WriteString("\n")
 
+	// Type
+	if job.OneShot {
+		typeStr := lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("One-shot")
+		if !job.Enabled {
+			typeStr += " " + mutedItemStyle.Render("(completed)")
+		}
+		b.WriteString(renderDetailRow("Type", typeStr))
+		b.WriteString("\n")
+	}
+
 	// Name (with optional colored tag)
 	nameDisplay := detailValueStyle.Render(job.Name)
 	if job.Tag != "" {
@@ -66,18 +76,36 @@ func renderDetail(job *cron.Job, width int) string {
 
 	// Next runs
 	b.WriteString("\n")
-	b.WriteString(detailHeaderStyle.Render("  Next Runs"))
-	b.WriteString("\n")
-	nextRuns := cron.NextRuns(job.Schedule, 3)
-	if len(nextRuns) == 0 {
-		b.WriteString("  " + mutedItemStyle.Render("Could not calculate") + "\n")
+	if job.OneShot {
+		if !job.Enabled {
+			b.WriteString(detailHeaderStyle.Render("  Completed"))
+			b.WriteString("\n")
+			b.WriteString("  " + mutedItemStyle.Render("This one-shot job has been executed") + "\n")
+		} else {
+			b.WriteString(detailHeaderStyle.Render("  Scheduled For"))
+			b.WriteString("\n")
+			nextRuns := cron.NextRuns(job.Schedule, 1)
+			if len(nextRuns) == 0 {
+				b.WriteString("  " + mutedItemStyle.Render("Could not calculate") + "\n")
+			} else {
+				timeStr := nextRuns[0].Format("Mon Jan 02, 2006 at 3:04 PM")
+				b.WriteString("  " + detailValueStyle.Render(timeStr) + "\n")
+			}
+		}
 	} else {
-		for i, t := range nextRuns {
-			timeStr := t.Format("Mon Jan 02, 2006 at 3:04 PM")
-			b.WriteString(fmt.Sprintf("  %s %s\n",
-				mutedItemStyle.Render(fmt.Sprintf("%d.", i+1)),
-				detailValueStyle.Render(timeStr),
-			))
+		b.WriteString(detailHeaderStyle.Render("  Next Runs"))
+		b.WriteString("\n")
+		nextRuns := cron.NextRuns(job.Schedule, 3)
+		if len(nextRuns) == 0 {
+			b.WriteString("  " + mutedItemStyle.Render("Could not calculate") + "\n")
+		} else {
+			for i, t := range nextRuns {
+				timeStr := t.Format("Mon Jan 02, 2006 at 3:04 PM")
+				b.WriteString(fmt.Sprintf("  %s %s\n",
+					mutedItemStyle.Render(fmt.Sprintf("%d.", i+1)),
+					detailValueStyle.Render(timeStr),
+				))
+			}
 		}
 	}
 

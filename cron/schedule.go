@@ -103,6 +103,112 @@ func parseTime(s string) (hour, minute int, ok bool) {
 	return 0, 0, false
 }
 
+// DatetimeToCron converts a datetime string to a pinned cron expression.
+// Supports strict formats: "2026-03-22 14:30", "2026-03-22T14:30"
+// and natural language: "tomorrow at 3pm", "next monday at 9am", "march 22 at 2:30pm"
+// Returns the cron expression, the resolved time, and any error.
+func DatetimeToCron(input string) (string, time.Time, error) {
+	s := strings.TrimSpace(input)
+	now := time.Now()
+
+	var resolved time.Time
+	var ok bool
+
+	// Try strict ISO-like formats first
+	for _, layout := range []string{
+		"2006-01-02 15:04",
+		"2006-01-02T15:04",
+	} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			resolved = t
+			ok = true
+			break
+		}
+	}
+
+	// Try natural language
+	if !ok {
+		resolved, ok = parseNaturalDatetime(s, now)
+	}
+
+	if !ok {
+		return "", time.Time{}, fmt.Errorf("could not parse datetime %q — try 'tomorrow at 3pm' or '2026-03-22 14:30'", input)
+	}
+
+	if !resolved.After(now) {
+		return "", time.Time{}, fmt.Errorf("scheduled time %s is in the past", resolved.Format("2006-01-02 15:04"))
+	}
+
+	cronExpr := fmt.Sprintf("%d %d %d %d *", resolved.Minute(), resolved.Hour(), resolved.Day(), int(resolved.Month()))
+	return cronExpr, resolved, nil
+}
+
+// parseNaturalDatetime parses natural language datetime relative to now.
+func parseNaturalDatetime(s string, now time.Time) (time.Time, bool) {
+	lower := strings.ToLower(s)
+
+	// "tomorrow at <time>"
+	if m := regexp.MustCompile(`^tomorrow at (.+)$`).FindStringSubmatch(lower); m != nil {
+		if h, mi, ok := parseTime(m[1]); ok {
+			tomorrow := now.AddDate(0, 0, 1)
+			return time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), h, mi, 0, 0, time.Local), true
+		}
+	}
+
+	// "next <dayname> at <time>"
+	if m := regexp.MustCompile(`^next (\w+) at (.+)$`).FindStringSubmatch(lower); m != nil {
+		if dow, ok := dayMap[m[1]]; ok {
+			if h, mi, ok := parseTime(m[2]); ok {
+				target, _ := strconv.Atoi(dow)
+				current := int(now.Weekday())
+				daysAhead := (target - current + 7) % 7
+				if daysAhead == 0 {
+					daysAhead = 7 // "next Monday" when today is Monday means 7 days
+				}
+				d := now.AddDate(0, 0, daysAhead)
+				return time.Date(d.Year(), d.Month(), d.Day(), h, mi, 0, 0, time.Local), true
+			}
+		}
+	}
+
+	// "<monthname> <day> at <time>" e.g. "march 22 at 2:30pm"
+	if m := regexp.MustCompile(`^(\w+) (\d{1,2}) at (.+)$`).FindStringSubmatch(lower); m != nil {
+		if month, ok := parseMonth(m[1]); ok {
+			day, _ := strconv.Atoi(m[2])
+			if h, mi, ok := parseTime(m[3]); ok {
+				year := now.Year()
+				t := time.Date(year, month, day, h, mi, 0, 0, time.Local)
+				if !t.After(now) {
+					t = time.Date(year+1, month, day, h, mi, 0, 0, time.Local)
+				}
+				return t, true
+			}
+		}
+	}
+
+	return time.Time{}, false
+}
+
+// parseMonth converts a month name to time.Month.
+func parseMonth(s string) (time.Month, bool) {
+	months := map[string]time.Month{
+		"january": time.January, "jan": time.January,
+		"february": time.February, "feb": time.February,
+		"march": time.March, "mar": time.March,
+		"april": time.April, "apr": time.April,
+		"may": time.May,
+		"june": time.June, "jun": time.June,
+		"july": time.July, "jul": time.July,
+		"august": time.August, "aug": time.August,
+		"september": time.September, "sep": time.September,
+		"october": time.October, "oct": time.October,
+		"november": time.November, "nov": time.November,
+		"december": time.December, "dec": time.December,
+	}
+	m, ok := months[strings.ToLower(s)]
+	return m, ok
+}
+
 // NextRuns computes the next n run times for a cron expression.
 func NextRuns(expr string, n int) []time.Time {
 	parts := strings.Fields(expr)

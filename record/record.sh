@@ -54,3 +54,9 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
   printf '  "success": %s\n' "$SUCCESS"
   printf '}\n'
 } > "$DIR/${STAMP}_${SAFE}.json"
+
+# One-shot jobs: disable the crontab entry after execution
+if [ "$3" = "--once" ]; then
+  SAFE_NAME="$(printf '%s' "$JOB" | sed 's/[.*[\^$]/\\&/g')"
+  crontab -l 2>/dev/null | sed "/^# ${SAFE_NAME}/{ n; s/^/#DISABLED /; }" | crontab -
+fi

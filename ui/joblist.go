@@ -87,13 +87,19 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			cmd = cmd[:cmdWidth-1] + "…"
 		}
 
+		// One-shot badge
+		onceBadge := ""
+		if job.OneShot {
+			onceBadge = " " + lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONCE")
+		}
+
 		// Warning indicator for jobs not using the current record format
 		warn := ""
 		if !job.Wrapped {
 			warn = " " + warnStyle.Render("⚠")
 		}
 
-		line := fmt.Sprintf(" %s %-*s%s  %s%s", dot, maxNameWidth, name, tagSuffix, mutedItemStyle.Render(schedule), warn)
+		line := fmt.Sprintf(" %s %-*s%s%s  %s%s", dot, maxNameWidth, name, tagSuffix, onceBadge, mutedItemStyle.Render(schedule), warn)
 
 		if i == selected {
 			line = selectedStyle.Render("▶ " + line)
