@@ -28,13 +28,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusAfter(m.statusID, 5*time.Second)
 		}
 		m.jobs = msg.jobs
+		cmds := []tea.Cmd{}
 		if len(m.jobs) > 0 {
 			m.statusMsg = fmt.Sprintf("Loaded %d job(s)", len(m.jobs))
 			m.statusKind = statusInfo
 			m.statusID++
-			return m, clearStatusAfter(m.statusID, 2*time.Second)
+			cmds = append(cmds, clearStatusAfter(m.statusID, 2*time.Second))
 		}
-		return m, nil
+		// Auto-disable completed one-shot jobs (backup for record.sh)
+		if len(m.jobs) > 0 && len(m.history) > 0 {
+			cmds = append(cmds, disableCompletedOneShots(m.manager.ActiveBackend(), m.jobs, m.history))
+		}
+		return m, tea.Batch(cmds...)
 
 	case jobSavedMsg:
 		if msg.err != nil {
@@ -53,6 +58,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyLoadedMsg:
 		if msg.err == nil {
 			m.history = msg.entries
+			// Auto-disable completed one-shot jobs (backup for record.sh)
+			if len(m.jobs) > 0 && len(m.history) > 0 {
+				return m, disableCompletedOneShots(m.manager.ActiveBackend(), m.jobs, m.history)
+			}
+		}
+		return m, nil
+
+	case disableCompletedOneShotsMsg:
+		if msg.err != nil {
+			m.statusMsg = "Auto-disable failed: " + msg.err.Error()
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 5*time.Second)
+		}
+		if msg.disabled > 0 {
+			// Reload jobs to reflect the changes
+			b := m.manager.ActiveBackend()
+			return m, loadJobs(b)
 		}
 		return m, nil
 

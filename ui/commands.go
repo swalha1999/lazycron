@@ -69,6 +69,46 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(loadJobs(b), loadHistory(b), historyTick())
 }
 
+// disableCompletedOneShotsMsg is sent after one-shot jobs have been auto-disabled.
+type disableCompletedOneShotsMsg struct {
+	disabled int
+	err      error
+}
+
+// disableCompletedOneShots checks enabled one-shot jobs against history
+// and disables any that have already executed. This acts as a backup for the
+// shell-based auto-disable in record.sh, which can fail on macOS due to
+// crontab permission restrictions in cron execution context.
+func disableCompletedOneShots(b backend.Backend, jobs []cron.Job, hist []history.Entry) tea.Cmd {
+	// Copy the slice so we don't mutate the model from a command
+	updated := make([]cron.Job, len(jobs))
+	copy(updated, jobs)
+
+	return func() tea.Msg {
+		// Build set of job names that have history entries
+		ran := make(map[string]bool, len(hist))
+		for _, e := range hist {
+			ran[e.JobName] = true
+		}
+
+		// Find enabled one-shot jobs that have already run
+		count := 0
+		for i := range updated {
+			if updated[i].OneShot && updated[i].Enabled && ran[updated[i].Name] {
+				updated[i].Enabled = false
+				count++
+			}
+		}
+
+		if count == 0 {
+			return disableCompletedOneShotsMsg{}
+		}
+
+		err := b.WriteJobs(updated)
+		return disableCompletedOneShotsMsg{disabled: count, err: err}
+	}
+}
+
 func loadJobs(b backend.Backend) tea.Cmd {
 	return func() tea.Msg {
 		jobs, err := b.ReadJobs()
