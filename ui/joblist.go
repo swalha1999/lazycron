@@ -54,21 +54,29 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			dot = disabledDotStyle.Render("○")
 		}
 
-		// Name (truncated) with optional colored tag
+		// Name (truncated) with inline tag and badge
 		name := job.Name
-		tagSuffix := ""
+		if len(name) > maxNameWidth {
+			name = name[:maxNameWidth-1] + "…"
+		}
+
+		// Build inline badges right after the name
+		nameWithBadges := name
 		if job.Tag != "" {
 			tagColor := job.TagColor
 			if tagColor == "" {
 				tagColor = string(colorRed)
 			}
-			tagSuffix = " " + lipgloss.NewStyle().
+			nameWithBadges += " " + lipgloss.NewStyle().
 				Foreground(lipgloss.Color(tagColor)).
 				Bold(true).
 				Render(job.Tag)
 		}
-		if len(name) > maxNameWidth {
-			name = name[:maxNameWidth-1] + "…"
+		if job.OneShot {
+			nameWithBadges += " " + lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONCE")
+		}
+		if !job.Wrapped {
+			nameWithBadges += " " + warnStyle.Render("⚠")
 		}
 
 		// Schedule (human readable)
@@ -77,29 +85,7 @@ func renderJobList(jobs []cron.Job, selected int, width, height int) string {
 			schedule = schedule[:23] + "…"
 		}
 
-		// Command (truncated)
-		cmdWidth := width - maxNameWidth - 30
-		if cmdWidth < 10 {
-			cmdWidth = 10
-		}
-		cmd := job.Command
-		if len(cmd) > cmdWidth {
-			cmd = cmd[:cmdWidth-1] + "…"
-		}
-
-		// One-shot badge
-		onceBadge := ""
-		if job.OneShot {
-			onceBadge = " " + lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONCE")
-		}
-
-		// Warning indicator for jobs not using the current record format
-		warn := ""
-		if !job.Wrapped {
-			warn = " " + warnStyle.Render("⚠")
-		}
-
-		line := fmt.Sprintf(" %s %-*s%s%s  %s%s", dot, maxNameWidth, name, tagSuffix, onceBadge, mutedItemStyle.Render(schedule), warn)
+		line := fmt.Sprintf(" %s %s  %s", dot, nameWithBadges, mutedItemStyle.Render(schedule))
 
 		if i == selected {
 			line = selectedStyle.Render("▶ " + line)

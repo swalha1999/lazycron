@@ -226,13 +226,14 @@ func renderForm(f *formModel, width int) string {
 	inputWidth := formWidth - 16
 
 	var b strings.Builder
-	b.WriteString(formTitleStyle.Render("  " + title))
-	b.WriteString("  ")
+	header := formTitleStyle.Copy().MarginBottom(0).Render("  " + title)
+	badge := ""
 	if f.oneShot {
-		b.WriteString(lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONE-SHOT"))
+		badge = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("ONE-SHOT")
 	} else {
-		b.WriteString(mutedItemStyle.Render("recurring"))
+		badge = mutedItemStyle.Render("recurring")
 	}
+	b.WriteString(header + "  " + badge)
 	b.WriteString("\n\n")
 
 	for i := 0; i < fieldCount; i++ {
