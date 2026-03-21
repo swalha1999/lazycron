@@ -48,7 +48,7 @@ func newInput(i int) textinput.Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = fieldHints[i]
-	ti.CharLimit = 512
+	ti.CharLimit = 0 // no limit — commands can be arbitrarily long
 	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
 	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
 	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
