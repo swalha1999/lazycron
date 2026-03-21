@@ -3,6 +3,7 @@ package backend
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -36,22 +37,89 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read crontab: %w", err)
 	}
-	return cron.Parse(output), nil
+	jobs := cron.Parse(output)
+
+	// Resolve script refs that couldn't be resolved locally (remote files).
+	for i, j := range jobs {
+		if cron.IsScriptRef(j.Command) {
+			path := strings.TrimPrefix(j.Command, "sh ")
+			data, readErr := b.client.ReadFile(path)
+			if readErr == nil {
+				content := string(data)
+				if strings.HasPrefix(content, "#!/bin/sh\n") {
+					content = content[len("#!/bin/sh\n"):]
+				}
+				jobs[i].Command = strings.TrimRight(content, "\n")
+			}
+		}
+	}
+
+	return jobs, nil
 }
 
 func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
-	content := cron.FormatCrontab(jobs)
-	_, err := b.client.Run(fmt.Sprintf("echo %s | crontab -",
-		shellQuote(content)))
+	// Get the remote home directory for correct script paths.
+	remoteHome, err := b.client.Run("echo $HOME")
+	if err != nil {
+		return fmt.Errorf("get remote home: %w", err)
+	}
+	remoteHome = strings.TrimSpace(remoteHome)
+	remoteScriptsDir := remoteHome + "/.lazycron/scripts"
+
+	// Ensure scripts directory exists on remote.
+	if _, err := b.client.Run("mkdir -p " + remoteScriptsDir); err != nil {
+		return fmt.Errorf("create scripts dir: %w", err)
+	}
+
+	// Upload script files for each job.
+	active := make(map[string]bool)
+	for _, j := range jobs {
+		filename := filepath.Base(cron.ScriptPath(j.Name))
+		active[filename] = true
+		content := "#!/bin/sh\n" + j.Command + "\n"
+		path := remoteScriptsDir + "/" + filename
+		if err := b.client.Upload(content, path, 0o755); err != nil {
+			return fmt.Errorf("upload script %s: %w", j.Name, err)
+		}
+	}
+
+	// Delete orphan scripts on remote.
+	remoteFiles, _ := b.client.ListFiles(remoteScriptsDir, "*.sh")
+	for _, f := range remoteFiles {
+		base := filepath.Base(f)
+		if !active[base] {
+			b.client.Run("rm -f " + shellQuote(f))
+		}
+	}
+
+	// Format crontab, replacing local script paths with remote paths.
+	crontabContent := cron.FormatCrontab(jobs)
+	crontabContent = strings.ReplaceAll(crontabContent, cron.ScriptsDir(), remoteScriptsDir)
+
+	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
+		shellQuote(crontabContent)))
 	if err != nil {
 		return fmt.Errorf("write crontab: %w", err)
 	}
 	return nil
 }
 
-func (b *RemoteBackend) RunJob(command string) (string, error) {
-	output, err := b.client.Run(fmt.Sprintf("sh -c %s", shellQuote(command)))
-	return output, err
+func (b *RemoteBackend) RunJob(name, command string) (string, error) {
+	// Get remote home for script path.
+	remoteHome, err := b.client.Run("echo $HOME")
+	if err != nil {
+		return "", fmt.Errorf("get remote home: %w", err)
+	}
+	remoteHome = strings.TrimSpace(remoteHome)
+	scriptPath := remoteHome + "/.lazycron/scripts/" + filepath.Base(cron.ScriptPath(name))
+
+	// Upload script to remote.
+	content := "#!/bin/sh\n" + command + "\n"
+	if err := b.client.Upload(content, scriptPath, 0o755); err != nil {
+		return "", fmt.Errorf("upload script: %w", err)
+	}
+
+	return b.client.Run("sh " + shellQuote(scriptPath))
 }
 
 func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
@@ -115,7 +183,7 @@ func (b *RemoteBackend) EnsureRecordScript() error {
 	}
 
 	// Create directories
-	_, err := b.client.Run("mkdir -p ~/.lazycron/bin ~/.lazycron/history")
+	_, err := b.client.Run("mkdir -p ~/.lazycron/bin ~/.lazycron/history ~/.lazycron/scripts")
 	if err != nil {
 		return fmt.Errorf("create dirs: %w", err)
 	}

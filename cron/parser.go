@@ -101,11 +101,12 @@ func (j Job) CrontabLine() string {
 	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
+	scriptCmd := "sh " + ScriptPath(j.Name)
 	var wrapped string
 	if j.OneShot {
-		wrapped = WrapWithRecordOnce(j.Command, j.Name)
+		wrapped = WrapWithRecordOnce(scriptCmd, j.Name)
 	} else {
-		wrapped = WrapWithRecord(j.Command, j.Name)
+		wrapped = WrapWithRecord(scriptCmd, j.Name)
 	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
@@ -232,7 +233,7 @@ func parseJobLine(line, name string) (Job, bool) {
 		return Job{
 			Name:     name,
 			Schedule: schedule,
-			Command:  StripRecord(rawCmd),
+			Command:  resolveScript(StripRecord(rawCmd)),
 			Enabled:  false,
 			Wrapped:  IsCurrentFormat(rawCmd),
 		}, true
@@ -251,7 +252,7 @@ func parseJobLine(line, name string) (Job, bool) {
 	return Job{
 		Name:     name,
 		Schedule: schedule,
-		Command:  StripRecord(rawCmd),
+		Command:  resolveScript(StripRecord(rawCmd)),
 		Enabled:  true,
 		Wrapped:  IsCurrentFormat(rawCmd),
 	}, true

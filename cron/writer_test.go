@@ -2,6 +2,8 @@ package cron
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,6 +31,18 @@ func withFakeLookPath(t *testing.T, fake func(file string) (string, error)) {
 	original := lookPath
 	lookPath = fake
 	t.Cleanup(func() { lookPath = original })
+}
+
+// withFakeScriptsDir replaces scriptsDir with a temp directory for the duration of a test.
+// The path includes ".lazycron/scripts" so IsScriptRef detection works correctly.
+func withFakeScriptsDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), ".lazycron", "scripts")
+	os.MkdirAll(dir, 0755)
+	original := scriptsDir
+	scriptsDir = func() string { return dir }
+	t.Cleanup(func() { scriptsDir = original })
+	return dir
 }
 
 // --- ReadCrontab ---
@@ -91,6 +105,7 @@ func TestReadCrontab_PassesCorrectArgs(t *testing.T) {
 // --- WriteCrontab ---
 
 func TestWriteCrontab_Success(t *testing.T) {
+	withFakeScriptsDir(t)
 	var gotStdin string
 	withFakeCrontab(t, func(stdin string, args ...string) (string, error) {
 		gotStdin = stdin
@@ -115,6 +130,7 @@ func TestWriteCrontab_Success(t *testing.T) {
 }
 
 func TestWriteCrontab_Error(t *testing.T) {
+	withFakeScriptsDir(t)
 	withFakeCrontab(t, func(stdin string, args ...string) (string, error) {
 		return "bad crontab", fmt.Errorf("exit status 1")
 	})
@@ -129,6 +145,7 @@ func TestWriteCrontab_Error(t *testing.T) {
 }
 
 func TestWriteCrontab_PassesCorrectArgs(t *testing.T) {
+	withFakeScriptsDir(t)
 	var gotArgs []string
 	withFakeCrontab(t, func(stdin string, args ...string) (string, error) {
 		gotArgs = args
@@ -144,6 +161,7 @@ func TestWriteCrontab_PassesCorrectArgs(t *testing.T) {
 // --- FormatCrontab ---
 
 func TestFormatCrontab_SingleJob(t *testing.T) {
+	withFakeScriptsDir(t)
 	jobs := []Job{
 		{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true},
 	}
@@ -161,6 +179,7 @@ func TestFormatCrontab_SingleJob(t *testing.T) {
 }
 
 func TestFormatCrontab_MultipleJobs(t *testing.T) {
+	withFakeScriptsDir(t)
 	jobs := []Job{
 		{Name: "job-a", Schedule: "0 9 * * *", Command: "echo a", Enabled: true, Wrapped: true},
 		{Name: "job-b", Schedule: "0 17 * * *", Command: "echo b", Enabled: true, Wrapped: true},
@@ -187,6 +206,7 @@ func TestFormatCrontab_Empty(t *testing.T) {
 }
 
 func TestFormatCrontab_DisabledJob(t *testing.T) {
+	withFakeScriptsDir(t)
 	jobs := []Job{
 		{Name: "off-job", Schedule: "0 3 * * *", Command: "echo off", Enabled: false, Wrapped: true},
 	}
@@ -227,11 +247,12 @@ func TestCheckCrontabAvailable_NotFound(t *testing.T) {
 // --- RunJobNow ---
 
 func TestRunJobNow_Success(t *testing.T) {
+	withFakeScriptsDir(t)
 	withFakeShell(t, func(command string) (string, error) {
 		return "hello world", nil
 	})
 
-	out, err := RunJobNow("echo hello world")
+	out, err := RunJobNow("test-job", "echo hello world")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -241,11 +262,12 @@ func TestRunJobNow_Success(t *testing.T) {
 }
 
 func TestRunJobNow_Failure(t *testing.T) {
+	withFakeScriptsDir(t)
 	withFakeShell(t, func(command string) (string, error) {
 		return "command not found", fmt.Errorf("exit status 127")
 	})
 
-	out, err := RunJobNow("nonexistent-command")
+	out, err := RunJobNow("test-job", "nonexistent-command")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -254,15 +276,28 @@ func TestRunJobNow_Failure(t *testing.T) {
 	}
 }
 
-func TestRunJobNow_PassesCommandToShell(t *testing.T) {
+func TestRunJobNow_WritesScriptAndRunsIt(t *testing.T) {
+	dir := withFakeScriptsDir(t)
 	var gotCommand string
 	withFakeShell(t, func(command string) (string, error) {
 		gotCommand = command
 		return "", nil
 	})
 
-	RunJobNow("cd /tmp && ls -la")
-	if gotCommand != "cd /tmp && ls -la" {
-		t.Errorf("command = %q, want full command string", gotCommand)
+	RunJobNow("my-job", "cd /tmp && ls -la")
+
+	// Should run via script path
+	expectedPath := "sh " + dir + "/my-job.sh"
+	if gotCommand != expectedPath {
+		t.Errorf("command = %q, want %q", gotCommand, expectedPath)
+	}
+
+	// Script file should exist with the command
+	content, err := ReadScriptCommand(dir + "/my-job.sh")
+	if err != nil {
+		t.Fatalf("script file not found: %v", err)
+	}
+	if content != "cd /tmp && ls -la" {
+		t.Errorf("script content = %q, want %q", content, "cd /tmp && ls -la")
 	}
 }

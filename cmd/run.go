@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os/exec"
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/cron"
@@ -46,9 +45,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Running '%s'...\n", target.Name)
 
-	out, err := exec.Command("sh", "-c", target.Command).CombinedOutput()
+	out, err := cron.RunJobNow(target.Name, target.Command)
 	if len(out) > 0 {
-		fmt.Print(string(out))
+		fmt.Print(out)
 	}
 	if err != nil {
 		return fmt.Errorf("job failed: %w", err)

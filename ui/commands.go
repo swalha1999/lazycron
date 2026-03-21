@@ -125,7 +125,7 @@ func saveJobs(b backend.Backend, jobs []cron.Job) tea.Cmd {
 
 func runJob(b backend.Backend, name, command string) tea.Cmd {
 	return func() tea.Msg {
-		output, err := b.RunJob(command)
+		output, err := b.RunJob(name, command)
 		return jobRanMsg{name: name, output: output, err: err}
 	}
 }

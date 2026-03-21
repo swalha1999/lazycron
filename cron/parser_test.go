@@ -106,6 +106,7 @@ func TestWrapStripRoundtrip(t *testing.T) {
 // --- CrontabLine ---
 
 func TestCrontabLine_Enabled(t *testing.T) {
+	dir := withFakeScriptsDir(t)
 	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true}
 	line := j.CrontabLine()
 
@@ -115,9 +116,15 @@ func TestCrontabLine_Enabled(t *testing.T) {
 	if !strings.Contains(line, "0 9 * * * "+wrapPrefix) {
 		t.Errorf("expected schedule + wrapped command: %q", line)
 	}
+	// Should reference script path, not inline command
+	expectedScriptRef := "sh " + dir + "/my-job.sh"
+	if !strings.Contains(line, expectedScriptRef) {
+		t.Errorf("expected script ref %q in line: %q", expectedScriptRef, line)
+	}
 }
 
 func TestCrontabLine_Disabled(t *testing.T) {
+	withFakeScriptsDir(t)
 	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: false, Wrapped: true}
 	line := j.CrontabLine()
 
@@ -363,12 +370,18 @@ func TestIsNameComment(t *testing.T) {
 // --- Full roundtrip: Parse → CrontabLine → Parse ---
 
 func TestFullRoundtrip(t *testing.T) {
+	withFakeScriptsDir(t)
 	original := Job{
 		Name:     "roundtrip-test",
 		Schedule: "30 14 * * 1-5",
 		Command:  `cd /app && ./deploy.sh --env=prod`,
 		Enabled:  true,
 		Wrapped:  true,
+	}
+
+	// Write the script file so resolveScript can read it during parse
+	if err := WriteScript(original.Name, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
 	}
 
 	// Serialize
@@ -389,12 +402,18 @@ func TestFullRoundtrip(t *testing.T) {
 }
 
 func TestFullRoundtrip_Disabled(t *testing.T) {
+	withFakeScriptsDir(t)
 	original := Job{
 		Name:     "disabled-roundtrip",
 		Schedule: "0 3 * * *",
 		Command:  "echo sleeping",
 		Enabled:  false,
 		Wrapped:  true,
+	}
+
+	// Write the script file so resolveScript can read it during parse
+	if err := WriteScript(original.Name, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
 	}
 
 	line := original.CrontabLine()
@@ -467,6 +486,7 @@ func TestParse_OneShotJobWithTag(t *testing.T) {
 }
 
 func TestCrontabLine_OneShot(t *testing.T) {
+	withFakeScriptsDir(t)
 	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true}
 	line := j.CrontabLine()
 
@@ -479,6 +499,7 @@ func TestCrontabLine_OneShot(t *testing.T) {
 }
 
 func TestCrontabLine_OneShotWithTag(t *testing.T) {
+	withFakeScriptsDir(t)
 	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true, Tag: "PROD", TagColor: "#f38ba8"}
 	line := j.CrontabLine()
 
@@ -488,6 +509,7 @@ func TestCrontabLine_OneShotWithTag(t *testing.T) {
 }
 
 func TestFullRoundtrip_OneShot(t *testing.T) {
+	withFakeScriptsDir(t)
 	original := Job{
 		Name:     "one-shot-test",
 		Schedule: "30 14 22 3 *",
@@ -495,6 +517,11 @@ func TestFullRoundtrip_OneShot(t *testing.T) {
 		Enabled:  true,
 		Wrapped:  true,
 		OneShot:  true,
+	}
+
+	// Write the script file so resolveScript can read it during parse
+	if err := WriteScript(original.Name, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
 	}
 
 	line := original.CrontabLine()

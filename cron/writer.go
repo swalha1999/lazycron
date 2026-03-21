@@ -55,7 +55,11 @@ func FormatCrontab(jobs []Job) string {
 }
 
 // WriteCrontab writes jobs to crontab via `crontab -`.
+// It first syncs script files to ~/.lazycron/scripts/.
 func WriteCrontab(jobs []Job) error {
+	if err := SyncScripts(jobs); err != nil {
+		return fmt.Errorf("sync scripts: %w", err)
+	}
 	content := FormatCrontab(jobs)
 	out, err := runCrontab(content, "-")
 	if err != nil {
@@ -73,8 +77,11 @@ func CheckCrontabAvailable() error {
 	return nil
 }
 
-// RunJobNow runs a job command immediately in a shell.
+// RunJobNow writes the command to a script file and runs it.
 // Returns the combined stdout/stderr output and any error.
-func RunJobNow(command string) (string, error) {
-	return runShell(command)
+func RunJobNow(name, command string) (string, error) {
+	if err := WriteScript(name, command); err != nil {
+		return "", fmt.Errorf("write script: %w", err)
+	}
+	return runShell("sh " + ScriptPath(name))
 }

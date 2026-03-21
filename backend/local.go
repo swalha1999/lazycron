@@ -27,8 +27,8 @@ func (b *LocalBackend) WriteJobs(jobs []cron.Job) error {
 	return cron.WriteCrontab(jobs)
 }
 
-func (b *LocalBackend) RunJob(command string) (string, error) {
-	return cron.RunJobNow(command)
+func (b *LocalBackend) RunJob(name, command string) (string, error) {
+	return cron.RunJobNow(name, command)
 }
 
 func (b *LocalBackend) LoadHistory() ([]history.Entry, error) {
