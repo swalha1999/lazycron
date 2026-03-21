@@ -276,7 +276,7 @@ func TestRunJobNow_Failure(t *testing.T) {
 	}
 }
 
-func TestRunJobNow_WritesScriptAndRunsIt(t *testing.T) {
+func TestRunJobNow_CreatesScriptIfMissing(t *testing.T) {
 	dir := withFakeScriptsDir(t)
 	var gotCommand string
 	withFakeShell(t, func(command string) (string, error) {
@@ -286,8 +286,8 @@ func TestRunJobNow_WritesScriptAndRunsIt(t *testing.T) {
 
 	RunJobNow("my-job", "cd /tmp && ls -la")
 
-	// Should run via script path
-	expectedPath := "sh " + dir + "/my-job.sh"
+	// Should run via quoted script path
+	expectedPath := "sh '" + dir + "/my-job.sh'"
 	if gotCommand != expectedPath {
 		t.Errorf("command = %q, want %q", gotCommand, expectedPath)
 	}
@@ -299,5 +299,23 @@ func TestRunJobNow_WritesScriptAndRunsIt(t *testing.T) {
 	}
 	if content != "cd /tmp && ls -la" {
 		t.Errorf("script content = %q, want %q", content, "cd /tmp && ls -la")
+	}
+}
+
+func TestRunJobNow_DoesNotOverwriteExistingScript(t *testing.T) {
+	dir := withFakeScriptsDir(t)
+	withFakeShell(t, func(command string) (string, error) {
+		return "", nil
+	})
+
+	// Write a script with the "correct" command
+	WriteScript("my-job", "echo correct")
+
+	// Run with a "stale" command — should NOT overwrite
+	RunJobNow("my-job", "echo stale")
+
+	content, _ := ReadScriptCommand(dir + "/my-job.sh")
+	if content != "echo correct" {
+		t.Errorf("script was overwritten: got %q, want %q", content, "echo correct")
 	}
 }

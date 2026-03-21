@@ -42,7 +42,7 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	// Resolve script refs that couldn't be resolved locally (remote files).
 	for i, j := range jobs {
 		if cron.IsScriptRef(j.Command) {
-			path := strings.TrimPrefix(j.Command, "sh ")
+			path := strings.Trim(strings.TrimPrefix(j.Command, "sh "), "'\"")
 			data, readErr := b.client.ReadFile(path)
 			if readErr == nil {
 				content := string(data)

@@ -101,7 +101,7 @@ func (j Job) CrontabLine() string {
 	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
-	scriptCmd := "sh " + ScriptPath(j.Name)
+	scriptCmd := "sh '" + ScriptPath(j.Name) + "'"
 	var wrapped string
 	if j.OneShot {
 		wrapped = WrapWithRecordOnce(scriptCmd, j.Name)

@@ -2,6 +2,7 @@ package cron
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -77,11 +78,18 @@ func CheckCrontabAvailable() error {
 	return nil
 }
 
-// RunJobNow writes the command to a script file and runs it.
+// RunJobNow ensures the script file is up-to-date and runs it.
 // Returns the combined stdout/stderr output and any error.
 func RunJobNow(name, command string) (string, error) {
-	if err := WriteScript(name, command); err != nil {
-		return "", fmt.Errorf("write script: %w", err)
+	path := ScriptPath(name)
+
+	// Only write the script if it doesn't exist yet (SyncScripts handles normal updates).
+	// This avoids overwriting a good script with a potentially stale in-memory command.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := WriteScript(name, command); err != nil {
+			return "", fmt.Errorf("write script: %w", err)
+		}
 	}
-	return runShell("sh " + ScriptPath(name))
+
+	return runShell("sh '" + path + "'")
 }

@@ -116,8 +116,8 @@ func TestCrontabLine_Enabled(t *testing.T) {
 	if !strings.Contains(line, "0 9 * * * "+wrapPrefix) {
 		t.Errorf("expected schedule + wrapped command: %q", line)
 	}
-	// Should reference script path, not inline command
-	expectedScriptRef := "sh " + dir + "/my-job.sh"
+	// Should reference quoted script path, not inline command
+	expectedScriptRef := "sh '" + dir + "/my-job.sh'"
 	if !strings.Contains(line, expectedScriptRef) {
 		t.Errorf("expected script ref %q in line: %q", expectedScriptRef, line)
 	}

@@ -108,6 +108,7 @@ func resolveScript(command string) string {
 		return command
 	}
 	path := strings.TrimPrefix(command, "sh ")
+	path = strings.Trim(path, "'\"")
 	content, err := ReadScriptCommand(path)
 	if err != nil {
 		return command
