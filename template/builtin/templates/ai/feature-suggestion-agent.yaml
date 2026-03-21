@@ -1,21 +1,21 @@
 name: Feature Suggestion Agent
 category: ai
-description: Weekly AI agent that analyzes a repo and suggests one new feature as a GitHub issue
+description: AI agent that analyzes a repo and suggests one high-impact UX feature as a GitHub issue
 tag: BP
 tag_color: "#f38ba8"
 schedule: "0 8 * * 1-5"
 command: >-
   cd $REPO_PATH &&
-  OPEN=$(gh issue list -l enhancement --state open --json number -q 'length') &&
+  OPEN=$(gh issue list -l enhancement --state open --json number -q length) &&
   if [ "$OPEN" -ge 5 ]; then echo "Too many open feature suggestions ($OPEN), skipping"; exit 0; fi &&
-  claude -p --dangerously-skip-permissions 'You are a feature suggestion agent focused on HIGH-IMPACT, USER-FACING improvements. Your job:
-  1. Run `gh issue list -l enhancement --state open` AND `gh issue list -l enhancement --state closed` — read ALL existing suggestions so you never duplicate.
+  claude -p --dangerously-skip-permissions "You are a feature suggestion agent focused on HIGH-IMPACT, USER-FACING improvements. Your job:
+  1. Run \`gh issue list -l enhancement --state open\` AND \`gh issue list -l enhancement --state closed\` — read ALL existing suggestions so you never duplicate.
   2. Analyze the codebase — focus on the user experience: how does the user interact with this tool? What feels clunky, slow, confusing, or missing? Look at UI flows, error messages, onboarding, feedback loops, and accessibility.
   3. Prioritize by impact: suggest the ONE thing that would make the biggest difference to the end user. Think like a product manager, not an engineer — care about what the user sees and feels, not internal refactors.
-  4. Open exactly ONE GitHub issue with the `enhancement` label using `gh issue create --title "..." --body "..." --label enhancement`.
+  4. Open exactly ONE GitHub issue with the enhancement label using \`gh issue create --title ... --body ... --label enhancement\`.
   5. The issue body must include: what the user experience problem is today, how the suggestion improves it, and clear acceptance criteria.
   Rules: Do NOT implement anything. Do NOT open PRs. Do NOT open more than one issue. Do NOT suggest internal refactors, code cleanup, or developer-only improvements — every suggestion must directly improve the end-user experience.
-  IMPORTANT: If you cannot identify a suggestion that meaningfully improves the product for users, STAND DOWN — exit cleanly without opening any issue. No filler, no low-impact ideas.'
+  IMPORTANT: If you cannot identify a suggestion that meaningfully improves the product for users, STAND DOWN — exit cleanly without opening any issue. No filler, no low-impact ideas."
 variables:
   - name: REPO_PATH
     prompt: "Repository path"

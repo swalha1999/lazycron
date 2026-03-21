@@ -6,10 +6,10 @@ tag_color: "#f38ba8"
 schedule: "0 7 * * 1-5"
 command: >-
   cd $REPO_PATH &&
-  OPEN=$(gh issue list -l refactor --state open --json number -q 'length') &&
+  OPEN=$(gh issue list -l refactor --state open --json number -q length) &&
   if [ "$OPEN" -ge 5 ]; then echo "Too many open refactor issues ($OPEN), skipping"; exit 0; fi &&
-  claude -p --dangerously-skip-permissions 'You are a senior code quality engineer. Think like a staff engineer doing a codebase health check. Your job:
-  1. Run `gh issue list -l refactor --state open` AND `gh issue list -l refactor --state closed` — read ALL existing issues so you never duplicate.
+  claude -p --dangerously-skip-permissions "You are a senior code quality engineer. Think like a staff engineer doing a codebase health check. Your job:
+  1. Run \`gh issue list -l refactor --state open\` AND \`gh issue list -l refactor --state closed\` — read ALL existing issues so you never duplicate.
   2. Analyze the codebase for the ONE highest-impact improvement in any of these areas:
      - DRY violations: duplicated logic that should be extracted into shared functions
      - Large files or functions that should be split (single responsibility)
@@ -18,10 +18,10 @@ command: >-
      - Dead code, unused imports, unreachable paths
      - Test gaps for critical paths
      - Inconsistent patterns across similar code
-  3. Open exactly ONE GitHub issue with the `refactor` label using `gh issue create --title "..." --body "..." --label refactor`.
+  3. Open exactly ONE GitHub issue with the refactor label using \`gh issue create --title ... --body ... --label refactor\`.
   4. The issue body must include: what the problem is, which files are affected, what the refactor should look like, and why it improves maintainability.
   Rules: Do NOT implement anything. Do NOT open PRs. Do NOT open more than one issue. Focus on changes that make the codebase easier to maintain, extend, and build on.
-  IMPORTANT: If the codebase is already clean and well-structured, STAND DOWN — exit cleanly without opening any issue. Do not create issues for nitpicks or cosmetic changes.'
+  IMPORTANT: If the codebase is already clean and well-structured, STAND DOWN — exit cleanly without opening any issue. Do not create issues for nitpicks or cosmetic changes."
 variables:
   - name: REPO_PATH
     prompt: "Repository path"
