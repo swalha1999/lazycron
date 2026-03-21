@@ -1,0 +1,32 @@
+name: Auto Bug Fixer
+category: ai
+description: AI agent that picks one open bug issue, creates a fix branch, and opens a PR
+tag: BP
+tag_color: "#f38ba8"
+schedule: "0 9 * * 1-5"
+command: >-
+  cd $REPO_PATH &&
+  OPEN_PRS=$(gh pr list --state open --json number -q 'length') &&
+  if [ "$OPEN_PRS" -ge 3 ]; then echo "Too many open PRs ($OPEN_PRS), skipping"; exit 0; fi &&
+  ISSUE=$(gh issue list -l bug --state open --json number,title --jq 'sort_by(.number) | .[0].number') &&
+  if [ -z "$ISSUE" ]; then echo "No open bug issues, skipping"; exit 0; fi &&
+  BRANCH="fix/issue-${ISSUE}-$(date +%Y%m%d)$BRANCH_SUFFIX" &&
+  git checkout $BASE_BRANCH && git pull && git checkout -b "$BRANCH" &&
+  claude -p --dangerously-skip-permissions "You are a fix agent. Your job:
+  1. Read issue #${ISSUE} using \`gh issue view ${ISSUE}\`.
+  2. Fix the bug described in the issue. Make minimal, focused changes.
+  3. Commit your changes with a clear message referencing the issue.
+  4. Push the branch and open a PR with \`gh pr create --title \"Fix #${ISSUE}: <short description>\" --body \"Closes #${ISSUE}\n\n<explanation of fix>\" --label bug\`.
+  Rules: Fix only ONE issue. Do NOT modify unrelated code. Keep the diff small and reviewable.
+  IMPORTANT: If you are not confident you fully understand the bug or your fix is correct, STAND DOWN — delete the branch and exit cleanly without opening a PR. Do not submit uncertain or partial fixes.
+  The build, linting, and tests must all pass before opening a PR."
+variables:
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
+  - name: BASE_BRANCH
+    prompt: "Base branch to branch from"
+    default: main
+  - name: BRANCH_SUFFIX
+    prompt: "Optional branch name suffix"
+    default: ""

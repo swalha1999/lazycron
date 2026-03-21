@@ -108,8 +108,8 @@ func TestLoadBuiltin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadBuiltin failed: %v", err)
 	}
-	if len(templates) < 5 {
-		t.Errorf("expected at least 5 built-in templates, got %d", len(templates))
+	if len(templates) < 9 {
+		t.Errorf("expected at least 9 built-in templates, got %d", len(templates))
 	}
 
 	// Verify all templates have required fields

@@ -1,0 +1,31 @@
+name: Refactor Builder Agent
+category: ai
+description: AI agent that picks one open refactor issue, implements it on a branch, and opens a PR
+tag: BP
+tag_color: "#f38ba8"
+schedule: "0 11 * * 1-5"
+command: >-
+  cd $REPO_PATH &&
+  OPEN_PRS=$(gh pr list --state open --json number -q 'length') &&
+  if [ "$OPEN_PRS" -ge 3 ]; then echo "Too many open PRs ($OPEN_PRS), skipping"; exit 0; fi &&
+  ISSUE=$(gh issue list -l refactor --state open --json number,title --jq 'sort_by(.number) | .[0].number') &&
+  if [ -z "$ISSUE" ]; then echo "No open refactor issues, skipping"; exit 0; fi &&
+  BRANCH="refactor/issue-${ISSUE}-$(date +%Y%m%d)$BRANCH_SUFFIX" &&
+  git checkout $BASE_BRANCH && git pull && git checkout -b "$BRANCH" &&
+  claude -p --dangerously-skip-permissions "You are a refactor builder agent. Your job:
+  1. Read issue #${ISSUE} using \`gh issue view ${ISSUE}\`.
+  2. Implement the refactor described in the issue. Do not change behavior — only improve structure, readability, and maintainability.
+  3. Commit your changes with a clear message referencing the issue.
+  4. Push the branch and open a PR with \`gh pr create --title \"Refactor #${ISSUE}: <short description>\" --body \"Closes #${ISSUE}\n\n## What\n<what changed>\n\n## Why\n<why this improves maintainability>\" --label refactor\`.
+  Rules: ONE refactor per run. Do NOT change behavior or add features. Do NOT modify unrelated code.
+  IMPORTANT: Every PR must be complete and fully working. The build, linting, and tests must all pass before opening a PR. If your refactor breaks anything, fix it or revert and stand down. Do not open a PR with failing tests."
+variables:
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
+  - name: BASE_BRANCH
+    prompt: "Base branch to branch from"
+    default: main
+  - name: BRANCH_SUFFIX
+    prompt: "Optional branch name suffix"
+    default: ""

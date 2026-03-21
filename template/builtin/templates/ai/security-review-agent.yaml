@@ -1,0 +1,21 @@
+name: Security Review Agent
+category: ai
+description: AI agent that scans a repository for security vulnerabilities and opens one GitHub issue per run
+tag: BP
+tag_color: "#f38ba8"
+schedule: "0 6 * * 1-5"
+command: >-
+  cd $REPO_PATH &&
+  OPEN=$(gh issue list -l security --state open --json number -q 'length') &&
+  if [ "$OPEN" -ge 3 ]; then echo "Too many open security issues ($OPEN), skipping"; exit 0; fi &&
+  claude -p --dangerously-skip-permissions 'You are a security review agent. Your job:
+  1. Run `gh issue list -l security --state open` — read existing findings so you never duplicate.
+  2. Scan the codebase for ONE new security vulnerability (OWASP Top 10, dependency issues, secrets, misconfigs).
+  3. If you find something new, open exactly ONE GitHub issue with the `security` label using `gh issue create --title "..." --body "..." --label security`.
+  4. If everything looks clean, exit without creating an issue.
+  Rules: Do NOT fix anything. Do NOT open PRs. Do NOT open more than one issue. Be specific — include file paths and line numbers.
+  IMPORTANT: If you do not find a clear, critical vulnerability that you are confident about, STAND DOWN — exit cleanly without opening any issue. Do not create issues for minor or speculative findings.'
+variables:
+  - name: REPO_PATH
+    prompt: "Repository path"
+    default: /home/user/project
