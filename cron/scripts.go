@@ -37,11 +37,19 @@ func WriteScript(jobName, command string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	content := "#!/bin/sh\n" + command + "\n"
+	content := "#!/bin/sh\n" + scriptPreamble + command + "\n"
 	return os.WriteFile(ScriptPath(jobName), []byte(content), 0755)
 }
 
-// ReadScriptCommand reads a script file and returns the command (stripping the shebang).
+// scriptPreamble is the profile-sourcing block prepended to every script.
+const scriptPreamble = "# Source user profile for PATH and environment variables.\n" +
+	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
+	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null\n" +
+	"done\n" +
+	"unset __lc_rc\n"
+
+// ReadScriptCommand reads a script file and returns the command
+// (stripping the shebang and profile-sourcing preamble).
 func ReadScriptCommand(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -51,6 +59,7 @@ func ReadScriptCommand(path string) (string, error) {
 	if strings.HasPrefix(content, "#!/bin/sh\n") {
 		content = content[len("#!/bin/sh\n"):]
 	}
+	content = strings.TrimPrefix(content, scriptPreamble)
 	return strings.TrimRight(content, "\n"), nil
 }
 
