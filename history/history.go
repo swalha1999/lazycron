@@ -84,5 +84,5 @@ func WriteEntry(jobName, output string, success bool) error {
 	filename := now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
 	path := filepath.Join(record.HistoryDir(), filename)
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }

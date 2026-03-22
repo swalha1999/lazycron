@@ -36,10 +36,10 @@ func RecordPath() string {
 
 // EnsureDirs creates ~/.lazycron/bin/ and ~/.lazycron/history/.
 func EnsureDirs() error {
-	if err := os.MkdirAll(BinDir(), 0o755); err != nil {
+	if err := os.MkdirAll(BinDir(), 0o700); err != nil {
 		return err
 	}
-	return os.MkdirAll(HistoryDir(), 0o755)
+	return os.MkdirAll(HistoryDir(), 0o700)
 }
 
 // InstallRecord writes the embedded POSIX shell script to ~/.lazycron/bin/record.

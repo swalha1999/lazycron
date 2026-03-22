@@ -59,8 +59,8 @@ func TestWriteReadScript(t *testing.T) {
 
 	// Verify permissions
 	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0755 {
-		t.Errorf("permissions = %o, want 0755", info.Mode().Perm())
+	if info.Mode().Perm() != 0700 {
+		t.Errorf("permissions = %o, want 0700", info.Mode().Perm())
 	}
 }
 

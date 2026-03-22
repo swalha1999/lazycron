@@ -13,7 +13,8 @@ EXIT="${2:-0}"
 OUTPUT="$(cat)"
 
 DIR="$HOME/.lazycron/history"
-mkdir -p "$DIR"
+mkdir -p -m 0700 "$DIR"
+umask 077
 
 STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
 SAFE="$(printf '%s' "$JOB" | tr '/ ' '__')"

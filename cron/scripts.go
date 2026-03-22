@@ -34,11 +34,11 @@ func sanitizeJobName(name string) string {
 // WriteScript writes a job's command to its script file.
 func WriteScript(jobName, command string) error {
 	dir := scriptsDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 	content := "#!/bin/sh\n" + ScriptPreamble + command + "\n"
-	return os.WriteFile(ScriptPath(jobName), []byte(content), 0755)
+	return os.WriteFile(ScriptPath(jobName), []byte(content), 0700)
 }
 
 // ScriptPreamble is the profile-sourcing block prepended to every script.
@@ -75,7 +75,7 @@ func DeleteScript(jobName string) error {
 // SyncScripts writes script files for all jobs and removes orphans.
 func SyncScripts(jobs []Job) error {
 	dir := scriptsDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 
