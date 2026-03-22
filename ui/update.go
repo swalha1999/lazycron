@@ -164,6 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.jobs = msg.jobs
 			m.history = msg.history
 			m.selected = 0
+			m.selectedRow = 0
 			m.historySelected = 0
 			serverName := m.manager.ServerAt(msg.index).Name
 			m.statusMsg = fmt.Sprintf("Switched to %s", serverName)
@@ -228,6 +229,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		return m, cmd
+	case modeProjectPrompt:
+		var cmd tea.Cmd
+		m.projectInput, cmd = m.projectInput.Update(msg)
+		return m, cmd
 	case modeTemplatePicker:
 		if m.templatePicker.phase == phaseVariables && len(m.templatePicker.variableInputs) > 0 {
 			idx := m.templatePicker.activeVariable
@@ -265,6 +270,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleNewJobChoiceKey(msg)
 	case modeTemplatePicker:
 		return m.handleTemplatePickerKey(msg)
+	case modeProjectPrompt:
+		return m.handleProjectPromptKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}

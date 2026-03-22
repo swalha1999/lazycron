@@ -50,6 +50,12 @@ func renderDetail(job *cron.Job, width int) string {
 	b.WriteString(renderDetailRow("Name", nameDisplay))
 	b.WriteString("\n")
 
+	// Project
+	if job.Project != "" {
+		b.WriteString(renderDetailRow("Project", detailValueStyle.Render(job.Project)))
+		b.WriteString("\n")
+	}
+
 	// Schedule
 	b.WriteString(renderDetailRow("Schedule", detailValueStyle.Render(cron.CronToHuman(job.Schedule))))
 	b.WriteString("\n")

@@ -538,6 +538,126 @@ func TestFullRoundtrip_OneShot(t *testing.T) {
 	assertBool(t, "OneShot", got.OneShot, true)
 }
 
+// --- extractProject ---
+
+func TestExtractProject(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantName    string
+		wantProject string
+	}{
+		{"with project", "My Job {backend}", "My Job", "backend"},
+		{"no project", "My Job", "My Job", ""},
+		{"empty braces", "My Job {}", "My Job {}", ""},
+		{"project with tag", "My Job [TAG:#f38ba8] {backend}", "My Job [TAG:#f38ba8]", "backend"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotProject := extractProject(tt.input)
+			if gotName != tt.wantName {
+				t.Errorf("extractProject(%q) name = %q, want %q", tt.input, gotName, tt.wantName)
+			}
+			if gotProject != tt.wantProject {
+				t.Errorf("extractProject(%q) project = %q, want %q", tt.input, gotProject, tt.wantProject)
+			}
+		})
+	}
+}
+
+// --- Parse with project ---
+
+func TestParse_WithProject(t *testing.T) {
+	input := "# my-job [PROD:#f38ba8] {backend}\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "my-job")
+	assertEqual(t, "Tag", j.Tag, "PROD")
+	assertEqual(t, "TagColor", j.TagColor, "#f38ba8")
+	assertEqual(t, "Project", j.Project, "backend")
+}
+
+func TestParse_ProjectOnly(t *testing.T) {
+	input := "# my-job {infra}\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "my-job")
+	assertEqual(t, "Tag", j.Tag, "")
+	assertEqual(t, "Project", j.Project, "infra")
+}
+
+func TestParse_OneShotWithProject(t *testing.T) {
+	input := "# deploy @once [PROD:#f38ba8] {releases}\n30 14 22 3 * " + wrapCmd("echo deploy", "deploy")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "deploy")
+	assertBool(t, "OneShot", j.OneShot, true)
+	assertEqual(t, "Tag", j.Tag, "PROD")
+	assertEqual(t, "Project", j.Project, "releases")
+}
+
+func TestCrontabLine_WithProject(t *testing.T) {
+	withFakeScriptsDir(t)
+	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Project: "backend"}
+	line := j.CrontabLine()
+
+	if !strings.HasPrefix(line, "# my-job {backend}\n") {
+		t.Errorf("expected project in name comment: %q", line)
+	}
+}
+
+func TestCrontabLine_TagAndProject(t *testing.T) {
+	withFakeScriptsDir(t)
+	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Tag: "PROD", TagColor: "#f38ba8", Project: "backend"}
+	line := j.CrontabLine()
+
+	if !strings.Contains(line, "# my-job [PROD:#f38ba8] {backend}\n") {
+		t.Errorf("expected tag before project in name comment: %q", line)
+	}
+}
+
+func TestFullRoundtrip_WithProject(t *testing.T) {
+	withFakeScriptsDir(t)
+	original := Job{
+		Name:     "project-test",
+		Schedule: "30 14 * * 1-5",
+		Command:  "echo hello",
+		Enabled:  true,
+		Wrapped:  true,
+		Tag:      "BP",
+		TagColor: "#a6e3a1",
+		Project:  "backend",
+	}
+
+	if err := WriteScript(original.Name, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+
+	line := original.CrontabLine()
+	jobs := Parse(line)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after roundtrip, got %d", len(jobs))
+	}
+
+	got := jobs[0]
+	assertEqual(t, "Name", got.Name, original.Name)
+	assertEqual(t, "Tag", got.Tag, original.Tag)
+	assertEqual(t, "TagColor", got.TagColor, original.TagColor)
+	assertEqual(t, "Project", got.Project, original.Project)
+}
+
 // --- helpers ---
 
 func assertEqual(t *testing.T, field, got, want string) {

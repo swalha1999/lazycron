@@ -8,6 +8,54 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 )
 
+// currentJobIndex returns the job index for the current selectedRow, or -1 if on a header.
+func (m *Model) currentJobIndex() int {
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+		return -1
+	}
+	if rows[m.selectedRow].kind == rowJob {
+		return rows[m.selectedRow].jobIdx
+	}
+	return -1
+}
+
+// isOnHeader returns true if the current selectedRow is a group header.
+func (m *Model) isOnHeader() bool {
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+		return false
+	}
+	return rows[m.selectedRow].kind == rowHeader
+}
+
+// toggleCurrentHeader toggles the collapse state of the header at selectedRow.
+func (m *Model) toggleCurrentHeader() {
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+		return
+	}
+	if rows[m.selectedRow].kind == rowHeader {
+		project := rows[m.selectedRow].project
+		m.collapsedProjects[project] = !m.collapsedProjects[project]
+	}
+}
+
+// clampSelectedRow ensures selectedRow is within bounds of current rows.
+func (m *Model) clampSelectedRow() {
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	if len(rows) == 0 {
+		m.selectedRow = 0
+		return
+	}
+	if m.selectedRow >= len(rows) {
+		m.selectedRow = len(rows) - 1
+	}
+	if m.selectedRow < 0 {
+		m.selectedRow = 0
+	}
+}
+
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
@@ -47,10 +95,12 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.serverSelected--
 			}
 		case panelJobs:
-			if m.selected > 0 {
-				m.selected--
+			rows := buildRows(m.jobs, m.collapsedProjects)
+			if m.selectedRow > 0 {
+				m.selectedRow--
 				m.detailScroll = 0
 			}
+			_ = rows
 		case panelHistory:
 			if m.historySelected > 0 {
 				m.historySelected--
@@ -69,8 +119,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.serverSelected++
 			}
 		case panelJobs:
-			if m.selected < len(m.jobs)-1 {
-				m.selected++
+			rows := buildRows(m.jobs, m.collapsedProjects)
+			if m.selectedRow < len(rows)-1 {
+				m.selectedRow++
 				m.detailScroll = 0
 			}
 		case panelHistory:
@@ -87,18 +138,29 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.switchToServer(m.serverSelected)
 		}
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
-			m.mode = modeForm
-			m.form = newFormForEdit(m.jobs[m.selected], m.selected, m.activeDirLister())
-			m.statusMsg = ""
-			return m, m.form.focusActive()
+			if m.isOnHeader() {
+				m.toggleCurrentHeader()
+				m.clampSelectedRow()
+				return m, nil
+			}
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				m.mode = modeForm
+				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx, m.activeDirLister())
+				m.statusMsg = ""
+				return m, m.form.focusActive()
+			}
 		}
 
 	case "e":
-		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
-			m.mode = modeForm
-			m.form = newFormForEdit(m.jobs[m.selected], m.selected, m.activeDirLister())
-			m.statusMsg = ""
-			return m, m.form.focusActive()
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				m.mode = modeForm
+				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx, m.activeDirLister())
+				m.statusMsg = ""
+				return m, m.form.focusActive()
+			}
 		}
 
 	case "a":
@@ -164,7 +226,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.mode = modeConfirmDeleteServer
 			m.statusMsg = ""
-		} else if m.focusPanel == panelJobs && len(m.jobs) > 0 {
+		} else if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
 			m.mode = modeConfirmDelete
 			m.statusMsg = ""
 		} else if m.focusPanel == panelHistory && len(m.history) > 0 {
@@ -177,42 +239,68 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.switchToServer(m.serverSelected)
 		}
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
-			m.jobs[m.selected].Enabled = !m.jobs[m.selected].Enabled
-			status := "enabled"
-			if !m.jobs[m.selected].Enabled {
-				status = "disabled"
+			if m.isOnHeader() {
+				m.toggleCurrentHeader()
+				m.clampSelectedRow()
+				return m, nil
 			}
-			m.statusMsg = fmt.Sprintf("Job '%s' %s", m.jobs[m.selected].Name, status)
-			m.statusKind = statusSuccess
-			m.statusID++
-			b := m.manager.ActiveBackend()
-			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				m.jobs[jobIdx].Enabled = !m.jobs[jobIdx].Enabled
+				status := "enabled"
+				if !m.jobs[jobIdx].Enabled {
+					status = "disabled"
+				}
+				m.statusMsg = fmt.Sprintf("Job '%s' %s", m.jobs[jobIdx].Name, status)
+				m.statusKind = statusSuccess
+				m.statusID++
+				b := m.manager.ActiveBackend()
+				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+			}
+		}
+
+	case "p":
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				m.projectInput = newProjectInput()
+				m.projectInput.SetValue(m.jobs[jobIdx].Project)
+				m.mode = modeProjectPrompt
+				m.statusMsg = ""
+				return m, m.projectInput.Focus()
+			}
 		}
 
 	case "r":
-		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
-			job := m.jobs[m.selected]
-			m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
-			m.statusKind = statusInfo
-			b := m.manager.ActiveBackend()
-			return m, runJob(b, job.Name, job.Command)
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				job := m.jobs[jobIdx]
+				m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
+				m.statusKind = statusInfo
+				b := m.manager.ActiveBackend()
+				return m, runJob(b, job.Name, job.Command)
+			}
 		}
 
 	case "U":
-		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
-			job := &m.jobs[m.selected]
-			if job.Wrapped {
-				m.statusMsg = fmt.Sprintf("Job '%s' is already up to date", job.Name)
-				m.statusKind = statusInfo
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				job := &m.jobs[jobIdx]
+				if job.Wrapped {
+					m.statusMsg = fmt.Sprintf("Job '%s' is already up to date", job.Name)
+					m.statusKind = statusInfo
+					m.statusID++
+					return m, clearStatusAfter(m.statusID, 3*time.Second)
+				}
+				job.Wrapped = true
+				m.statusMsg = fmt.Sprintf("Updated '%s' to latest format", job.Name)
+				m.statusKind = statusSuccess
 				m.statusID++
-				return m, clearStatusAfter(m.statusID, 3*time.Second)
+				b := m.manager.ActiveBackend()
+				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 			}
-			job.Wrapped = true
-			m.statusMsg = fmt.Sprintf("Updated '%s' to latest format", job.Name)
-			m.statusKind = statusSuccess
-			m.statusID++
-			b := m.manager.ActiveBackend()
-			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 		}
 
 	case "R":
@@ -255,6 +343,7 @@ func (m Model) switchToServer(index int) (tea.Model, tea.Cmd) {
 			m.jobs = cached.Jobs
 			m.history = cached.History
 			m.selected = 0
+			m.selectedRow = 0
 			m.historySelected = 0
 		}
 		return m, loadServerData(m.manager, index)

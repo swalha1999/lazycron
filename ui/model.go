@@ -22,6 +22,7 @@ const (
 	modeNewJobChoice
 	modeTemplatePicker
 	modeConfirmDeleteHistory
+	modeProjectPrompt
 )
 
 type statusType int
@@ -79,6 +80,12 @@ type Model struct {
 	// Template picker state
 	templatePicker templatePickerModel
 
+	// Project grouping state
+	collapsedProjects map[string]bool
+	jobListRows       []listRow       // cached visual rows for grouped job list
+	selectedRow       int             // visual row index in grouped job list
+	projectInput      textinput.Model // for quick-assign project prompt
+
 	// App version (for self-update)
 	version string
 }
@@ -96,13 +103,25 @@ func newPasswordInput() textinput.Model {
 	return ti
 }
 
+func newProjectInput() textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.Placeholder = "Project name (empty to clear)"
+	ti.CharLimit = 64
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
+	return ti
+}
+
 func NewModel(mgr *backend.Manager, version string) Model {
 	return Model{
-		manager:    mgr,
-		selected:   0,
-		mode:       modeNormal,
-		focusPanel: panelServers,
-		version:    version,
+		manager:           mgr,
+		selected:          0,
+		mode:              modeNormal,
+		focusPanel:        panelServers,
+		collapsedProjects: make(map[string]bool),
+		version:           version,
 	}
 }
 

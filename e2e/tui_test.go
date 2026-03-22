@@ -202,6 +202,9 @@ func TestDeleteJob(t *testing.T) {
 	// Focus jobs panel
 	m = sendSpecialKey(m, tea.KeyTab)
 
+	// Move past group header to the job row
+	m = sendKey(m, "j")
+
 	// Delete: D
 	m = sendKey(m, "D")
 
@@ -223,6 +226,9 @@ func TestToggleDisable(t *testing.T) {
 	// Focus jobs panel
 	m = sendSpecialKey(m, tea.KeyTab)
 
+	// Move past group header to the job row
+	m = sendKey(m, "j")
+
 	// Toggle disable: space
 	m = sendSpecialKey(m, tea.KeySpace)
 
@@ -243,6 +249,9 @@ func TestToggleReEnable(t *testing.T) {
 	// Focus jobs panel
 	m = sendSpecialKey(m, tea.KeyTab)
 
+	// Move past group header to the job row
+	m = sendKey(m, "j")
+
 	// Toggle enable: space
 	m = sendSpecialKey(m, tea.KeySpace)
 
@@ -260,6 +269,9 @@ func TestEditJob(t *testing.T) {
 
 	// Focus jobs panel
 	m = sendSpecialKey(m, tea.KeyTab)
+
+	// Move past group header to the job row
+	m = sendKey(m, "j")
 
 	// Edit: e
 	m = sendKey(m, "e")
@@ -350,7 +362,8 @@ func TestDeleteSecondJob(t *testing.T) {
 	// Focus jobs panel
 	m = sendSpecialKey(m, tea.KeyTab)
 
-	// Move down to second job: j
+	// Move past group header to first job, then to second job
+	m = sendKey(m, "j")
 	m = sendKey(m, "j")
 
 	// Delete: D

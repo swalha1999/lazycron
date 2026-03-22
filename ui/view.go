@@ -33,8 +33,8 @@ func (m Model) View() string {
 
 	case modeConfirmDelete:
 		jobName := ""
-		if len(m.jobs) > 0 {
-			jobName = m.jobs[m.selected].Name
+		if jobIdx := m.selectedJobIndex(); jobIdx >= 0 {
+			jobName = m.jobs[jobIdx].Name
 		}
 		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName))
 		content = overlay(panels, fg, m.width, contentHeight)
@@ -78,6 +78,10 @@ func (m Model) View() string {
 
 	case modeTemplatePicker:
 		fg := renderTemplatePicker(&m.templatePicker, m.width)
+		content = overlay(panels, fg, m.width, contentHeight)
+
+	case modeProjectPrompt:
+		fg := renderProjectPrompt(&m.projectInput, m.jobs, m.selectedJobIndex(), m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	default:
@@ -153,7 +157,8 @@ func (m Model) renderPanels(height int) string {
 	serversBox = injectBorderTitle(serversBox, "1", "Servers", serversActive)
 
 	// [2] Jobs panel
-	listContent := renderJobList(m.jobs, m.selected, listWidth-4, jobsHeight)
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	listContent := renderJobList(m.jobs, m.selectedRow, rows, listWidth-4, jobsHeight, m.collapsedProjects)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
 	if jobsActive {
@@ -207,11 +212,26 @@ func (m Model) buildDetailContent(width int) string {
 		}
 		return renderHistoryDetail(entry, width)
 	}
+	jobIdx := m.selectedJobIndex()
 	var selectedJob *cron.Job
-	if m.selected >= 0 && m.selected < len(m.jobs) {
-		selectedJob = &m.jobs[m.selected]
+	if jobIdx >= 0 && jobIdx < len(m.jobs) {
+		selectedJob = &m.jobs[jobIdx]
 	}
 	return renderDetail(selectedJob, width)
+}
+
+// selectedJobIndex returns the job index for the current visual row,
+// or -1 if on a header row or no jobs exist.
+func (m Model) selectedJobIndex() int {
+	rows := buildRows(m.jobs, m.collapsedProjects)
+	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+		return -1
+	}
+	row := rows[m.selectedRow]
+	if row.kind == rowJob {
+		return row.jobIdx
+	}
+	return -1
 }
 
 func (m Model) applyDetailScroll(detailContent string, innerHeight int) string {
@@ -352,6 +372,40 @@ func renderPasswordPrompt(input *textinput.Model, serverName, host, user string,
 	b.WriteString("\n\n")
 	b.WriteString("  " +
 		helpBinding("enter", "connect") + helpSep() +
+		helpBinding("esc", "cancel"))
+
+	return formStyle.Width(formWidth).Render(b.String())
+}
+
+func renderProjectPrompt(input *textinput.Model, jobs []cron.Job, selected, width int) string {
+	formWidth := width - 10
+	if formWidth > 50 {
+		formWidth = 50
+	}
+	if formWidth < 40 {
+		formWidth = 40
+	}
+
+	inputWidth := formWidth - 6
+
+	var b strings.Builder
+	b.WriteString(formTitleStyle.Render("  Set Project"))
+	b.WriteString("\n\n")
+	if selected >= 0 && selected < len(jobs) {
+		b.WriteString(mutedItemStyle.Render(fmt.Sprintf("  Job: %s", jobs[selected].Name)))
+		b.WriteString("\n\n")
+	}
+
+	label := formLabelStyle.Render("  Project:  ")
+	input.Width = inputWidth
+	rendered := lipgloss.NewStyle().
+		PaddingLeft(1).
+		PaddingRight(1).
+		Render(input.View())
+	b.WriteString(label + rendered)
+	b.WriteString("\n\n")
+	b.WriteString("  " +
+		helpBinding("enter", "save") + helpSep() +
 		helpBinding("esc", "cancel"))
 
 	return formStyle.Width(formWidth).Render(b.String())
