@@ -36,8 +36,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "STATUS\tNAME\tSCHEDULE\tCOMMAND")
-	fmt.Fprintln(w, "------\t----\t--------\t-------")
+	fmt.Fprintln(w, "STATUS\tNAME\tPROJECT\tSCHEDULE\tCOMMAND")
+	fmt.Fprintln(w, "------\t----\t-------\t--------\t-------")
 
 	for _, job := range jobs {
 		status := "enabled"
@@ -48,7 +48,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		if len(cmdStr) > 60 {
 			cmdStr = cmdStr[:57] + "..."
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", status, job.Name, job.Schedule, cmdStr)
+		project := job.Project
+		if project == "" {
+			project = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", status, job.Name, project, job.Schedule, cmdStr)
 	}
 
 	return w.Flush()

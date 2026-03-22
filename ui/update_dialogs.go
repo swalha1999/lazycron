@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,12 +12,11 @@ import (
 func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		if len(m.jobs) > 0 {
-			name := m.jobs[m.selected].Name
-			m.jobs = append(m.jobs[:m.selected], m.jobs[m.selected+1:]...)
-			if m.selected >= len(m.jobs) && m.selected > 0 {
-				m.selected--
-			}
+		jobIdx := m.currentJobIndex()
+		if jobIdx >= 0 && jobIdx < len(m.jobs) {
+			name := m.jobs[jobIdx].Name
+			m.jobs = append(m.jobs[:jobIdx], m.jobs[jobIdx+1:]...)
+			m.clampSelectedRow()
 			m.statusMsg = fmt.Sprintf("Deleted job '%s'", name)
 			m.statusKind = statusSuccess
 			m.mode = modeNormal
@@ -66,6 +66,42 @@ func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		m.statusKind = statusInfo
 		m.statusID++
 		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	return m, nil
+}
+
+func (m Model) handleProjectPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		jobIdx := m.currentJobIndex()
+		if jobIdx >= 0 {
+			newProject := strings.TrimSpace(m.projectInput.Value())
+			m.jobs[jobIdx].Project = newProject
+			m.mode = modeNormal
+			if newProject != "" {
+				m.statusMsg = fmt.Sprintf("Set project '%s' on '%s'", newProject, m.jobs[jobIdx].Name)
+			} else {
+				m.statusMsg = fmt.Sprintf("Cleared project on '%s'", m.jobs[jobIdx].Name)
+			}
+			m.statusKind = statusSuccess
+			m.statusID++
+			// Rebuild rows and move selection to follow the job
+			rows := buildRows(m.jobs, m.collapsedProjects)
+			m.selectedRow = rowForJobIdx(rows, jobIdx)
+			b := m.manager.ActiveBackend()
+			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+		}
+		m.mode = modeNormal
+	case "esc":
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	default:
+		var cmd tea.Cmd
+		m.projectInput, cmd = m.projectInput.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }

@@ -15,7 +15,8 @@ const (
 	fieldCommand  = 1
 	fieldSchedule = 2
 	fieldWorkDir  = 3
-	fieldCount    = 4
+	fieldProject  = 4
+	fieldCount    = 5
 )
 
 var fieldLabels = [fieldCount]string{
@@ -23,6 +24,7 @@ var fieldLabels = [fieldCount]string{
 	"Command",
 	"Schedule",
 	"Work Dir",
+	"Project",
 }
 
 var fieldHints = [fieldCount]string{
@@ -30,6 +32,7 @@ var fieldHints = [fieldCount]string{
 	"Shell command to execute",
 	"Cron expression or 'every day at 9am'",
 	"Optional: working directory",
+	"Optional: group name for organizing jobs",
 }
 
 type formModel struct {
@@ -88,6 +91,7 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	f.inputs[fieldCommand].SetValue(cmd)
 	f.inputs[fieldSchedule].SetValue(job.Schedule)
 	f.inputs[fieldWorkDir].SetValue(workDir)
+	f.inputs[fieldProject].SetValue(job.Project)
 	f.tag = job.Tag
 	f.tagColor = job.TagColor
 	f.oneShot = job.OneShot
@@ -206,6 +210,7 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		Tag:      f.tag,
 		TagColor: f.tagColor,
 		OneShot:  f.oneShot,
+		Project:  strings.TrimSpace(f.inputs[fieldProject].Value()),
 	}, nil
 }
 

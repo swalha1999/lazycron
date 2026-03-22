@@ -17,6 +17,7 @@ type Job struct {
 	Tag      string // optional colored tag displayed after the name
 	TagColor string // hex color for the tag, e.g. "#f38ba8"
 	OneShot  bool   // true if this job should run once and then self-disable
+	Project  string // optional project group for organizing jobs
 }
 
 // recordBinPath returns the path to ~/.lazycron/bin/record.
@@ -99,6 +100,9 @@ func (j Job) CrontabLine() string {
 		}
 		nameComment += " [" + j.Tag + ":" + color + "]"
 	}
+	if j.Project != "" {
+		nameComment += " {" + j.Project + "}"
+	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
 	scriptCmd := "sh '" + ScriptPath(j.Name) + "'"
@@ -137,6 +141,8 @@ func Parse(output string) []Job {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
 			var oneShot bool
 			name, oneShot = extractOnce(name)
+			project := ""
+			name, project = extractProject(name)
 			tag, tagColor := "", ""
 			name, tag, tagColor = extractTag(name)
 			i++
@@ -150,6 +156,7 @@ func Parse(output string) []Job {
 					job.Tag = tag
 					job.TagColor = tagColor
 					job.OneShot = oneShot
+					job.Project = project
 					jobs = append(jobs, job)
 					i++
 					continue
@@ -202,6 +209,21 @@ func extractTag(name string) (string, string, string) {
 	}
 	cleanName := strings.TrimSpace(name[:openIdx])
 	return cleanName, parts[0], parts[1]
+}
+
+// extractProject parses a project suffix from a name like "Job Name {my-project}".
+// Returns the clean name and project string.
+func extractProject(name string) (string, string) {
+	openIdx := strings.LastIndex(name, "{")
+	if openIdx == -1 || !strings.HasSuffix(name, "}") {
+		return name, ""
+	}
+	project := name[openIdx+1 : len(name)-1]
+	if project == "" {
+		return name, ""
+	}
+	cleanName := strings.TrimSpace(name[:openIdx])
+	return cleanName, project
 }
 
 func isNameComment(line string) bool {

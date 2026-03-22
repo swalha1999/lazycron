@@ -140,6 +140,7 @@ func renderHelpScreen() string {
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
 		{"U", "Update job to latest format"},
+		{"p", "Set/change project group"},
 		{"", "── General ──"},
 		{"1/2/3/4/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},

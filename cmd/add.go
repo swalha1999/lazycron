@@ -19,6 +19,7 @@ var (
 	addSchedule string
 	addCommand  string
 	addWorkDir  string
+	addProject  string
 	addDisabled bool
 	addOnce     bool
 )
@@ -28,6 +29,7 @@ func init() {
 	addCmd.Flags().StringVarP(&addSchedule, "schedule", "s", "", "Cron schedule or human-readable (required)")
 	addCmd.Flags().StringVarP(&addCommand, "command", "c", "", "Command to run (required)")
 	addCmd.Flags().StringVarP(&addWorkDir, "workdir", "w", "", "Working directory (optional)")
+	addCmd.Flags().StringVarP(&addProject, "project", "p", "", "Project group (optional)")
 	addCmd.Flags().BoolVar(&addDisabled, "disabled", false, "Create the job in disabled state")
 	addCmd.Flags().BoolVar(&addOnce, "once", false, "Run once at the specified datetime and then disable")
 
@@ -69,6 +71,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		Enabled:  !addDisabled,
 		Wrapped:  true,
 		OneShot:  addOnce,
+		Project:  addProject,
 	}
 
 	raw, err := cron.ReadCrontab()
