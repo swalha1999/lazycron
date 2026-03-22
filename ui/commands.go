@@ -33,6 +33,10 @@ type historySavedMsg struct {
 	err error
 }
 
+type historyDeletedMsg struct {
+	err error
+}
+
 type clearStatusMsg struct {
 	id int
 }
@@ -134,6 +138,13 @@ func loadHistory(b backend.Backend) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := b.LoadHistory()
 		return historyLoadedMsg{entries: entries, err: err}
+	}
+}
+
+func deleteHistory(b backend.Backend, filePath string) tea.Cmd {
+	return func() tea.Msg {
+		err := b.DeleteHistory(filePath)
+		return historyDeletedMsg{err: err}
 	}
 }
 

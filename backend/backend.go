@@ -13,6 +13,7 @@ type Backend interface {
 	RunJob(name, command string) (string, error)
 	LoadHistory() ([]history.Entry, error)
 	WriteHistory(jobName, output string, success bool) error
+	DeleteHistory(filePath string) error
 	EnsureRecordScript() error
 	Close() error
 }

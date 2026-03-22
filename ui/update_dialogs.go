@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,8 +46,10 @@ func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	case "y", "Y":
 		if m.historySelected >= 0 && m.historySelected < len(m.history) {
 			entry := m.history[m.historySelected]
+			var cmds []tea.Cmd
 			if entry.FilePath != "" {
-				os.Remove(entry.FilePath)
+				b := m.manager.ActiveBackend()
+				cmds = append(cmds, deleteHistory(b, entry.FilePath))
 			}
 			m.history = append(m.history[:m.historySelected], m.history[m.historySelected+1:]...)
 			if m.historySelected >= len(m.history) && m.historySelected > 0 {
@@ -58,7 +59,8 @@ func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.statusKind = statusSuccess
 			m.mode = modeNormal
 			m.statusID++
-			return m, clearStatusAfter(m.statusID, 4*time.Second)
+			cmds = append(cmds, clearStatusAfter(m.statusID, 4*time.Second))
+			return m, tea.Batch(cmds...)
 		}
 	case "n", "N", "esc":
 		m.mode = modeNormal

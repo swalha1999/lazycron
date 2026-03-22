@@ -83,6 +83,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case historyDeletedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to delete history: %v", msg.err)
+			m.statusKind = statusError
+			m.statusID++
+			return m, clearStatusAfter(m.statusID, 4*time.Second)
+		}
+		return m, nil
+
 	case jobRanMsg:
 		m.statusID++
 		output := msg.output

@@ -180,6 +180,11 @@ func (b *RemoteBackend) WriteHistory(jobName, output string, success bool) error
 	return b.client.Upload(string(data), path, 0o644)
 }
 
+func (b *RemoteBackend) DeleteHistory(filePath string) error {
+	_, err := b.client.Run("rm -f " + shellQuote(filePath))
+	return err
+}
+
 func (b *RemoteBackend) EnsureRecordScript() error {
 	if err := b.client.Connect(); err != nil {
 		return err
