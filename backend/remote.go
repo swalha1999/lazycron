@@ -16,8 +16,9 @@ import (
 
 // RemoteBackend implements Backend over an SSH connection.
 type RemoteBackend struct {
-	name   string
-	client *sshclient.Client
+	name       string
+	client     *sshclient.Client
+	remoteHome string // cached remote $HOME (set during EnsureRecordScript)
 }
 
 // NewRemoteBackend creates a new remote backend.
@@ -30,6 +31,28 @@ func (b *RemoteBackend) Name() string { return b.name }
 // SetPassword sets the password on the underlying SSH client for runtime auth.
 func (b *RemoteBackend) SetPassword(pw string) {
 	b.client.SetPassword(pw)
+}
+
+// getRemoteHome returns the cached remote home directory, fetching it if needed.
+func (b *RemoteBackend) getRemoteHome() (string, error) {
+	if b.remoteHome != "" {
+		return b.remoteHome, nil
+	}
+	home, err := b.client.Run("echo $HOME")
+	if err != nil {
+		return "", fmt.Errorf("get remote home: %w", err)
+	}
+	b.remoteHome = strings.TrimSpace(home)
+	return b.remoteHome, nil
+}
+
+// lazycronDir returns the remote ~/.lazycron path using absolute paths.
+func (b *RemoteBackend) lazycronDir() (string, error) {
+	home, err := b.getRemoteHome()
+	if err != nil {
+		return "", err
+	}
+	return home + "/.lazycron", nil
 }
 
 func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
@@ -59,13 +82,12 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 }
 
 func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
-	// Get the remote home directory for correct script paths.
-	remoteHome, err := b.client.Run("echo $HOME")
+	lcDir, err := b.lazycronDir()
 	if err != nil {
-		return fmt.Errorf("get remote home: %w", err)
+		return err
 	}
-	remoteHome = strings.TrimSpace(remoteHome)
-	remoteScriptsDir := remoteHome + "/.lazycron/scripts"
+	remoteHome := b.remoteHome
+	remoteScriptsDir := lcDir + "/scripts"
 
 	// Ensure scripts directory exists on remote.
 	if _, err := b.client.Run("mkdir -p " + remoteScriptsDir); err != nil {
@@ -108,13 +130,11 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 }
 
 func (b *RemoteBackend) RunJob(name, command string) (string, error) {
-	// Get remote home for script path.
-	remoteHome, err := b.client.Run("echo $HOME")
+	lcDir, err := b.lazycronDir()
 	if err != nil {
-		return "", fmt.Errorf("get remote home: %w", err)
+		return "", err
 	}
-	remoteHome = strings.TrimSpace(remoteHome)
-	scriptPath := remoteHome + "/.lazycron/scripts/" + filepath.Base(cron.ScriptPath(name))
+	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(name))
 
 	// Upload script to remote.
 	content := "#!/bin/sh\n" + cron.ScriptPreamble + command + "\n"
@@ -126,7 +146,11 @@ func (b *RemoteBackend) RunJob(name, command string) (string, error) {
 }
 
 func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
-	files, err := b.client.ListFiles("~/.lazycron/history", "*.json")
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := b.client.ListFiles(lcDir+"/history", "*.json")
 	if err != nil {
 		return nil, fmt.Errorf("list history: %w", err)
 	}
@@ -172,10 +196,15 @@ func (b *RemoteBackend) WriteHistory(jobName, output string, success bool) error
 		return err
 	}
 
+	lcDir, lcErr := b.lazycronDir()
+	if lcErr != nil {
+		return lcErr
+	}
+
 	safeName := strings.ReplaceAll(jobName, "/", "_")
 	safeName = strings.ReplaceAll(safeName, " ", "_")
 	filename := now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
-	path := "~/.lazycron/history/" + filename
+	path := lcDir + "/history/" + filename
 
 	return b.client.Upload(string(data), path, 0o644)
 }
@@ -190,14 +219,20 @@ func (b *RemoteBackend) EnsureRecordScript() error {
 		return err
 	}
 
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return err
+	}
+
 	// Create directories
-	_, err := b.client.Run("mkdir -p ~/.lazycron/bin ~/.lazycron/history ~/.lazycron/scripts")
+	_, err = b.client.Run(fmt.Sprintf("mkdir -p %s/bin %s/history %s/scripts",
+		lcDir, lcDir, lcDir))
 	if err != nil {
 		return fmt.Errorf("create dirs: %w", err)
 	}
 
 	// Upload record script
-	return b.client.Upload(string(record.ScriptContent), "~/.lazycron/bin/record", 0o755)
+	return b.client.Upload(string(record.ScriptContent), lcDir+"/bin/record", 0o755)
 }
 
 // DirLister returns a RemoteDirLister for path completion on this server.
