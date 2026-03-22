@@ -80,6 +80,9 @@ type Model struct {
 	// Template picker state
 	templatePicker templatePickerModel
 
+	// Confirm dialog state
+	confirmYes bool // true = "yes" selected, false = "no" selected
+
 	// Project grouping state
 	collapsedProjects map[string]bool
 	jobListRows       []listRow       // cached visual rows for grouped job list

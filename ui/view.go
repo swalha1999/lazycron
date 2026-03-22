@@ -36,7 +36,7 @@ func (m Model) View() string {
 		if jobIdx := m.selectedJobIndex(); jobIdx >= 0 {
 			jobName = m.jobs[jobIdx].Name
 		}
-		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName))
+		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName), m.confirmYes)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeConfirmDeleteServer:
@@ -44,7 +44,7 @@ func (m Model) View() string {
 		if m.serverSelected > 0 && m.serverSelected < m.manager.ServerCount() {
 			serverName = m.manager.ServerAt(m.serverSelected).Name
 		}
-		fg := renderConfirmDialog(fmt.Sprintf("Remove server '%s'?", serverName))
+		fg := renderConfirmDialog(fmt.Sprintf("Remove server '%s'?", serverName), m.confirmYes)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeConfirmDeleteHistory:
@@ -52,7 +52,7 @@ func (m Model) View() string {
 		if m.historySelected >= 0 && m.historySelected < len(m.history) {
 			entryName = m.history[m.historySelected].JobName
 		}
-		fg := renderConfirmDialog(fmt.Sprintf("Delete history entry '%s'?", entryName))
+		fg := renderConfirmDialog(fmt.Sprintf("Delete history entry '%s'?", entryName), m.confirmYes)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeHelp:

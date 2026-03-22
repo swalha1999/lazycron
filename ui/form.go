@@ -300,11 +300,18 @@ func renderForm(f *formModel, width int) string {
 	return formStyle.Width(formWidth).Render(b.String())
 }
 
-func renderConfirmDialog(message string) string {
+func renderConfirmDialog(message string, yesSelected bool) string {
+	yesStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	noStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	if yesSelected {
+		yesStyle = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
+	} else {
+		noStyle = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	}
+
 	content := confirmTitleStyle.Render("Confirm") + "\n\n" +
 		detailValueStyle.Render(message) + "\n\n" +
-		helpKeyStyle.Render("y") + helpDescStyle.Render(" yes  ") +
-		helpKeyStyle.Render("n") + helpDescStyle.Render(" no")
+		yesStyle.Render("[ yes ]") + "  " + noStyle.Render("[ no ]")
 
 	return confirmStyle.Width(40).Render(content)
 }

@@ -225,12 +225,15 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil // Can't remove local
 			}
 			m.mode = modeConfirmDeleteServer
+			m.confirmYes = false
 			m.statusMsg = ""
 		} else if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
 			m.mode = modeConfirmDelete
+			m.confirmYes = false
 			m.statusMsg = ""
 		} else if m.focusPanel == panelHistory && len(m.history) > 0 {
 			m.mode = modeConfirmDeleteHistory
+			m.confirmYes = false
 			m.statusMsg = ""
 		}
 

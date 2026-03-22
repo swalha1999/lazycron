@@ -10,25 +10,43 @@ import (
 
 func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "left", "right", "h", "l":
+		m.confirmYes = !m.confirmYes
+		return m, nil
 	case "y", "Y":
-		jobIdx := m.currentJobIndex()
-		if jobIdx >= 0 && jobIdx < len(m.jobs) {
-			name := m.jobs[jobIdx].Name
-			m.jobs = append(m.jobs[:jobIdx], m.jobs[jobIdx+1:]...)
-			m.clampSelectedRow()
-			m.statusMsg = fmt.Sprintf("Deleted job '%s'", name)
-			m.statusKind = statusSuccess
-			m.mode = modeNormal
-			m.statusID++
-			b := m.manager.ActiveBackend()
-			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
-		}
+		m.confirmYes = true
+		return m.executeConfirmDelete()
+	case "enter":
+		return m.executeConfirmDelete()
 	case "n", "N", "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
 		m.statusKind = statusInfo
 		m.statusID++
 		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	return m, nil
+}
+
+func (m Model) executeConfirmDelete() (tea.Model, tea.Cmd) {
+	if !m.confirmYes {
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	jobIdx := m.currentJobIndex()
+	if jobIdx >= 0 && jobIdx < len(m.jobs) {
+		name := m.jobs[jobIdx].Name
+		m.jobs = append(m.jobs[:jobIdx], m.jobs[jobIdx+1:]...)
+		m.clampSelectedRow()
+		m.statusMsg = fmt.Sprintf("Deleted job '%s'", name)
+		m.statusKind = statusSuccess
+		m.mode = modeNormal
+		m.statusID++
+		b := m.manager.ActiveBackend()
+		return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
 	}
 	return m, nil
 }
@@ -43,31 +61,49 @@ func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "left", "right", "h", "l":
+		m.confirmYes = !m.confirmYes
+		return m, nil
 	case "y", "Y":
-		if m.historySelected >= 0 && m.historySelected < len(m.history) {
-			entry := m.history[m.historySelected]
-			var cmds []tea.Cmd
-			if entry.FilePath != "" {
-				b := m.manager.ActiveBackend()
-				cmds = append(cmds, deleteHistory(b, entry.FilePath))
-			}
-			m.history = append(m.history[:m.historySelected], m.history[m.historySelected+1:]...)
-			if m.historySelected >= len(m.history) && m.historySelected > 0 {
-				m.historySelected--
-			}
-			m.statusMsg = fmt.Sprintf("Deleted history entry '%s'", entry.JobName)
-			m.statusKind = statusSuccess
-			m.mode = modeNormal
-			m.statusID++
-			cmds = append(cmds, clearStatusAfter(m.statusID, 4*time.Second))
-			return m, tea.Batch(cmds...)
-		}
+		m.confirmYes = true
+		return m.executeConfirmDeleteHistory()
+	case "enter":
+		return m.executeConfirmDeleteHistory()
 	case "n", "N", "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
 		m.statusKind = statusInfo
 		m.statusID++
 		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	return m, nil
+}
+
+func (m Model) executeConfirmDeleteHistory() (tea.Model, tea.Cmd) {
+	if !m.confirmYes {
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	if m.historySelected >= 0 && m.historySelected < len(m.history) {
+		entry := m.history[m.historySelected]
+		var cmds []tea.Cmd
+		if entry.FilePath != "" {
+			b := m.manager.ActiveBackend()
+			cmds = append(cmds, deleteHistory(b, entry.FilePath))
+		}
+		m.history = append(m.history[:m.historySelected], m.history[m.historySelected+1:]...)
+		if m.historySelected >= len(m.history) && m.historySelected > 0 {
+			m.historySelected--
+		}
+		m.statusMsg = fmt.Sprintf("Deleted history entry '%s'", entry.JobName)
+		m.statusKind = statusSuccess
+		m.mode = modeNormal
+		m.statusID++
+		cmds = append(cmds, clearStatusAfter(m.statusID, 4*time.Second))
+		return m, tea.Batch(cmds...)
 	}
 	return m, nil
 }

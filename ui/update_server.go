@@ -100,37 +100,14 @@ func (m Model) handlePasswordPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "left", "right", "h", "l":
+		m.confirmYes = !m.confirmYes
+		return m, nil
 	case "y", "Y":
-		idx := m.serverSelected
-		if idx <= 0 || idx >= m.manager.ServerCount() {
-			m.mode = modeNormal
-			return m, nil
-		}
-		serverName := m.manager.ServerAt(idx).Name
-
-		// Remove from config file
-		config.RemoveServer(serverName)
-
-		// Remove from manager (also closes backend)
-		switchedToLocal := m.manager.ActiveIndex() == idx
-		m.manager.RemoveServer(idx)
-
-		// Fix selection
-		if m.serverSelected >= m.manager.ServerCount() {
-			m.serverSelected = m.manager.ServerCount() - 1
-		}
-
-		m.mode = modeNormal
-		m.statusMsg = fmt.Sprintf("Removed server '%s'", serverName)
-		m.statusKind = statusSuccess
-		m.statusID++
-
-		if switchedToLocal {
-			b := m.manager.ActiveBackend()
-			return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 4*time.Second))
-		}
-		return m, clearStatusAfter(m.statusID, 4*time.Second)
-
+		m.confirmYes = true
+		return m.executeConfirmDeleteServer()
+	case "enter":
+		return m.executeConfirmDeleteServer()
 	case "n", "N", "esc":
 		m.mode = modeNormal
 		m.statusMsg = "Cancelled"
@@ -139,4 +116,43 @@ func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m, clearStatusAfter(m.statusID, 3*time.Second)
 	}
 	return m, nil
+}
+
+func (m Model) executeConfirmDeleteServer() (tea.Model, tea.Cmd) {
+	if !m.confirmYes {
+		m.mode = modeNormal
+		m.statusMsg = "Cancelled"
+		m.statusKind = statusInfo
+		m.statusID++
+		return m, clearStatusAfter(m.statusID, 3*time.Second)
+	}
+	idx := m.serverSelected
+	if idx <= 0 || idx >= m.manager.ServerCount() {
+		m.mode = modeNormal
+		return m, nil
+	}
+	serverName := m.manager.ServerAt(idx).Name
+
+	// Remove from config file
+	config.RemoveServer(serverName)
+
+	// Remove from manager (also closes backend)
+	switchedToLocal := m.manager.ActiveIndex() == idx
+	m.manager.RemoveServer(idx)
+
+	// Fix selection
+	if m.serverSelected >= m.manager.ServerCount() {
+		m.serverSelected = m.manager.ServerCount() - 1
+	}
+
+	m.mode = modeNormal
+	m.statusMsg = fmt.Sprintf("Removed server '%s'", serverName)
+	m.statusKind = statusSuccess
+	m.statusID++
+
+	if switchedToLocal {
+		b := m.manager.ActiveBackend()
+		return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 4*time.Second))
+	}
+	return m, clearStatusAfter(m.statusID, 4*time.Second)
 }

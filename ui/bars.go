@@ -79,8 +79,10 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpBinding("enter", "connect") + helpSep() +
 			helpBinding("esc", "cancel")
 	case modeConfirmDelete, modeConfirmDeleteServer, modeConfirmDeleteHistory:
-		help = helpBinding("y", "confirm") + helpSep() +
-			helpBinding("n", "cancel")
+		help = helpBinding("←/→", "select") + helpSep() +
+			helpBinding("enter", "confirm") + helpSep() +
+			helpBinding("y/n", "yes/no") + helpSep() +
+			helpBinding("esc", "cancel")
 	case modeHelp:
 		help = helpBinding("esc", "back")
 	case modeRunOutput:
