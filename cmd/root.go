@@ -30,8 +30,11 @@ func Execute() {
 	}
 }
 
+var cronFile string
+
 func init() {
 	rootCmd.Version = Version
+	rootCmd.Flags().StringVar(&cronFile, "cron-file", "", "use a plain crontab file instead of the system crontab (useful for testing/dry-run)")
 }
 
 // initBackendManager creates a backend.Manager with local + configured remote servers.
@@ -62,15 +65,26 @@ func initBackendManager() *backend.Manager {
 }
 
 func runTUI(cmd *cobra.Command, args []string) error {
-	if err := cron.CheckCrontabAvailable(); err != nil {
-		return err
-	}
+	var mgr *backend.Manager
 
-	if err := record.InstallRecord(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not install record script: %v\n", err)
-	}
+	if cronFile != "" {
+		histDir := cronFile + ".history"
+		if err := os.MkdirAll(histDir, 0o755); err != nil {
+			return fmt.Errorf("create history dir: %w", err)
+		}
+		fb := backend.NewFileBackend(cronFile, histDir)
+		mgr = backend.NewManagerWithBackend(fb)
+	} else {
+		if err := cron.CheckCrontabAvailable(); err != nil {
+			return err
+		}
 
-	mgr := initBackendManager()
+		if err := record.InstallRecord(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not install record script: %v\n", err)
+		}
+
+		mgr = initBackendManager()
+	}
 
 	p := tea.NewProgram(
 		ui.NewModel(mgr, Version),
