@@ -105,3 +105,13 @@ func NewModel(mgr *backend.Manager, version string) Model {
 		version:    version,
 	}
 }
+
+// activeDirLister returns a DirLister for the active backend.
+// Returns nil for local backends (completer falls back to os.ReadDir).
+func (m *Model) activeDirLister() DirLister {
+	b := m.manager.ActiveBackend()
+	if rb, ok := b.(*backend.RemoteBackend); ok {
+		return rb.DirLister()
+	}
+	return nil
+}

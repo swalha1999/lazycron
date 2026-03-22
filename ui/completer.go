@@ -12,6 +12,14 @@ import (
 
 const visibleRows = 8 // how many rows to show at once
 
+// DirLister abstracts filesystem directory operations for path completion.
+type DirLister interface {
+	// ListDirs returns subdirectory names in the given directory path.
+	ListDirs(path string) ([]string, error)
+	// HomeDir returns the home directory.
+	HomeDir() (string, error)
+}
+
 type suggestion struct {
 	name        string     // directory basename
 	fullPath    string     // absolute path with trailing /
@@ -28,6 +36,7 @@ type completerModel struct {
 	noMatches   bool   // true when filter has no results
 	permError   bool   // true when directory is unreadable
 	emptyDir    bool   // true when directory has no subdirs
+	lister      DirLister // filesystem abstraction (local or remote)
 }
 
 // activate initializes the completer for a given input value.
@@ -54,7 +63,7 @@ func (c *completerModel) update(input string) {
 
 // parseInput splits input into browseDir and filterText.
 func (c *completerModel) parseInput(input string) {
-	expanded := expandTilde(input)
+	expanded := c.expandTilde(input)
 	if strings.HasSuffix(expanded, "/") {
 		c.browseDir = expanded
 		c.filterText = ""
@@ -68,7 +77,7 @@ func (c *completerModel) parseInput(input string) {
 func (c *completerModel) showSeeds() {
 	var seeds []suggestion
 
-	if home, err := os.UserHomeDir(); err == nil {
+	if home, err := c.homeDir(); err == nil {
 		seeds = append(seeds, suggestion{
 			name:        "~",
 			fullPath:    home + "/",
@@ -76,12 +85,15 @@ func (c *completerModel) showSeeds() {
 		})
 	}
 
-	if cwd, err := os.Getwd(); err == nil {
-		seeds = append(seeds, suggestion{
-			name:        ".",
-			fullPath:    cwd + "/",
-			hasChildren: true,
-		})
+	// Only show cwd for local (it's the local machine's cwd, irrelevant for remote)
+	if c.lister == nil {
+		if cwd, err := os.Getwd(); err == nil {
+			seeds = append(seeds, suggestion{
+				name:        ".",
+				fullPath:    cwd + "/",
+				hasChildren: true,
+			})
+		}
 	}
 
 	seeds = append(seeds, suggestion{
@@ -106,7 +118,7 @@ func (c *completerModel) refresh() {
 	c.noMatches = false
 	c.emptyDir = false
 
-	entries, err := os.ReadDir(c.browseDir)
+	dirNames, err := c.listDirs(c.browseDir)
 	if err != nil {
 		c.suggestions = nil
 		c.permError = true
@@ -116,22 +128,8 @@ func (c *completerModel) refresh() {
 	}
 
 	var dirs []dirEntry
-	for _, entry := range entries {
-		name := entry.Name()
+	for _, name := range dirNames {
 		if strings.HasPrefix(name, ".") && !strings.HasPrefix(c.filterText, ".") {
-			continue
-		}
-
-		isDir := entry.IsDir()
-		if !isDir && entry.Type()&os.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(filepath.Join(c.browseDir, name))
-			if err == nil {
-				if info, err := os.Stat(target); err == nil {
-					isDir = info.IsDir()
-				}
-			}
-		}
-		if !isDir {
 			continue
 		}
 		dirs = append(dirs, dirEntry{name: name})
@@ -182,7 +180,7 @@ func (c *completerModel) refresh() {
 			name:        s.name,
 			fullPath:    fullPath,
 			matchRanges: s.matchRanges,
-			hasChildren: hasSubdirs(fullPath),
+			hasChildren: c.hasSubdirs(fullPath),
 		}
 	}
 
@@ -262,7 +260,7 @@ func (c *completerModel) breadcrumb(maxWidth int) string {
 		return "Select a directory"
 	}
 
-	display := collapseTilde(c.browseDir)
+	display := c.collapseTilde(c.browseDir)
 	display = strings.TrimSuffix(display, "/")
 
 	parts := strings.Split(display, "/")
@@ -365,30 +363,59 @@ func isWordBoundary(prev, curr rune) bool {
 
 // --- Helpers ---
 
-func hasSubdirs(path string) bool {
+// listDirs returns subdirectory names, using the lister if set, else local os.
+func (c *completerModel) listDirs(path string) ([]string, error) {
+	if c.lister != nil {
+		return c.lister.ListDirs(path)
+	}
+	return localListDirs(path)
+}
+
+// localListDirs reads subdirectory names from the local filesystem.
+func localListDirs(path string) ([]string, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return false
+		return nil, err
 	}
-	for _, e := range entries {
-		if e.IsDir() {
-			return true
-		}
-		if e.Type()&os.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(filepath.Join(path, e.Name()))
+	var dirs []string
+	for _, entry := range entries {
+		name := entry.Name()
+		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			target, err := filepath.EvalSymlinks(filepath.Join(path, name))
 			if err == nil {
-				if info, err := os.Stat(target); err == nil && info.IsDir() {
-					return true
+				if info, err := os.Stat(target); err == nil {
+					isDir = info.IsDir()
 				}
 			}
 		}
+		if isDir {
+			dirs = append(dirs, name)
+		}
 	}
-	return false
+	return dirs, nil
 }
 
-func expandTilde(path string) string {
+// hasSubdirs checks if a directory contains subdirectories.
+func (c *completerModel) hasSubdirs(path string) bool {
+	dirs, err := c.listDirs(path)
+	if err != nil {
+		return false
+	}
+	return len(dirs) > 0
+}
+
+// homeDir returns the home directory, using the lister if set, else local os.
+func (c *completerModel) homeDir() (string, error) {
+	if c.lister != nil {
+		return c.lister.HomeDir()
+	}
+	return os.UserHomeDir()
+}
+
+func (c *completerModel) expandTilde(path string) string {
 	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
+		home, err := c.homeDir()
 		if err != nil {
 			return path
 		}
@@ -400,8 +427,8 @@ func expandTilde(path string) string {
 	return path
 }
 
-func collapseTilde(path string) string {
-	home, err := os.UserHomeDir()
+func (c *completerModel) collapseTilde(path string) string {
+	home, err := c.homeDir()
 	if err != nil {
 		return path
 	}

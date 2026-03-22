@@ -88,7 +88,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeForm
-			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
+			m.form = newFormForEdit(m.jobs[m.selected], m.selected, m.activeDirLister())
 			m.statusMsg = ""
 			return m, m.form.focusActive()
 		}
@@ -96,7 +96,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		if m.focusPanel == panelJobs && len(m.jobs) > 0 {
 			m.mode = modeForm
-			m.form = newFormForEdit(m.jobs[m.selected], m.selected)
+			m.form = newFormForEdit(m.jobs[m.selected], m.selected, m.activeDirLister())
 			m.statusMsg = ""
 			return m, m.form.focusActive()
 		}

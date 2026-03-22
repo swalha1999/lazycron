@@ -55,17 +55,18 @@ func newInput(i int) textinput.Model {
 	return ti
 }
 
-func newForm() formModel {
+func newForm(lister DirLister) formModel {
 	f := formModel{}
 	for i := 0; i < fieldCount; i++ {
 		f.inputs[i] = newInput(i)
 	}
 	f.picker = newPicker()
+	f.completer.lister = lister
 	f.inputs[fieldSchedule].SetValue(f.picker.Expression())
 	return f
 }
 
-func newFormForEdit(job cron.Job, index int) formModel {
+func newFormForEdit(job cron.Job, index int, lister DirLister) formModel {
 	f := formModel{
 		editing:   true,
 		editIndex: index,
@@ -73,6 +74,7 @@ func newFormForEdit(job cron.Job, index int) formModel {
 	for i := 0; i < fieldCount; i++ {
 		f.inputs[i] = newInput(i)
 	}
+	f.completer.lister = lister
 
 	// Extract workdir from command
 	cmd := job.Command

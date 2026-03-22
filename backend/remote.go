@@ -192,6 +192,11 @@ func (b *RemoteBackend) EnsureRecordScript() error {
 	return b.client.Upload(string(record.ScriptContent), "~/.lazycron/bin/record", 0o755)
 }
 
+// DirLister returns a RemoteDirLister for path completion on this server.
+func (b *RemoteBackend) DirLister() *RemoteDirLister {
+	return NewRemoteDirLister(b.client)
+}
+
 func (b *RemoteBackend) Close() error {
 	return b.client.Close()
 }

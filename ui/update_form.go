@@ -147,12 +147,12 @@ func (m Model) handleNewJobChoiceKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "b", "1":
 		m.mode = modeForm
-		m.form = newForm()
+		m.form = newForm(m.activeDirLister())
 		m.statusMsg = ""
 		return m, m.form.focusActive()
 	case "t", "2":
 		m.mode = modeTemplatePicker
-		m.templatePicker = newTemplatePicker()
+		m.templatePicker = newTemplatePicker(m.activeDirLister())
 		m.statusMsg = ""
 		return m, nil
 	case "esc", "q":
@@ -256,7 +256,7 @@ func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Pre-fill the job form with template data
 			m.mode = modeForm
-			m.form = newForm()
+			m.form = newForm(m.activeDirLister())
 			m.form.inputs[fieldName].SetValue(tp.selectedTmpl.Name)
 			m.form.inputs[fieldCommand].SetValue(resolvedCmd)
 			m.form.inputs[fieldSchedule].SetValue(cronExpr)
