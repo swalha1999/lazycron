@@ -20,8 +20,8 @@ type Job struct {
 	Project  string // optional project group for organizing jobs
 }
 
-// recordBinPath returns the path to ~/.lazycron/bin/record.
-func recordBinPath() string {
+// RecordBinPath returns the path to ~/.lazycron/bin/record.
+func RecordBinPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".lazycron", "bin", "record")
 }
@@ -36,14 +36,14 @@ const wrapEndMarker = `; } 2>&1); __lc_ec=$?;`
 // and piped through the record binary for history tracking.
 func WrapWithRecord(command, jobName string) string {
 	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec"`,
-		wrapPrefix, command, wrapEndMarker, recordBinPath(), jobName)
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobName)
 }
 
 // WrapWithRecordOnce wraps a command like WrapWithRecord but appends --once
 // so the record script auto-disables the crontab entry after execution.
 func WrapWithRecordOnce(command, jobName string) string {
 	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec" --once`,
-		wrapPrefix, command, wrapEndMarker, recordBinPath(), jobName)
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobName)
 }
 
 // StripRecord removes the record wrapper from a raw crontab command,
@@ -57,7 +57,7 @@ func StripRecord(command string) string {
 	}
 
 	// Legacy format: { cmd; } 2>&1 | record "name"
-	recPath := recordBinPath()
+	recPath := RecordBinPath()
 	pipeIdx := strings.LastIndex(command, "| "+recPath+" ")
 	if pipeIdx == -1 {
 		return command

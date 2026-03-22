@@ -51,16 +51,16 @@ func TestWriteReadScript(t *testing.T) {
 		t.Errorf("content = %q, want %q", content, "echo hello world")
 	}
 
-	// Verify raw file has shebang
+	// Verify raw file has shebang and preamble
 	raw, _ := os.ReadFile(path)
-	if string(raw) != "#!/bin/sh\necho hello world\n" {
-		t.Errorf("raw file = %q, want shebang + command", string(raw))
+	if string(raw) != "#!/bin/sh\n"+ScriptPreamble+"echo hello world\n" {
+		t.Errorf("raw file = %q, want shebang + preamble + command", string(raw))
 	}
 
 	// Verify permissions
 	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0755 {
-		t.Errorf("permissions = %o, want 0755", info.Mode().Perm())
+	if info.Mode().Perm() != 0700 {
+		t.Errorf("permissions = %o, want 0700", info.Mode().Perm())
 	}
 }
 

@@ -1,6 +1,8 @@
 package backend
 
 import (
+	"os"
+
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 	"github.com/swalha1999/lazycron/record"
@@ -37,6 +39,10 @@ func (b *LocalBackend) LoadHistory() ([]history.Entry, error) {
 
 func (b *LocalBackend) WriteHistory(jobName, output string, success bool) error {
 	return history.WriteEntry(jobName, output, success)
+}
+
+func (b *LocalBackend) DeleteHistory(filePath string) error {
+	return os.Remove(filePath)
 }
 
 func (b *LocalBackend) EnsureRecordScript() error {

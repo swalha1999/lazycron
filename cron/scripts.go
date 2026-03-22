@@ -34,14 +34,22 @@ func sanitizeJobName(name string) string {
 // WriteScript writes a job's command to its script file.
 func WriteScript(jobName, command string) error {
 	dir := scriptsDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	content := "#!/bin/sh\n" + command + "\n"
-	return os.WriteFile(ScriptPath(jobName), []byte(content), 0755)
+	content := "#!/bin/sh\n" + ScriptPreamble + command + "\n"
+	return os.WriteFile(ScriptPath(jobName), []byte(content), 0700)
 }
 
-// ReadScriptCommand reads a script file and returns the command (stripping the shebang).
+// ScriptPreamble is the profile-sourcing block prepended to every script.
+const ScriptPreamble = "# Source user profile for PATH and environment variables.\n" +
+	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
+	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null\n" +
+	"done\n" +
+	"unset __lc_rc\n"
+
+// ReadScriptCommand reads a script file and returns the command
+// (stripping the shebang and profile-sourcing preamble).
 func ReadScriptCommand(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -51,6 +59,7 @@ func ReadScriptCommand(path string) (string, error) {
 	if strings.HasPrefix(content, "#!/bin/sh\n") {
 		content = content[len("#!/bin/sh\n"):]
 	}
+	content = strings.TrimPrefix(content, ScriptPreamble)
 	return strings.TrimRight(content, "\n"), nil
 }
 
@@ -66,7 +75,7 @@ func DeleteScript(jobName string) error {
 // SyncScripts writes script files for all jobs and removes orphans.
 func SyncScripts(jobs []Job) error {
 	dir := scriptsDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 

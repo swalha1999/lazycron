@@ -1,6 +1,6 @@
-name: Auto Bug Fixer
+name: Security Fix Agent
 category: ai
-description: AI agent that picks one open bug issue, creates a fix branch, and opens a PR
+description: AI agent that picks one open security issue, creates a fix branch, and opens a PR
 tag: BP
 tag_color: "#f38ba8"
 schedule: "0 9 * * 1-5"
@@ -8,8 +8,8 @@ command: >-
   cd $REPO_PATH &&
   OPEN_PRS=$(gh pr list --state open --json number -q 'length') &&
   if [ "$OPEN_PRS" -ge 3 ]; then echo "Too many open PRs ($OPEN_PRS), skipping"; exit 0; fi &&
-  ISSUE=$(gh issue list -l bug --state open --json number,title --jq 'sort_by(.number) | .[0].number') &&
-  if [ -z "$ISSUE" ]; then echo "No open bug issues, skipping"; exit 0; fi &&
+  ISSUE=$(gh issue list -l security --state open --json number,title --jq 'sort_by(.number) | .[0].number') &&
+  if [ -z "$ISSUE" ]; then echo "No open security issues, skipping"; exit 0; fi &&
   BRANCH="fix/issue-${ISSUE}-$(date +%Y%m%d)$BRANCH_SUFFIX" &&
   git checkout $BASE_BRANCH && git pull && git checkout -b "$BRANCH" &&
   claude -p --dangerously-skip-permissions "You are a fix agent. Your job:

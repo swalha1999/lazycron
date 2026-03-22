@@ -146,7 +146,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			jobIdx := m.currentJobIndex()
 			if jobIdx >= 0 {
 				m.mode = modeForm
-				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx)
+				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx, m.activeDirLister())
 				m.statusMsg = ""
 				return m, m.form.focusActive()
 			}
@@ -157,7 +157,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			jobIdx := m.currentJobIndex()
 			if jobIdx >= 0 {
 				m.mode = modeForm
-				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx)
+				m.form = newFormForEdit(m.jobs[jobIdx], jobIdx, m.activeDirLister())
 				m.statusMsg = ""
 				return m, m.form.focusActive()
 			}

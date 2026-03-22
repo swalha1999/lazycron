@@ -22,8 +22,11 @@ type Entry struct {
 
 // LoadAll reads all JSON files from ~/.lazycron/history/ sorted by timestamp desc.
 func LoadAll() ([]Entry, error) {
-	dir := record.HistoryDir()
+	return LoadAllFrom(record.HistoryDir())
+}
 
+// LoadAllFrom reads all JSON files from the given directory sorted by timestamp desc.
+func LoadAllFrom(dir string) ([]Entry, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
 		return nil, err
@@ -60,12 +63,16 @@ func LoadEntry(path string) (Entry, error) {
 	return e, nil
 }
 
-// WriteEntry writes a history entry to disk.
+// WriteEntry writes a history entry to the default history directory.
 func WriteEntry(jobName, output string, success bool) error {
 	if err := record.EnsureDirs(); err != nil {
 		return err
 	}
+	return WriteEntryTo(record.HistoryDir(), jobName, output, success)
+}
 
+// WriteEntryTo writes a history entry to the given directory.
+func WriteEntryTo(dir, jobName, output string, success bool) error {
 	now := time.Now()
 	e := record.Entry{
 		JobName:   jobName,
@@ -82,7 +89,7 @@ func WriteEntry(jobName, output string, success bool) error {
 	safeName := strings.ReplaceAll(jobName, "/", "_")
 	safeName = strings.ReplaceAll(safeName, " ", "_")
 	filename := now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
-	path := filepath.Join(record.HistoryDir(), filename)
+	path := filepath.Join(dir, filename)
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }

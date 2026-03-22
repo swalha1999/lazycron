@@ -61,6 +61,18 @@ func NewManager() *Manager {
 	}
 }
 
+// NewManagerWithBackend creates a manager with a custom backend at index 0.
+func NewManagerWithBackend(b Backend) *Manager {
+	return &Manager{
+		backends: []Backend{b},
+		servers: []ServerInfo{
+			{Name: b.Name(), Status: ConnLocal},
+		},
+		active: 0,
+		cache:  make(map[int]*CachedData),
+	}
+}
+
 // AddServer registers a remote server backend.
 func (m *Manager) AddServer(info ServerInfo, b Backend) {
 	m.mu.Lock()

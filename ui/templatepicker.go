@@ -41,7 +41,7 @@ type templatePickerModel struct {
 	completer completerModel
 }
 
-func newTemplatePicker() templatePickerModel {
+func newTemplatePicker(lister DirLister) templatePickerModel {
 	all, _ := template.LoadAll()
 	grouped := template.ByCategory(all)
 
@@ -58,6 +58,7 @@ func newTemplatePicker() templatePickerModel {
 		templates:  all,
 		grouped:    grouped,
 		categories: categories,
+		completer:  completerModel{lister: lister},
 	}
 }
 

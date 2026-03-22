@@ -6,7 +6,7 @@ import (
 )
 
 // recPath is the record binary path used in test fixtures.
-var recPath = recordBinPath()
+var recPath = RecordBinPath()
 
 // helper to build a current-format wrapped command.
 func wrapCmd(cmd, name string) string {
