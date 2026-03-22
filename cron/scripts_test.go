@@ -53,7 +53,7 @@ func TestWriteReadScript(t *testing.T) {
 
 	// Verify raw file has shebang and preamble
 	raw, _ := os.ReadFile(path)
-	if string(raw) != "#!/bin/sh\n"+scriptPreamble+"echo hello world\n" {
+	if string(raw) != "#!/bin/sh\n"+ScriptPreamble+"echo hello world\n" {
 		t.Errorf("raw file = %q, want shebang + preamble + command", string(raw))
 	}
 

@@ -49,6 +49,7 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 				if strings.HasPrefix(content, "#!/bin/sh\n") {
 					content = content[len("#!/bin/sh\n"):]
 				}
+				content = strings.TrimPrefix(content, cron.ScriptPreamble)
 				jobs[i].Command = strings.TrimRight(content, "\n")
 			}
 		}
@@ -76,7 +77,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	for _, j := range jobs {
 		filename := filepath.Base(cron.ScriptPath(j.Name))
 		active[filename] = true
-		content := "#!/bin/sh\n" + j.Command + "\n"
+		content := "#!/bin/sh\n" + cron.ScriptPreamble + j.Command + "\n"
 		path := remoteScriptsDir + "/" + filename
 		if err := b.client.Upload(content, path, 0o755); err != nil {
 			return fmt.Errorf("upload script %s: %w", j.Name, err)
@@ -92,9 +93,11 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 		}
 	}
 
-	// Format crontab, replacing local script paths with remote paths.
+	// Format crontab, replacing local paths with remote paths.
 	crontabContent := cron.FormatCrontab(jobs)
 	crontabContent = strings.ReplaceAll(crontabContent, cron.ScriptsDir(), remoteScriptsDir)
+	remoteRecordBin := remoteHome + "/.lazycron/bin/record"
+	crontabContent = strings.ReplaceAll(crontabContent, cron.RecordBinPath(), remoteRecordBin)
 
 	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
 		shellQuote(crontabContent)))
@@ -114,7 +117,7 @@ func (b *RemoteBackend) RunJob(name, command string) (string, error) {
 	scriptPath := remoteHome + "/.lazycron/scripts/" + filepath.Base(cron.ScriptPath(name))
 
 	// Upload script to remote.
-	content := "#!/bin/sh\n" + command + "\n"
+	content := "#!/bin/sh\n" + cron.ScriptPreamble + command + "\n"
 	if err := b.client.Upload(content, scriptPath, 0o755); err != nil {
 		return "", fmt.Errorf("upload script: %w", err)
 	}
