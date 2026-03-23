@@ -59,6 +59,7 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 				helpBinding("D", "delete") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
+				helpBinding("ctrl+↑/↓", "reorder") + helpSep() +
 				helpBinding("U", "update fmt") + helpSep()
 		} else if focusPanel == panelHistory {
 			help += helpBinding("n", "new") + helpSep() +
@@ -143,6 +144,7 @@ func renderHelpScreen() string {
 		{"r", "Run job now"},
 		{"U", "Update job to latest format"},
 		{"p", "Set/change project group"},
+		{"ctrl+↑/↓", "Move job up/down (reorder)"},
 		{"", "── General ──"},
 		{"1/2/3/4/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},

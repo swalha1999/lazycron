@@ -133,6 +133,38 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScroll++
 		}
 
+	case "ctrl+up":
+		if m.focusPanel == panelJobs && len(m.jobs) > 1 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx > 0 {
+				m.jobs[jobIdx], m.jobs[jobIdx-1] = m.jobs[jobIdx-1], m.jobs[jobIdx]
+				// Update selectedRow to follow the moved job
+				rows := buildRows(m.jobs, m.collapsedProjects)
+				m.selectedRow = rowForJobIdx(rows, jobIdx-1)
+				m.statusMsg = fmt.Sprintf("Moved '%s' up", m.jobs[jobIdx-1].Name)
+				m.statusKind = statusInfo
+				m.statusID++
+				b := m.manager.ActiveBackend()
+				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 2*time.Second))
+			}
+		}
+
+	case "ctrl+down":
+		if m.focusPanel == panelJobs && len(m.jobs) > 1 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 && jobIdx < len(m.jobs)-1 {
+				m.jobs[jobIdx], m.jobs[jobIdx+1] = m.jobs[jobIdx+1], m.jobs[jobIdx]
+				// Update selectedRow to follow the moved job
+				rows := buildRows(m.jobs, m.collapsedProjects)
+				m.selectedRow = rowForJobIdx(rows, jobIdx+1)
+				m.statusMsg = fmt.Sprintf("Moved '%s' down", m.jobs[jobIdx+1].Name)
+				m.statusKind = statusInfo
+				m.statusID++
+				b := m.manager.ActiveBackend()
+				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 2*time.Second))
+			}
+		}
+
 	case "enter":
 		if m.focusPanel == panelServers {
 			return m.switchToServer(m.serverSelected)
