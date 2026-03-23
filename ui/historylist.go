@@ -8,9 +8,30 @@ import (
 	"github.com/swalha1999/lazycron/history"
 )
 
-func renderHistoryList(entries []history.Entry, selected, width, height int, focused bool) string {
+func renderHistoryList(entries []history.Entry, selected, width, height int, focused bool, matchSet map[int]bool) string {
 	if len(entries) == 0 {
 		return mutedItemStyle.Render("\n  No history yet")
+	}
+
+	// Build list of visible indices
+	var visible []int
+	for i := range entries {
+		if matchSet == nil || matchSet[i] {
+			visible = append(visible, i)
+		}
+	}
+
+	if len(visible) == 0 {
+		return mutedItemStyle.Render("\n  No matches")
+	}
+
+	// Find selected position within visible list
+	selPos := 0
+	for j, idx := range visible {
+		if idx == selected {
+			selPos = j
+			break
+		}
 	}
 
 	var b strings.Builder
@@ -20,13 +41,13 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 		listHeight = 1
 	}
 
-	startIdx := 0
-	if selected >= listHeight {
-		startIdx = selected - listHeight + 1
+	startPos := 0
+	if selPos >= listHeight {
+		startPos = selPos - listHeight + 1
 	}
-	endIdx := startIdx + listHeight
-	if endIdx > len(entries) {
-		endIdx = len(entries)
+	endPos := startPos + listHeight
+	if endPos > len(visible) {
+		endPos = len(visible)
 	}
 
 	maxNameWidth := width - 16
@@ -34,7 +55,8 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 		maxNameWidth = 8
 	}
 
-	for i := startIdx; i < endIdx; i++ {
+	for p := startPos; p < endPos; p++ {
+		i := visible[p]
 		entry := entries[i]
 
 		name := entry.JobName
@@ -75,13 +97,13 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 		}
 
 		b.WriteString(line)
-		if i < endIdx-1 {
+		if p < endPos-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	if len(entries) > listHeight {
-		scrollInfo := fmt.Sprintf(" %d/%d", selected+1, len(entries))
+	if len(visible) > listHeight {
+		scrollInfo := fmt.Sprintf(" %d/%d", selPos+1, len(visible))
 		b.WriteString("\n")
 		b.WriteString(mutedItemStyle.Render(scrollInfo))
 	}

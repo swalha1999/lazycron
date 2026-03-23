@@ -23,6 +23,7 @@ const (
 	modeTemplatePicker
 	modeConfirmDeleteHistory
 	modeProjectPrompt
+	modeSearch
 )
 
 type statusType int
@@ -89,6 +90,12 @@ type Model struct {
 	selectedRow       int             // visual row index in grouped job list
 	projectInput      textinput.Model // for quick-assign project prompt
 
+	// Search/filter state
+	searchInput textinput.Model
+	searchQuery string       // active filter text
+	searchPanel int          // panel the filter applies to (-1 = none)
+	searchJobMatch map[int]bool // set of matching job indices (nil = all)
+
 	// App version (for self-update)
 	version string
 }
@@ -124,6 +131,7 @@ func NewModel(mgr *backend.Manager, version string) Model {
 		mode:              modeNormal,
 		focusPanel:        panelServers,
 		collapsedProjects: make(map[string]bool),
+		searchPanel:       -1,
 		version:           version,
 	}
 }

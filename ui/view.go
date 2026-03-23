@@ -19,7 +19,11 @@ func (m Model) View() string {
 	serverName := m.manager.ServerAt(m.manager.ActiveIndex()).Name
 	topBar := renderTopBar(m.mode, serverName, m.version, m.width)
 
-	bottomBar := renderBottomBar(m.mode, m.focusPanel, m.statusMsg, m.statusKind, m.width)
+	var searchView string
+	if m.mode == modeSearch {
+		searchView = m.searchInput.View()
+	}
+	bottomBar := renderBottomBar(m.mode, m.focusPanel, m.statusMsg, m.statusKind, m.width, searchView)
 
 	contentHeight := m.height - 1 - lipgloss.Height(bottomBar)
 
@@ -144,7 +148,8 @@ func (m Model) renderPanels(height int) string {
 
 	// [1] Servers panel
 	servers := m.manager.Servers()
-	serverContent := renderServerList(servers, m.serverSelected, m.manager.ActiveIndex(), listWidth-4, serverInnerHeight, m.focusPanel == panelServers)
+	srvMatchSet := m.serverMatchSet()
+	serverContent := renderServerList(servers, m.serverSelected, m.manager.ActiveIndex(), listWidth-4, serverInnerHeight, m.focusPanel == panelServers, srvMatchSet)
 	serversActive := m.focusPanel == panelServers
 	serversPanelStyle := panelStyle
 	if serversActive {
@@ -154,10 +159,14 @@ func (m Model) renderPanels(height int) string {
 		Width(listWidth).
 		Height(serverInnerHeight).
 		Render(serverContent)
-	serversBox = injectBorderTitle(serversBox, "1", "Servers", serversActive)
+	serversTitle := "Servers"
+	if matched, total := m.visibleServerCount(); matched != total {
+		serversTitle = fmt.Sprintf("Servers %d/%d", matched, total)
+	}
+	serversBox = injectBorderTitle(serversBox, "1", serversTitle, serversActive)
 
 	// [2] Jobs panel
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	listContent := renderJobList(m.jobs, m.selectedRow, rows, listWidth-4, jobsHeight, m.collapsedProjects)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
@@ -168,10 +177,15 @@ func (m Model) renderPanels(height int) string {
 		Width(listWidth).
 		Height(jobsHeight).
 		Render(listContent)
-	jobsBox = injectBorderTitle(jobsBox, "2", "Jobs", jobsActive)
+	jobsTitle := "Jobs"
+	if matched, total := m.visibleJobCount(); matched != total {
+		jobsTitle = fmt.Sprintf("Jobs %d/%d", matched, total)
+	}
+	jobsBox = injectBorderTitle(jobsBox, "2", jobsTitle, jobsActive)
 
 	// [3] History panel
-	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory)
+	histMatchSet := m.historyMatchSet()
+	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory, histMatchSet)
 	historyActive := m.focusPanel == panelHistory
 	historyPanelStyle := panelStyle
 	if historyActive {
@@ -181,7 +195,11 @@ func (m Model) renderPanels(height int) string {
 		Width(listWidth).
 		Height(historyHeight).
 		Render(historyContent)
-	historyBox = injectBorderTitle(historyBox, "3", "History", historyActive)
+	historyTitle := "History"
+	if matched, total := m.visibleHistoryCount(); matched != total {
+		historyTitle = fmt.Sprintf("History %d/%d", matched, total)
+	}
+	historyBox = injectBorderTitle(historyBox, "3", historyTitle, historyActive)
 
 	leftPanel := lipgloss.JoinVertical(lipgloss.Left, serversBox, jobsBox, historyBox)
 
@@ -223,7 +241,7 @@ func (m Model) buildDetailContent(width int) string {
 // selectedJobIndex returns the job index for the current visual row,
 // or -1 if on a header row or no jobs exist.
 func (m Model) selectedJobIndex() int {
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
 		return -1
 	}

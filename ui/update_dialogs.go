@@ -124,7 +124,7 @@ func (m Model) handleProjectPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusKind = statusSuccess
 			m.statusID++
 			// Rebuild rows and move selection to follow the job
-			rows := buildRows(m.jobs, m.collapsedProjects)
+			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			m.selectedRow = rowForJobIdx(rows, jobIdx)
 			b := m.manager.ActiveBackend()
 			return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))

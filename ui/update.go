@@ -233,6 +233,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.projectInput, cmd = m.projectInput.Update(msg)
 		return m, cmd
+	case modeSearch:
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		return m, cmd
 	case modeTemplatePicker:
 		if m.templatePicker.phase == phaseVariables && len(m.templatePicker.variableInputs) > 0 {
 			idx := m.templatePicker.activeVariable
@@ -272,6 +276,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleTemplatePickerKey(msg)
 	case modeProjectPrompt:
 		return m.handleProjectPromptKey(msg)
+	case modeSearch:
+		return m.handleSearchKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}

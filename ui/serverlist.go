@@ -7,25 +7,47 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 )
 
-func renderServerList(servers []backend.ServerInfo, selected, activeIdx, width, height int, focused bool) string {
+func renderServerList(servers []backend.ServerInfo, selected, activeIdx, width, height int, focused bool, matchSet map[int]bool) string {
 	if len(servers) == 0 {
 		return mutedItemStyle.Render("No servers")
+	}
+
+	// Build list of visible indices
+	var visible []int
+	for i := range servers {
+		if matchSet == nil || matchSet[i] {
+			visible = append(visible, i)
+		}
+	}
+
+	if len(visible) == 0 {
+		return mutedItemStyle.Render("No matches")
+	}
+
+	// Find selected position within visible list
+	selPos := 0
+	for j, idx := range visible {
+		if idx == selected {
+			selPos = j
+			break
+		}
 	}
 
 	var b strings.Builder
 
 	visibleHeight := height
-	startIdx := 0
-	if selected >= visibleHeight {
-		startIdx = selected - visibleHeight + 1
+	startPos := 0
+	if selPos >= visibleHeight {
+		startPos = selPos - visibleHeight + 1
 	}
 
-	endIdx := startIdx + visibleHeight
-	if endIdx > len(servers) {
-		endIdx = len(servers)
+	endPos := startPos + visibleHeight
+	if endPos > len(visible) {
+		endPos = len(visible)
 	}
 
-	for i := startIdx; i < endIdx; i++ {
+	for p := startPos; p < endPos; p++ {
+		i := visible[p]
 		srv := servers[i]
 		isSelected := i == selected
 		isActive := i == activeIdx
@@ -62,14 +84,14 @@ func renderServerList(servers []backend.ServerInfo, selected, activeIdx, width, 
 		}
 
 		b.WriteString(line)
-		if i < endIdx-1 {
+		if p < endPos-1 {
 			b.WriteString("\n")
 		}
 	}
 
 	// Scroll indicator
-	if len(servers) > visibleHeight {
-		scrollInfo := fmt.Sprintf(" [%d/%d]", selected+1, len(servers))
+	if len(visible) > visibleHeight {
+		scrollInfo := fmt.Sprintf(" [%d/%d]", selPos+1, len(visible))
 		b.WriteString("\n" + mutedItemStyle.Render(scrollInfo))
 	}
 
