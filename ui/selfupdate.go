@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,6 +104,13 @@ func selfUpdate(currentVersion string) tea.Cmd {
 		}
 		out.Close()
 
+		// Verify checksum
+		checksumURL := fmt.Sprintf("https://github.com/%s/releases/download/%s/checksums.txt", githubRepo, release.TagName)
+		if err := verifyChecksum(tarPath, filename, checksumURL); err != nil {
+			os.RemoveAll(tmpDir)
+			return selfUpdateMsg{err: fmt.Errorf("integrity check failed: %w", err)}
+		}
+
 		// Extract tar.gz
 		extractCmd := exec.Command("tar", "-xzf", tarPath, "-C", tmpDir)
 		if err := extractCmd.Run(); err != nil {
@@ -155,6 +164,55 @@ func sudoInstall(newVersion, tmpBinary, targetPath string) tea.Cmd {
 		}
 		return selfUpdateSudoMsg{newVersion: newVersion}
 	})
+}
+
+func verifyChecksum(filePath, filename, checksumURL string) error {
+	resp, err := http.Get(checksumURL)
+	if err != nil {
+		return fmt.Errorf("failed to download checksums: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("failed to download checksums: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read checksums: %w", err)
+	}
+
+	// Parse checksums.txt — format: "<sha256>  <filename>"
+	var expectedHash string
+	for _, line := range strings.Split(string(body), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 2 && parts[1] == filename {
+			expectedHash = parts[0]
+			break
+		}
+	}
+	if expectedHash == "" {
+		return fmt.Errorf("no checksum found for %s", filename)
+	}
+
+	// Compute SHA256 of downloaded file
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file for checksum: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("failed to compute checksum: %w", err)
+	}
+
+	actualHash := hex.EncodeToString(h.Sum(nil))
+	if actualHash != expectedHash {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedHash, actualHash)
+	}
+
+	return nil
 }
 
 func directCopy(src, dst string) error {
