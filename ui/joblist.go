@@ -83,6 +83,35 @@ func rowForJobIdx(rows []listRow, jobIdx int) int {
 	return 0
 }
 
+// findSiblingJob finds the next job index within the same project group.
+// direction is -1 for up, +1 for down. Returns -1 if no sibling exists.
+func findSiblingJob(jobs []cron.Job, jobIdx int, direction int) int {
+	project := jobs[jobIdx].Project
+	// Collect indices of jobs in the same project, in slice order
+	var siblings []int
+	for i, j := range jobs {
+		if j.Project == project {
+			siblings = append(siblings, i)
+		}
+	}
+	// Find position of jobIdx within siblings
+	pos := -1
+	for i, idx := range siblings {
+		if idx == jobIdx {
+			pos = i
+			break
+		}
+	}
+	if pos < 0 {
+		return -1
+	}
+	targetPos := pos + direction
+	if targetPos < 0 || targetPos >= len(siblings) {
+		return -1
+	}
+	return siblings[targetPos]
+}
+
 func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height int, collapsed map[string]bool) string {
 	if len(jobs) == 0 {
 		empty := mutedItemStyle.Render("No cron jobs found")
