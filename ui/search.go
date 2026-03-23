@@ -153,11 +153,14 @@ func (m *Model) historyMatchSet() map[int]bool {
 
 // nextVisibleServer finds the next visible server index in the given direction.
 func (m *Model) nextVisibleServer(from, direction int) int {
+	count := m.manager.ServerCount()
 	matchSet := m.serverMatchSet()
 	if matchSet == nil {
-		return from
+		if from >= 0 && from < count {
+			return from
+		}
+		return -1
 	}
-	count := m.manager.ServerCount()
 	for i := from; i >= 0 && i < count; i += direction {
 		if matchSet[i] {
 			return i
@@ -170,7 +173,10 @@ func (m *Model) nextVisibleServer(from, direction int) int {
 func (m *Model) nextVisibleHistory(from, direction int) int {
 	matchSet := m.historyMatchSet()
 	if matchSet == nil {
-		return from
+		if from >= 0 && from < len(m.history) {
+			return from
+		}
+		return -1
 	}
 	for i := from; i >= 0 && i < len(m.history); i += direction {
 		if matchSet[i] {
