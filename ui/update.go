@@ -17,6 +17,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
+	case splashDoneMsg:
+		if m.mode == modeSplash {
+			m.mode = modeNormal
+		}
+		return m, nil
+
 	case jobsLoadedMsg:
 		if msg.err != nil {
 			m.statusMsg = msg.err.Error()
@@ -252,6 +258,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
+	}
+	if m.mode == modeSplash {
+		m.mode = modeNormal
+		return m, nil
 	}
 	switch m.mode {
 	case modeForm:

@@ -43,6 +43,8 @@ type clearStatusMsg struct {
 
 type historyTickMsg struct{}
 
+type splashDoneMsg struct{}
+
 // Server-related messages
 type serverConnectedMsg struct {
 	index int
@@ -68,9 +70,15 @@ func historyTick() tea.Cmd {
 	})
 }
 
+func splashTimer() tea.Cmd {
+	return tea.Tick(1200*time.Millisecond, func(time.Time) tea.Msg {
+		return splashDoneMsg{}
+	})
+}
+
 func (m Model) Init() tea.Cmd {
 	b := m.manager.ActiveBackend()
-	return tea.Batch(loadJobs(b), loadHistory(b), historyTick())
+	return tea.Batch(loadJobs(b), loadHistory(b), historyTick(), splashTimer())
 }
 
 // disableCompletedOneShotsMsg is sent after one-shot jobs have been auto-disabled.

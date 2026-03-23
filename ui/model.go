@@ -11,7 +11,8 @@ import (
 type mode int
 
 const (
-	modeNormal mode = iota
+	modeSplash mode = iota
+	modeNormal
 	modeForm
 	modeConfirmDelete
 	modeHelp
@@ -128,7 +129,7 @@ func NewModel(mgr *backend.Manager, version string) Model {
 	return Model{
 		manager:           mgr,
 		selected:          0,
-		mode:              modeNormal,
+		mode:              modeSplash,
 		focusPanel:        panelServers,
 		collapsedProjects: make(map[string]bool),
 		searchPanel:       -1,

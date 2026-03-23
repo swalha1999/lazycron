@@ -16,6 +16,10 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
+	if m.mode == modeSplash {
+		return renderSplash(m.version, m.width, m.height)
+	}
+
 	serverName := m.manager.ServerAt(m.manager.ActiveIndex()).Name
 	topBar := renderTopBar(m.mode, serverName, m.version, m.width)
 

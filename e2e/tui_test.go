@@ -75,7 +75,10 @@ func (e *testEnv) initModel(t *testing.T) tea.Model {
 	t.Helper()
 	m := ui.NewModel(e.mgr, "test")
 	cmd := m.Init()
-	return processCmd(m, cmd)
+	result := processCmd(m, cmd)
+	// Dismiss the startup splash screen
+	result, _ = result.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	return result
 }
 
 // execCmd runs a tea.Cmd with a short timeout. Returns the message or nil if
