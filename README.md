@@ -4,33 +4,16 @@ A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/j
 
 ![lazycron demo](assets/demo.gif)
 
-## Quick Start
+## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/swalha1999/lazycron/main/install.sh | sh
-lazycron
+curl -fsSL https://get.lazycron.com | sh
 ```
 
-## Other Install Methods
-
-**Homebrew:**
+**Other methods:**
 
 ```bash
-brew install swalha1999/tap/lazycron
-```
-
-**Go:**
-
-```bash
-go install github.com/swalha1999/lazycron@latest
-```
-
-**From source:**
-
-```bash
-git clone https://github.com/swalha1999/lazycron.git
-cd lazycron
-go build -o lazycron .
+go install github.com/swalha1999/lazycron@latest   # Go
 ```
 
 ## Features
