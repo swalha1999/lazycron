@@ -45,31 +45,21 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 	var help string
 	switch m {
 	case modeNormal:
-		help = helpBinding("↑/↓", "move") + helpSep() +
-			helpBinding("←/→", "panel") + helpSep()
 		if focusPanel == panelServers {
-			help += helpBinding("enter/space", "switch") + helpSep() +
+			help = helpBinding("enter", "switch") + helpSep() +
 				helpBinding("a", "add") + helpSep() +
-				helpBinding("c", "connect") + helpSep() +
-				helpBinding("d", "disconnect") + helpSep() +
+				helpBinding("c/d", "connect/disconnect") + helpSep() +
 				helpBinding("D", "remove") + helpSep()
 		} else if focusPanel == panelJobs {
-			help += helpBinding("n", "new") + helpSep() +
+			help = helpBinding("n", "new") + helpSep() +
 				helpBinding("enter", "edit") + helpSep() +
-				helpBinding("D", "delete") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
-				helpBinding("⇧↑/↓", "reorder") + helpSep() +
-				helpBinding("U", "update fmt") + helpSep()
-		} else if focusPanel == panelHistory {
-			help += helpBinding("n", "new") + helpSep() +
 				helpBinding("D", "delete") + helpSep()
-		} else {
-			help += helpBinding("n", "new") + helpSep()
+		} else if focusPanel == panelHistory {
+			help = helpBinding("D", "delete") + helpSep()
 		}
-		help += helpBinding("R", "refresh") + helpSep() +
-			helpBinding("u", "update app") + helpSep() +
-			helpBinding("?", "help") + helpSep() +
+		help += helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
 	case modeForm, modeAddServer:
 		help = helpBinding("tab", "next") + helpSep() +
