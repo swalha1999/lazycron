@@ -133,7 +133,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScroll++
 		}
 
-	case "shift+up", "K":
+	case "K":
 		if m.focusPanel == panelJobs && len(m.jobs) > 1 && !m.isOnHeader() {
 			jobIdx := m.currentJobIndex()
 			if jobIdx >= 0 {
@@ -151,7 +151,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "shift+down", "J":
+	case "J":
 		if m.focusPanel == panelJobs && len(m.jobs) > 1 && !m.isOnHeader() {
 			jobIdx := m.currentJobIndex()
 			if jobIdx >= 0 {
