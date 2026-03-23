@@ -10,7 +10,7 @@ import (
 
 // currentJobIndex returns the job index for the current selectedRow, or -1 if on a header.
 func (m *Model) currentJobIndex() int {
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
 		return -1
 	}
@@ -22,7 +22,7 @@ func (m *Model) currentJobIndex() int {
 
 // isOnHeader returns true if the current selectedRow is a group header.
 func (m *Model) isOnHeader() bool {
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
 		return false
 	}
@@ -31,7 +31,7 @@ func (m *Model) isOnHeader() bool {
 
 // toggleCurrentHeader toggles the collapse state of the header at selectedRow.
 func (m *Model) toggleCurrentHeader() {
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
 		return
 	}
@@ -43,7 +43,7 @@ func (m *Model) toggleCurrentHeader() {
 
 // clampSelectedRow ensures selectedRow is within bounds of current rows.
 func (m *Model) clampSelectedRow() {
-	rows := buildRows(m.jobs, m.collapsedProjects)
+	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 	if len(rows) == 0 {
 		m.selectedRow = 0
 		return
@@ -91,19 +91,19 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		switch m.focusPanel {
 		case panelServers:
-			if m.serverSelected > 0 {
-				m.serverSelected--
+			if next := m.nextVisibleServer(m.serverSelected-1, -1); next >= 0 {
+				m.serverSelected = next
 			}
 		case panelJobs:
-			rows := buildRows(m.jobs, m.collapsedProjects)
+			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			if m.selectedRow > 0 {
 				m.selectedRow--
 				m.detailScroll = 0
 			}
 			_ = rows
 		case panelHistory:
-			if m.historySelected > 0 {
-				m.historySelected--
+			if next := m.nextVisibleHistory(m.historySelected-1, -1); next >= 0 {
+				m.historySelected = next
 				m.detailScroll = 0
 			}
 		case panelDetail:
@@ -115,18 +115,18 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		switch m.focusPanel {
 		case panelServers:
-			if m.serverSelected < m.manager.ServerCount()-1 {
-				m.serverSelected++
+			if next := m.nextVisibleServer(m.serverSelected+1, +1); next >= 0 {
+				m.serverSelected = next
 			}
 		case panelJobs:
-			rows := buildRows(m.jobs, m.collapsedProjects)
+			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			if m.selectedRow < len(rows)-1 {
 				m.selectedRow++
 				m.detailScroll = 0
 			}
 		case panelHistory:
-			if m.historySelected < len(m.history)-1 {
-				m.historySelected++
+			if next := m.nextVisibleHistory(m.historySelected+1, +1); next >= 0 {
+				m.historySelected = next
 				m.detailScroll = 0
 			}
 		case panelDetail:
@@ -140,7 +140,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, -1)
 				if swapIdx >= 0 {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
-					rows := buildRows(m.jobs, m.collapsedProjects)
+					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 					m.selectedRow = rowForJobIdx(rows, swapIdx)
 					m.statusMsg = fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name)
 					m.statusKind = statusInfo
@@ -158,7 +158,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, +1)
 				if swapIdx >= 0 {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
-					rows := buildRows(m.jobs, m.collapsedProjects)
+					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 					m.selectedRow = rowForJobIdx(rows, swapIdx)
 					m.statusMsg = fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name)
 					m.statusKind = statusInfo
@@ -343,6 +343,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "R":
+		m.clearSearch()
 		m.statusMsg = "Refreshing..."
 		m.statusKind = statusInfo
 		b := m.manager.ActiveBackend()
@@ -356,6 +357,17 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.mode = modeHelp
 		m.statusMsg = ""
+
+	case "/":
+		if m.focusPanel != panelDetail {
+			return m, m.enterSearch()
+		}
+
+	case "esc":
+		if m.hasActiveSearch() {
+			m.clearSearch()
+			return m, nil
+		}
 	}
 	return m, nil
 }
@@ -364,6 +376,7 @@ func (m Model) switchToServer(index int) (tea.Model, tea.Cmd) {
 	if index == m.manager.ActiveIndex() {
 		return m, nil
 	}
+	m.clearSearch()
 
 	info := m.manager.ServerAt(index)
 

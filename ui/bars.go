@@ -32,6 +32,8 @@ func renderTopBar(m mode, serverName string, version string, width int) string {
 		modeStr = modeStyle.Render("NEW JOB")
 	case modeTemplatePicker:
 		modeStr = modeStyle.Render("TEMPLATE")
+	case modeSearch:
+		modeStr = modeStyle.Render("SEARCH")
 	}
 
 	leftPart := title + " " + versionTag + "  " + serverTag
@@ -41,7 +43,7 @@ func renderTopBar(m mode, serverName string, version string, width int) string {
 	return topBarStyle.Width(width).Render(bar)
 }
 
-func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind statusType, width int) string {
+func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind statusType, width int, searchView string) string {
 	var help string
 	switch m {
 	case modeNormal:
@@ -59,7 +61,8 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		} else if focusPanel == panelHistory {
 			help = helpBinding("D", "delete") + helpSep()
 		}
-		help += helpBinding("?", "help") + helpSep() +
+		help += helpBinding("/", "search") + helpSep() +
+			helpBinding("?", "help") + helpSep() +
 			helpBinding("q", "quit")
 	case modeForm, modeAddServer:
 		help = helpBinding("tab", "next") + helpSep() +
@@ -86,6 +89,10 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpBinding("↑/↓", "select") + helpSep() +
 			helpBinding("enter", "choose") + helpSep() +
 			helpBinding("esc", "back")
+	case modeSearch:
+		help = helpKeyStyle.Render("/") + " " + searchView + "  " +
+			helpBinding("enter", "accept") + helpSep() +
+			helpBinding("esc", "clear")
 	}
 
 	var status string
@@ -136,6 +143,8 @@ func renderHelpScreen() string {
 		{"p", "Set/change project group"},
 		{"J/K", "Move job up/down (reorder)"},
 		{"", "── General ──"},
+		{"/", "Search/filter current panel"},
+		{"esc", "Clear search filter"},
 		{"1/2/3/4/tab", "Switch panel"},
 		{"R", "Refresh from crontab"},
 		{"u", "Update app to latest version"},

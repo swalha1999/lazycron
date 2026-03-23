@@ -33,13 +33,29 @@ type projectGroup struct {
 
 // buildRows constructs the visual row list from jobs grouped by project.
 // Projects are sorted alphabetically, with the "Ungrouped" section at the bottom.
-func buildRows(jobs []cron.Job, collapsed map[string]bool) []listRow {
+// If matchSet is non-nil, only jobs with indices in matchSet are included.
+func buildRows(jobs []cron.Job, collapsed map[string]bool, matchSet map[int]bool) []listRow {
 	groups := groupByProject(jobs)
 	var rows []listRow
 	for _, g := range groups {
+		if matchSet != nil {
+			hasMatch := false
+			for _, idx := range g.jobIdxs {
+				if matchSet[idx] {
+					hasMatch = true
+					break
+				}
+			}
+			if !hasMatch {
+				continue
+			}
+		}
 		rows = append(rows, listRow{kind: rowHeader, project: g.name})
 		if !collapsed[g.name] {
 			for _, idx := range g.jobIdxs {
+				if matchSet != nil && !matchSet[idx] {
+					continue
+				}
 				rows = append(rows, listRow{kind: rowJob, jobIdx: idx, project: g.name})
 			}
 		}
