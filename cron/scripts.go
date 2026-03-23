@@ -37,8 +37,7 @@ func WriteScript(jobName, command string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	content := "#!/bin/sh\n" + ScriptPreamble + command + "\n"
-	return os.WriteFile(ScriptPath(jobName), []byte(content), 0700)
+	return os.WriteFile(ScriptPath(jobName), []byte(BuildScriptContent(command)), 0700)
 }
 
 // ScriptPreamble is the profile-sourcing block prepended to every script.
@@ -48,6 +47,21 @@ const ScriptPreamble = "# Source user profile for PATH and environment variables
 	"done\n" +
 	"unset __lc_rc\n"
 
+// BuildScriptContent returns a complete script with shebang, preamble, and command.
+func BuildScriptContent(command string) string {
+	return "#!/bin/sh\n" + ScriptPreamble + command + "\n"
+}
+
+// StripShebang removes the shebang line and preamble from script content,
+// returning just the command.
+func StripShebang(content string) string {
+	if strings.HasPrefix(content, "#!/bin/sh\n") {
+		content = content[len("#!/bin/sh\n"):]
+	}
+	content = strings.TrimPrefix(content, ScriptPreamble)
+	return strings.TrimRight(content, "\n")
+}
+
 // ReadScriptCommand reads a script file and returns the command
 // (stripping the shebang and profile-sourcing preamble).
 func ReadScriptCommand(path string) (string, error) {
@@ -55,12 +69,7 @@ func ReadScriptCommand(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	content := string(data)
-	if strings.HasPrefix(content, "#!/bin/sh\n") {
-		content = content[len("#!/bin/sh\n"):]
-	}
-	content = strings.TrimPrefix(content, ScriptPreamble)
-	return strings.TrimRight(content, "\n"), nil
+	return StripShebang(string(data)), nil
 }
 
 // DeleteScript removes a job's script file.

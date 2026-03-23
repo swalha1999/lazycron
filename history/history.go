@@ -71,8 +71,8 @@ func WriteEntry(jobName, output string, success bool) error {
 	return WriteEntryTo(record.HistoryDir(), jobName, output, success)
 }
 
-// WriteEntryTo writes a history entry to the given directory.
-func WriteEntryTo(dir, jobName, output string, success bool) error {
+// BuildHistoryFile creates the filename and JSON data for a history entry.
+func BuildHistoryFile(jobName, output string, success bool) (filename string, data []byte, err error) {
 	now := time.Now()
 	e := record.Entry{
 		JobName:   jobName,
@@ -81,15 +81,22 @@ func WriteEntryTo(dir, jobName, output string, success bool) error {
 		Success:   &success,
 	}
 
-	data, err := json.MarshalIndent(e, "", "  ")
+	data, err = json.MarshalIndent(e, "", "  ")
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
 	safeName := strings.ReplaceAll(jobName, "/", "_")
 	safeName = strings.ReplaceAll(safeName, " ", "_")
-	filename := now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
-	path := filepath.Join(dir, filename)
+	filename = now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
+	return filename, data, nil
+}
 
-	return os.WriteFile(path, data, 0o600)
+// WriteEntryTo writes a history entry to the given directory.
+func WriteEntryTo(dir, jobName, output string, success bool) error {
+	filename, data, err := BuildHistoryFile(jobName, output, success)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, filename), data, 0o600)
 }

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
@@ -68,12 +67,7 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 			path := strings.Trim(strings.TrimPrefix(j.Command, "sh "), "'\"")
 			data, readErr := b.client.ReadFile(path)
 			if readErr == nil {
-				content := string(data)
-				if strings.HasPrefix(content, "#!/bin/sh\n") {
-					content = content[len("#!/bin/sh\n"):]
-				}
-				content = strings.TrimPrefix(content, cron.ScriptPreamble)
-				jobs[i].Command = strings.TrimRight(content, "\n")
+				jobs[i].Command = cron.StripShebang(string(data))
 			}
 		}
 	}
@@ -99,7 +93,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	for _, j := range jobs {
 		filename := filepath.Base(cron.ScriptPath(j.Name))
 		active[filename] = true
-		content := "#!/bin/sh\n" + cron.ScriptPreamble + j.Command + "\n"
+		content := cron.BuildScriptContent(j.Command)
 		path := remoteScriptsDir + "/" + filename
 		if err := b.client.Upload(content, path, 0o755); err != nil {
 			return fmt.Errorf("upload script %s: %w", j.Name, err)
@@ -137,8 +131,7 @@ func (b *RemoteBackend) RunJob(name, command string) (string, error) {
 	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(name))
 
 	// Upload script to remote.
-	content := "#!/bin/sh\n" + cron.ScriptPreamble + command + "\n"
-	if err := b.client.Upload(content, scriptPath, 0o755); err != nil {
+	if err := b.client.Upload(cron.BuildScriptContent(command), scriptPath, 0o755); err != nil {
 		return "", fmt.Errorf("upload script: %w", err)
 	}
 
@@ -183,15 +176,7 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 }
 
 func (b *RemoteBackend) WriteHistory(jobName, output string, success bool) error {
-	now := time.Now()
-	e := record.Entry{
-		JobName:   jobName,
-		Timestamp: now.Format(time.RFC3339),
-		Output:    output,
-		Success:   &success,
-	}
-
-	data, err := json.MarshalIndent(e, "", "  ")
+	filename, data, err := history.BuildHistoryFile(jobName, output, success)
 	if err != nil {
 		return err
 	}
@@ -201,12 +186,7 @@ func (b *RemoteBackend) WriteHistory(jobName, output string, success bool) error
 		return lcErr
 	}
 
-	safeName := strings.ReplaceAll(jobName, "/", "_")
-	safeName = strings.ReplaceAll(safeName, " ", "_")
-	filename := now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
-	path := lcDir + "/history/" + filename
-
-	return b.client.Upload(string(data), path, 0o644)
+	return b.client.Upload(string(data), lcDir+"/history/"+filename, 0o644)
 }
 
 func (b *RemoteBackend) DeleteHistory(filePath string) error {
