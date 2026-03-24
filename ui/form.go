@@ -170,6 +170,41 @@ func (f *formModel) updateInput(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+// nextRunPreview returns a rendered preview of the next run times for the current schedule.
+func (f *formModel) nextRunPreview() string {
+	schedule := strings.TrimSpace(f.inputs[fieldSchedule].Value())
+	if schedule == "" {
+		return ""
+	}
+
+	if f.oneShot {
+		_, resolved, err := cron.DatetimeToCron(schedule)
+		if err != nil {
+			return mutedItemStyle.Render("  ↳ Invalid schedule")
+		}
+		timeStr := resolved.Format("Mon Jan 02, 2006 at 3:04 PM")
+		return mutedItemStyle.Render("  ↳ Scheduled: ") + detailValueStyle.Render(timeStr)
+	}
+
+	cronExpr := cron.HumanToCron(schedule)
+	if err := cron.ValidateCron(cronExpr); err != nil {
+		return mutedItemStyle.Render("  ↳ Invalid schedule")
+	}
+
+	nextRuns := cron.NextRuns(cronExpr, 3)
+	if len(nextRuns) == 0 {
+		return mutedItemStyle.Render("  ↳ No upcoming runs")
+	}
+
+	var b strings.Builder
+	b.WriteString(mutedItemStyle.Render("  ↳ Next:"))
+	for _, t := range nextRuns {
+		timeStr := t.Format("Mon Jan 02, 2006 at 3:04 PM")
+		b.WriteString("\n" + "          " + detailValueStyle.Render(timeStr))
+	}
+	return b.String()
+}
+
 func (f *formModel) buildJob() (cron.Job, error) {
 	name := strings.TrimSpace(f.inputs[fieldName].Value())
 	command := strings.TrimSpace(f.inputs[fieldCommand].Value())
@@ -273,6 +308,13 @@ func renderForm(f *formModel, width int) string {
 		if i == fieldSchedule && !f.oneShot {
 			b.WriteString(renderPicker(&f.picker, inputWidth))
 			b.WriteString("\n")
+		}
+
+		if i == fieldSchedule {
+			if preview := f.nextRunPreview(); preview != "" {
+				b.WriteString(preview)
+				b.WriteString("\n")
+			}
 		}
 
 		if i == fieldWorkDir && f.completer.active {
