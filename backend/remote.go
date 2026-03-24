@@ -224,7 +224,5 @@ func (b *RemoteBackend) Close() error {
 	return b.client.Close()
 }
 
-// shellQuote wraps a string in single quotes with proper escaping.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
+// shellQuote is a package-level alias for cron.ShellQuote.
+var shellQuote = cron.ShellQuote

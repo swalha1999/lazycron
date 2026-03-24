@@ -202,7 +202,7 @@ func (f *formModel) buildJob() (cron.Job, error) {
 
 	finalCmd := command
 	if workDir != "" {
-		finalCmd = fmt.Sprintf("cd %s && %s", workDir, finalCmd)
+		finalCmd = fmt.Sprintf("cd %s && %s", cron.ShellQuote(workDir), finalCmd)
 	}
 
 	id := f.id

@@ -61,7 +61,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	finalCmd := addCommand
 	if addWorkDir != "" {
-		finalCmd = fmt.Sprintf("cd %s && %s", addWorkDir, addCommand)
+		finalCmd = fmt.Sprintf("cd %s && %s", cron.ShellQuote(addWorkDir), addCommand)
 	}
 
 	job := cron.Job{
