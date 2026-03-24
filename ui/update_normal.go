@@ -142,11 +142,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
 					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 					m.selectedRow = rowForJobIdx(rows, swapIdx)
-					m.statusMsg = fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name)
-					m.statusKind = statusInfo
-					m.statusID++
 					b := m.manager.ActiveBackend()
-					return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 2*time.Second))
+					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
 			}
 		}
@@ -160,11 +157,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
 					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 					m.selectedRow = rowForJobIdx(rows, swapIdx)
-					m.statusMsg = fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name)
-					m.statusKind = statusInfo
-					m.statusID++
 					b := m.manager.ActiveBackend()
-					return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 2*time.Second))
+					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
 			}
 		}
@@ -235,18 +229,13 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.manager.SetServerStatus(idx, backend.ConnDisconnected, "")
 				m.manager.InvalidateCache(idx)
-				m.statusMsg = fmt.Sprintf("Disconnected from %s", info.Name)
-				m.statusKind = statusInfo
-				m.statusID++
+				cmd := m.setStatus(fmt.Sprintf("Disconnected from %s", info.Name), statusInfo, 3*time.Second)
 				if m.manager.ActiveIndex() == idx {
 					m.manager.SwitchTo(0)
 					b := m.manager.ActiveBackend()
-					return m, tea.Batch(
-						loadJobs(b), loadHistory(b),
-						clearStatusAfter(m.statusID, 3*time.Second),
-					)
+					return m, tea.Batch(loadJobs(b), loadHistory(b), cmd)
 				}
-				return m, clearStatusAfter(m.statusID, 3*time.Second)
+				return m, cmd
 			}
 		}
 
@@ -290,11 +279,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if !m.jobs[jobIdx].Enabled {
 					status = "disabled"
 				}
-				m.statusMsg = fmt.Sprintf("Job '%s' %s", m.jobs[jobIdx].Name, status)
-				m.statusKind = statusSuccess
-				m.statusID++
 				b := m.manager.ActiveBackend()
-				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+				return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Job '%s' %s", m.jobs[jobIdx].Name, status), statusSuccess, 4*time.Second))
 			}
 		}
 
@@ -328,17 +314,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if jobIdx >= 0 {
 				job := &m.jobs[jobIdx]
 				if job.Wrapped {
-					m.statusMsg = fmt.Sprintf("Job '%s' is already up to date", job.Name)
-					m.statusKind = statusInfo
-					m.statusID++
-					return m, clearStatusAfter(m.statusID, 3*time.Second)
+					return m, m.setStatus(fmt.Sprintf("Job '%s' is already up to date", job.Name), statusInfo, 3*time.Second)
 				}
 				job.Wrapped = true
-				m.statusMsg = fmt.Sprintf("Updated '%s' to latest format", job.Name)
-				m.statusKind = statusSuccess
-				m.statusID++
 				b := m.manager.ActiveBackend()
-				return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+				return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Updated '%s' to latest format", job.Name), statusSuccess, 4*time.Second))
 			}
 		}
 
@@ -383,10 +363,7 @@ func (m Model) switchToServer(index int) (tea.Model, tea.Cmd) {
 	if index == 0 {
 		m.manager.SwitchTo(0)
 		b := m.manager.ActiveBackend()
-		m.statusMsg = "Switched to local"
-		m.statusKind = statusSuccess
-		m.statusID++
-		return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 3*time.Second))
+		return m, tea.Batch(loadJobs(b), loadHistory(b), m.setStatus("Switched to local", statusSuccess, 3*time.Second))
 	}
 
 	if info.Status == backend.ConnConnected {

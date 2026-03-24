@@ -15,26 +15,17 @@ func (m Model) handleAddServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.mode = modeNormal
-		m.statusMsg = "Cancelled"
-		m.statusKind = statusInfo
-		m.statusID++
-		return m, clearStatusAfter(m.statusID, 3*time.Second)
+		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 
 	case "enter":
 		srv, err := m.serverForm.buildServerConfig()
 		if err != nil {
-			m.statusMsg = err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus(err.Error(), statusError, 5*time.Second)
 		}
 
 		// Save to config file
 		if err := config.AddServer(srv); err != nil {
-			m.statusMsg = "Failed to save config: " + err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus("Failed to save config: "+err.Error(), statusError, 5*time.Second)
 		}
 
 		// Add to manager
@@ -50,11 +41,8 @@ func (m Model) handleAddServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.manager.AddServer(info, remote)
 
 		m.mode = modeNormal
-		m.statusMsg = fmt.Sprintf("Added server '%s'", srv.Name)
-		m.statusKind = statusSuccess
-		m.statusID++
 		m.serverSelected = m.manager.ServerCount() - 1
-		return m, clearStatusAfter(m.statusID, 4*time.Second)
+		return m, m.setStatus(fmt.Sprintf("Added server '%s'", srv.Name), statusSuccess, 4*time.Second)
 
 	case "tab":
 		cmd := m.serverForm.nextField()
@@ -72,18 +60,12 @@ func (m Model) handlePasswordPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = modeNormal
-		m.statusMsg = "Cancelled"
-		m.statusKind = statusInfo
-		m.statusID++
-		return m, clearStatusAfter(m.statusID, 3*time.Second)
+		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 
 	case "enter":
 		password := m.passwordInput.Value()
 		if password == "" {
-			m.statusMsg = "Password cannot be empty"
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 3*time.Second)
+			return m, m.setStatus("Password cannot be empty", statusError, 3*time.Second)
 		}
 		m.mode = modeNormal
 		m.serverSwitching = true
@@ -110,10 +92,7 @@ func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return m.executeConfirmDeleteServer()
 	case "n", "N", "esc":
 		m.mode = modeNormal
-		m.statusMsg = "Cancelled"
-		m.statusKind = statusInfo
-		m.statusID++
-		return m, clearStatusAfter(m.statusID, 3*time.Second)
+		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 	}
 	return m, nil
 }
@@ -121,10 +100,7 @@ func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 func (m Model) executeConfirmDeleteServer() (tea.Model, tea.Cmd) {
 	if !m.confirmYes {
 		m.mode = modeNormal
-		m.statusMsg = "Cancelled"
-		m.statusKind = statusInfo
-		m.statusID++
-		return m, clearStatusAfter(m.statusID, 3*time.Second)
+		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 	}
 	idx := m.serverSelected
 	if idx <= 0 || idx >= m.manager.ServerCount() {
@@ -146,13 +122,10 @@ func (m Model) executeConfirmDeleteServer() (tea.Model, tea.Cmd) {
 	}
 
 	m.mode = modeNormal
-	m.statusMsg = fmt.Sprintf("Removed server '%s'", serverName)
-	m.statusKind = statusSuccess
-	m.statusID++
-
+	cmd := m.setStatus(fmt.Sprintf("Removed server '%s'", serverName), statusSuccess, 4*time.Second)
 	if switchedToLocal {
 		b := m.manager.ActiveBackend()
-		return m, tea.Batch(loadJobs(b), loadHistory(b), clearStatusAfter(m.statusID, 4*time.Second))
+		return m, tea.Batch(loadJobs(b), loadHistory(b), cmd)
 	}
-	return m, clearStatusAfter(m.statusID, 4*time.Second)
+	return m, cmd
 }
