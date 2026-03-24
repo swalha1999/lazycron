@@ -102,6 +102,12 @@ func SyncScripts(jobs []Job) error {
 	return nil
 }
 
+// ShellQuote wraps a string in single quotes with proper escaping,
+// making it safe to embed in a shell command.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // scriptRefMarker is the path component that identifies a lazycron script reference.
 var scriptRefMarker = filepath.Join(".lazycron", "scripts")
 
