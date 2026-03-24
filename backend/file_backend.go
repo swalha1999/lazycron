@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/swalha1999/lazycron/cron"
@@ -65,10 +66,30 @@ func (b *FileBackend) WriteHistory(jobID, jobName, output string, success bool) 
 
 func (b *FileBackend) DeleteHistory(filePath string) error {
 	// Safety: only delete files within our history directory.
-	if !strings.HasPrefix(filePath, b.historyDir) {
+	// Clean and resolve both paths to absolute form to prevent path traversal.
+	absHistoryDir, err := filepath.Abs(filepath.Clean(b.historyDir))
+	if err != nil {
+		return fmt.Errorf("failed to resolve history dir: %w", err)
+	}
+
+	absFilePath, err := filepath.Abs(filepath.Clean(filePath))
+	if err != nil {
+		return fmt.Errorf("failed to resolve file path: %w", err)
+	}
+
+	// Use filepath.Rel to check if the file is within the history directory.
+	// If Rel returns a path that starts with "..", the file is outside.
+	rel, err := filepath.Rel(absHistoryDir, absFilePath)
+	if err != nil {
 		return fmt.Errorf("refusing to delete file outside history dir")
 	}
-	return os.Remove(filePath)
+
+	// Check if the relative path escapes the directory (contains ..)
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return fmt.Errorf("refusing to delete file outside history dir")
+	}
+
+	return os.Remove(absFilePath)
 }
 
 func (b *FileBackend) EnsureRecordScript() error { return nil }
