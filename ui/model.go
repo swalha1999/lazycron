@@ -94,6 +94,9 @@ type Model struct {
 	selectedRow       int             // visual row index in grouped job list
 	projectInput      textinput.Model // for quick-assign project prompt
 
+	// Last-run health indicator: jobName → success (nil means no history)
+	lastRunStatus map[string]*bool
+
 	// Search/filter state
 	searchInput textinput.Model
 	searchQuery string       // active filter text
@@ -146,6 +149,18 @@ func NewModel(mgr *backend.Manager, version string) Model {
 		searchPanel:       -1,
 		version:           version,
 	}
+}
+
+// buildLastRunStatus builds a map from job name to most recent run success status.
+// History entries are sorted by timestamp descending, so the first match per job wins.
+func buildLastRunStatus(entries []history.Entry) map[string]*bool {
+	status := make(map[string]*bool, len(entries))
+	for i := range entries {
+		if _, exists := status[entries[i].JobName]; !exists {
+			status[entries[i].JobName] = entries[i].Success
+		}
+	}
+	return status
 }
 
 // activeDirLister returns a DirLister for the active backend.
