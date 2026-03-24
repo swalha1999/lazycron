@@ -156,6 +156,8 @@ The filename (minus `.yaml`) is the job ID. IDs must be lowercase, using only `a
 
 Jobs created through the TUI get auto-generated hex IDs. Both formats coexist in the same crontab.
 
+See [docs/sync.md](docs/sync.md) for the full sync reference.
+
 ## CLI
 
 ```bash
