@@ -94,13 +94,77 @@ lazycron templates apply "Claude Code Review"  # apply interactively
 
 You can also [create your own templates](docs/templates.md).
 
+## Sync — Jobs as Code
+
+Define cron jobs as YAML files in your repo and sync them to any crontab. Version-controlled, reviewable, deployable.
+
+### Setup
+
+Create a `.lazycron/jobs/` directory in your project and add YAML files — the filename becomes the job ID:
+
+```yaml
+# .lazycron/jobs/db-backup.yaml
+name: Database Backup
+schedule: "0 3 * * *"
+command: pg_dump mydb | gzip > /backups/db_$(date +%F).sql.gz
+project: backend
+tag: DB
+tag_color: "#a6e3a1"
+```
+
+```yaml
+# .lazycron/jobs/log-rotate.yaml
+name: Log Rotation
+schedule: "0 0 * * 0"
+command: find /var/log/myapp -name '*.log' -mtime +7 -delete
+project: backend
+```
+
+### Sync
+
+```bash
+lazycron sync                        # sync to local crontab
+lazycron sync -s CronWorker          # sync to a remote server
+lazycron sync --dir /path/to/.lazycron  # custom directory
+```
+
+Sync is a **safe merge** — it only adds or updates jobs defined in the YAML files. Existing jobs created through the TUI are never deleted.
+
+Running sync again with no changes is idempotent:
+
+```
+$ lazycron sync
+Synced: 0 added, 0 updated, 2 unchanged
+```
+
+### YAML Fields
+
+| Field      | Required | Description                                |
+|------------|----------|--------------------------------------------|
+| `name`     | yes      | Display name for the job                   |
+| `schedule` | yes      | Cron expression or human-readable schedule |
+| `command`  | yes      | Shell command to run                       |
+| `project`  | no       | Project group for organizing jobs          |
+| `tag`      | no       | Short label displayed next to the name     |
+| `tag_color`| no       | Hex color for the tag (e.g. `"#a6e3a1"`)  |
+| `enabled`  | no       | `true` (default) or `false`                |
+| `once`     | no       | `true` for one-shot jobs                   |
+
+### Job IDs
+
+The filename (minus `.yaml`) is the job ID. IDs must be lowercase, using only `a-z`, `0-9`, `-`, and `_`. Examples: `db-backup`, `salati_cleanup`, `log-rotate-weekly`.
+
+Jobs created through the TUI get auto-generated hex IDs. Both formats coexist in the same crontab.
+
 ## CLI
 
 ```bash
 lazycron                    # launch TUI (default)
 lazycron list               # list all cron jobs
 lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
-lazycron run "backup"       # run a job by name
+lazycron run "backup"       # run a job by name or ID
+lazycron sync               # sync jobs from .lazycron/jobs/
+lazycron sync -s MyServer   # sync to a remote server
 lazycron templates list     # browse templates
 lazycron templates apply "Backup Database"  # apply a template
 lazycron --version          # show version
