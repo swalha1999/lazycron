@@ -91,7 +91,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	// Upload script files for each job.
 	active := make(map[string]bool)
 	for _, j := range jobs {
-		filename := filepath.Base(cron.ScriptPath(j.Name))
+		filename := filepath.Base(cron.ScriptPath(j.ID))
 		active[filename] = true
 		content := cron.BuildScriptContent(j.Command)
 		path := remoteScriptsDir + "/" + filename
@@ -123,12 +123,12 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	return nil
 }
 
-func (b *RemoteBackend) RunJob(name, command string) (string, error) {
+func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	lcDir, err := b.lazycronDir()
 	if err != nil {
 		return "", err
 	}
-	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(name))
+	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(id))
 
 	// Upload script to remote.
 	if err := b.client.Upload(cron.BuildScriptContent(command), scriptPath, 0o755); err != nil {
@@ -175,8 +175,8 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 	return entries, nil
 }
 
-func (b *RemoteBackend) WriteHistory(jobName, output string, success bool) error {
-	filename, data, err := history.BuildHistoryFile(jobName, output, success)
+func (b *RemoteBackend) WriteHistory(jobID, jobName, output string, success bool) error {
+	filename, data, err := history.BuildHistoryFile(jobID, jobName, output, success)
 	if err != nil {
 		return err
 	}

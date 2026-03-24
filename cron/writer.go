@@ -80,13 +80,13 @@ func CheckCrontabAvailable() error {
 
 // RunJobNow ensures the script file is up-to-date and runs it.
 // Returns the combined stdout/stderr output and any error.
-func RunJobNow(name, command string) (string, error) {
-	path := ScriptPath(name)
+func RunJobNow(id, command string) (string, error) {
+	path := ScriptPath(id)
 
 	// Only write the script if it doesn't exist yet (SyncScripts handles normal updates).
 	// This avoids overwriting a good script with a potentially stale in-memory command.
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := WriteScript(name, command); err != nil {
+		if err := WriteScript(id, command); err != nil {
 			return "", fmt.Errorf("write script: %w", err)
 		}
 	}

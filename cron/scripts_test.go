@@ -6,43 +6,17 @@ import (
 	"testing"
 )
 
-// --- sanitizeJobName ---
-
-func TestSanitizeJobName(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"my-job", "my-job"},
-		{"My Job", "my-job"},
-		{"Security Review Agent", "security-review-agent"},
-		{"hello_world", "hello-world"},
-		{"  spaces  ", "spaces"},
-		{"UPPERCASE", "uppercase"},
-		{"a--b", "a-b"},
-		{"special!@#chars", "special-chars"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := sanitizeJobName(tt.input)
-			if got != tt.want {
-				t.Errorf("sanitizeJobName(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 // --- WriteScript / ReadScriptCommand ---
 
 func TestWriteReadScript(t *testing.T) {
 	withFakeScriptsDir(t)
 
-	err := WriteScript("test-job", "echo hello world")
+	err := WriteScript("abc12345", "echo hello world")
 	if err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
-	path := ScriptPath("test-job")
+	path := ScriptPath("abc12345")
 	content, err := ReadScriptCommand(path)
 	if err != nil {
 		t.Fatalf("ReadScriptCommand: %v", err)
@@ -68,12 +42,12 @@ func TestWriteScript_MultilineCommand(t *testing.T) {
 	withFakeScriptsDir(t)
 
 	cmd := "cd /repo && claude -p --dangerously-skip-permissions \"Very long prompt with\nmultiple lines\""
-	err := WriteScript("agent-job", cmd)
+	err := WriteScript("def67890", cmd)
 	if err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
-	content, err := ReadScriptCommand(ScriptPath("agent-job"))
+	content, err := ReadScriptCommand(ScriptPath("def67890"))
 	if err != nil {
 		t.Fatalf("ReadScriptCommand: %v", err)
 	}
@@ -87,14 +61,14 @@ func TestWriteScript_MultilineCommand(t *testing.T) {
 func TestDeleteScript(t *testing.T) {
 	withFakeScriptsDir(t)
 
-	WriteScript("to-delete", "echo bye")
-	path := ScriptPath("to-delete")
+	WriteScript("aabbccdd", "echo bye")
+	path := ScriptPath("aabbccdd")
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Fatal("script should exist before delete")
 	}
 
-	err := DeleteScript("to-delete")
+	err := DeleteScript("aabbccdd")
 	if err != nil {
 		t.Fatalf("DeleteScript: %v", err)
 	}
@@ -123,8 +97,8 @@ func TestSyncScripts(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "orphan.sh"), []byte("#!/bin/sh\necho old\n"), 0755)
 
 	jobs := []Job{
-		{Name: "job-a", Command: "echo a"},
-		{Name: "job-b", Command: "echo b"},
+		{ID: "aa112233", Name: "job-a", Command: "echo a"},
+		{ID: "bb445566", Name: "job-b", Command: "echo b"},
 	}
 
 	err := SyncScripts(jobs)
@@ -132,10 +106,10 @@ func TestSyncScripts(t *testing.T) {
 		t.Fatalf("SyncScripts: %v", err)
 	}
 
-	// Active scripts should exist
-	for _, name := range []string{"job-a", "job-b"} {
-		if _, err := os.Stat(ScriptPath(name)); os.IsNotExist(err) {
-			t.Errorf("script for %q should exist", name)
+	// Active scripts should exist (named by ID)
+	for _, id := range []string{"aa112233", "bb445566"} {
+		if _, err := os.Stat(ScriptPath(id)); os.IsNotExist(err) {
+			t.Errorf("script for %q should exist", id)
 		}
 	}
 
@@ -152,8 +126,8 @@ func TestIsScriptRef(t *testing.T) {
 		command string
 		want    bool
 	}{
-		{"sh /Users/me/.lazycron/scripts/my-job.sh", true},
-		{"sh /home/ubuntu/.lazycron/scripts/my-job.sh", true},
+		{"sh /Users/me/.lazycron/scripts/abc12345.sh", true},
+		{"sh /home/ubuntu/.lazycron/scripts/abc12345.sh", true},
 		{"echo hello", false},
 		{"sh /tmp/other-script.sh", false},
 		{"sh", false},
@@ -172,9 +146,9 @@ func TestIsScriptRef(t *testing.T) {
 
 func TestResolveScript_Success(t *testing.T) {
 	dir := withFakeScriptsDir(t)
-	WriteScript("test-job", "echo resolved")
+	WriteScript("abc12345", "echo resolved")
 
-	ref := "sh " + dir + "/test-job.sh"
+	ref := "sh " + dir + "/abc12345.sh"
 	got := resolveScript(ref)
 	if got != "echo resolved" {
 		t.Errorf("resolveScript(%q) = %q, want %q", ref, got, "echo resolved")
@@ -203,17 +177,17 @@ func TestScriptPath(t *testing.T) {
 	dir := withFakeScriptsDir(t)
 
 	tests := []struct {
-		name string
+		id   string
 		want string
 	}{
-		{"my-job", dir + "/my-job.sh"},
-		{"My Agent Job", dir + "/my-agent-job.sh"},
+		{"abc12345", dir + "/abc12345.sh"},
+		{"deadbeef", dir + "/deadbeef.sh"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ScriptPath(tt.name)
+		t.Run(tt.id, func(t *testing.T) {
+			got := ScriptPath(tt.id)
 			if got != tt.want {
-				t.Errorf("ScriptPath(%q) = %q, want %q", tt.name, got, tt.want)
+				t.Errorf("ScriptPath(%q) = %q, want %q", tt.id, got, tt.want)
 			}
 		})
 	}

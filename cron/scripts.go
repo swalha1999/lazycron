@@ -3,7 +3,6 @@ package cron
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -20,24 +19,17 @@ func ScriptsDir() string {
 }
 
 // ScriptPath returns the full path for a job's script file.
-func ScriptPath(jobName string) string {
-	return filepath.Join(scriptsDir(), sanitizeJobName(jobName)+".sh")
-}
-
-var sanitizeRe = regexp.MustCompile(`[^a-z0-9]+`)
-
-// sanitizeJobName converts a job name to a filesystem-safe slug.
-func sanitizeJobName(name string) string {
-	return strings.Trim(sanitizeRe.ReplaceAllString(strings.ToLower(name), "-"), "-")
+func ScriptPath(jobID string) string {
+	return filepath.Join(scriptsDir(), jobID+".sh")
 }
 
 // WriteScript writes a job's command to its script file.
-func WriteScript(jobName, command string) error {
+func WriteScript(jobID, command string) error {
 	dir := scriptsDir()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(ScriptPath(jobName), []byte(BuildScriptContent(command)), 0700)
+	return os.WriteFile(ScriptPath(jobID), []byte(BuildScriptContent(command)), 0700)
 }
 
 // ScriptPreamble is the profile-sourcing block prepended to every script.
@@ -73,8 +65,8 @@ func ReadScriptCommand(path string) (string, error) {
 }
 
 // DeleteScript removes a job's script file.
-func DeleteScript(jobName string) error {
-	err := os.Remove(ScriptPath(jobName))
+func DeleteScript(jobID string) error {
+	err := os.Remove(ScriptPath(jobID))
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -90,9 +82,9 @@ func SyncScripts(jobs []Job) error {
 
 	active := make(map[string]bool)
 	for _, j := range jobs {
-		filename := sanitizeJobName(j.Name) + ".sh"
+		filename := j.ID + ".sh"
 		active[filename] = true
-		if err := WriteScript(j.Name, j.Command); err != nil {
+		if err := WriteScript(j.ID, j.Command); err != nil {
 			return err
 		}
 	}

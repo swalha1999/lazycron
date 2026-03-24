@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -168,7 +169,7 @@ func TestWriteEntry(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	err := WriteEntry("my-job", "hello output", true)
+	err := WriteEntry("abc12345", "my-job", "hello output", true)
 	if err != nil {
 		t.Fatalf("WriteEntry error: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestWriteEntry_Failure(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	err := WriteEntry("fail-job", "error msg", false)
+	err := WriteEntry("def67890", "fail-job", "error msg", false)
 	if err != nil {
 		t.Fatalf("WriteEntry error: %v", err)
 	}
@@ -222,11 +223,11 @@ func TestWriteEntry_Failure(t *testing.T) {
 	}
 }
 
-func TestWriteEntry_SanitizesJobName(t *testing.T) {
+func TestWriteEntry_UsesIDForFilename(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	err := WriteEntry("path/to/job name", "output", true)
+	err := WriteEntry("aabb1122", "path/to/job name", "output", true)
 	if err != nil {
 		t.Fatalf("WriteEntry error: %v", err)
 	}
@@ -238,15 +239,9 @@ func TestWriteEntry_SanitizesJobName(t *testing.T) {
 	}
 
 	filename := filepath.Base(files[0])
-	// Slashes and spaces should be replaced with underscores
-	if filepath.Dir(files[0]) != histDir {
-		t.Error("file created in wrong directory")
-	}
-	// The filename should not contain slashes or spaces
-	for _, ch := range filename {
-		if ch == '/' || ch == ' ' {
-			t.Errorf("filename %q contains invalid character %q", filename, string(ch))
-		}
+	// Filename should contain the job ID, not the sanitized name
+	if !strings.Contains(filename, "aabb1122") {
+		t.Errorf("filename %q should contain job ID 'aabb1122'", filename)
 	}
 }
 
@@ -259,7 +254,7 @@ func TestWriteEntry_CreatesDirs(t *testing.T) {
 		t.Fatal("history dir should not exist yet")
 	}
 
-	err := WriteEntry("test", "output", true)
+	err := WriteEntry("ccdd3344", "test", "output", true)
 	if err != nil {
 		t.Fatalf("WriteEntry error: %v", err)
 	}

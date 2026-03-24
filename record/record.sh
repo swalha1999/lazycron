@@ -1,15 +1,16 @@
 #!/bin/sh
 # record — lazycron history recorder
 # Captures stdin and writes a JSON history entry.
-# Usage: <command> | record <job-name> [exit-code]
+# Usage: <command> | record <job-id> <job-name> [exit-code] [--once]
 
-if [ $# -lt 1 ]; then
-  echo "usage: record <job-name> [exit-code]" >&2
+if [ $# -lt 2 ]; then
+  echo "usage: record <job-id> <job-name> [exit-code]" >&2
   exit 1
 fi
 
-JOB="$1"
-EXIT="${2:-0}"
+JOB_ID="$1"
+JOB="$2"
+EXIT="${3:-0}"
 OUTPUT="$(cat)"
 
 DIR="$HOME/.lazycron/history"
@@ -17,7 +18,6 @@ mkdir -p -m 0700 "$DIR"
 umask 077
 
 STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
-SAFE="$(printf '%s' "$JOB" | tr '/ ' '__')"
 
 if [ "$EXIT" = "0" ]; then
   SUCCESS="true"
@@ -42,6 +42,7 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
 
 {
   printf '{\n'
+  printf '  "job_id": "%s",\n' "$JOB_ID"
   printf '  "job_name": "'
   printf '%s' "$ESC_JOB"
   printf '",\n'
@@ -54,10 +55,9 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
   printf '",\n'
   printf '  "success": %s\n' "$SUCCESS"
   printf '}\n'
-} > "$DIR/${STAMP}_${SAFE}.json"
+} > "$DIR/${STAMP}_${JOB_ID}.json"
 
 # One-shot jobs: disable the crontab entry after execution
-if [ "$3" = "--once" ]; then
-  SAFE_NAME="$(printf '%s' "$JOB" | sed 's/[.*[\^$]/\\&/g')"
-  crontab -l 2>/dev/null | sed "/^# ${SAFE_NAME}/{ n; s/^/#DISABLED /; }" | crontab -
+if [ "$4" = "--once" ]; then
+  crontab -l 2>/dev/null | sed "/@id:${JOB_ID}/{ n; s/^/#DISABLED /; }" | crontab -
 fi

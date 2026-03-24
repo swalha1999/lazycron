@@ -19,6 +19,7 @@ type jobSavedMsg struct {
 }
 
 type jobRanMsg struct {
+	id     string
 	name   string
 	output string
 	err    error
@@ -97,16 +98,20 @@ func disableCompletedOneShots(b backend.Backend, jobs []cron.Job, hist []history
 	copy(updated, jobs)
 
 	return func() tea.Msg {
-		// Build set of job names that have history entries
+		// Build set of job IDs that have history entries
 		ran := make(map[string]bool, len(hist))
 		for _, e := range hist {
-			ran[e.JobName] = true
+			if e.JobID != "" {
+				ran[e.JobID] = true
+			} else {
+				ran[e.JobName] = true
+			}
 		}
 
 		// Find enabled one-shot jobs that have already run
 		count := 0
 		for i := range updated {
-			if updated[i].OneShot && updated[i].Enabled && ran[updated[i].Name] {
+			if updated[i].OneShot && updated[i].Enabled && ran[updated[i].ID] {
 				updated[i].Enabled = false
 				count++
 			}
@@ -135,10 +140,10 @@ func saveJobs(b backend.Backend, jobs []cron.Job) tea.Cmd {
 	}
 }
 
-func runJob(b backend.Backend, name, command string) tea.Cmd {
+func runJob(b backend.Backend, id, name, command string) tea.Cmd {
 	return func() tea.Msg {
-		output, err := b.RunJob(name, command)
-		return jobRanMsg{name: name, output: output, err: err}
+		output, err := b.RunJob(id, name, command)
+		return jobRanMsg{id: id, name: name, output: output, err: err}
 	}
 }
 
@@ -156,9 +161,9 @@ func deleteHistory(b backend.Backend, filePath string) tea.Cmd {
 	}
 }
 
-func saveHistory(b backend.Backend, jobName, output string, success bool) tea.Cmd {
+func saveHistory(b backend.Backend, jobID, jobName, output string, success bool) tea.Cmd {
 	return func() tea.Msg {
-		err := b.WriteHistory(jobName, output, success)
+		err := b.WriteHistory(jobID, jobName, output, success)
 		return historySavedMsg{err: err}
 	}
 }

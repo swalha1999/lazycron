@@ -43,7 +43,7 @@ func (b *FileBackend) WriteJobs(jobs []cron.Job) error {
 	return os.WriteFile(b.cronFile, []byte(content), 0o644)
 }
 
-func (b *FileBackend) RunJob(name, command string) (string, error) {
+func (b *FileBackend) RunJob(id, name, command string) (string, error) {
 	cmd := exec.Command("sh", "-c", command)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
@@ -56,11 +56,11 @@ func (b *FileBackend) LoadHistory() ([]history.Entry, error) {
 	return history.LoadAllFrom(b.historyDir)
 }
 
-func (b *FileBackend) WriteHistory(jobName, output string, success bool) error {
+func (b *FileBackend) WriteHistory(jobID, jobName, output string, success bool) error {
 	if err := os.MkdirAll(b.historyDir, 0o755); err != nil {
 		return err
 	}
-	return history.WriteEntryTo(b.historyDir, jobName, output, success)
+	return history.WriteEntryTo(b.historyDir, jobID, jobName, output, success)
 }
 
 func (b *FileBackend) DeleteHistory(filePath string) error {

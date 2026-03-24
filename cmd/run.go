@@ -8,8 +8,8 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run <job-name>",
-	Short: "Run a cron job immediately",
+	Use:   "run <job-name-or-id>",
+	Short: "Run a cron job immediately by name or ID",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runRun,
 }
@@ -33,7 +33,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	var target *cron.Job
 	for i := range jobs {
-		if jobs[i].Name == name {
+		if jobs[i].ID == name || jobs[i].Name == name {
 			target = &jobs[i]
 			break
 		}
@@ -45,7 +45,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Running '%s'...\n", target.Name)
 
-	out, err := cron.RunJobNow(target.Name, target.Command)
+	out, err := cron.RunJobNow(target.ID, target.Command)
 	if len(out) > 0 {
 		fmt.Print(out)
 	}

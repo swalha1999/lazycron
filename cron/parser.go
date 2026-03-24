@@ -9,6 +9,7 @@ import (
 
 // Job represents a single cron job entry.
 type Job struct {
+	ID       string // unique identifier (auto-generated hex or user-provided slug)
 	Name     string
 	Schedule string
 	Command  string
@@ -34,16 +35,16 @@ const wrapEndMarker = `; } 2>&1); __lc_ec=$?;`
 
 // WrapWithRecord wraps a command so its output and exit code are captured
 // and piped through the record binary for history tracking.
-func WrapWithRecord(command, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec"`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobName)
+func WrapWithRecord(command, jobID, jobName string) string {
+	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec"`,
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
 }
 
 // WrapWithRecordOnce wraps a command like WrapWithRecord but appends --once
 // so the record script auto-disables the crontab entry after execution.
-func WrapWithRecordOnce(command, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q "$__lc_ec" --once`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobName)
+func WrapWithRecordOnce(command, jobID, jobName string) string {
+	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec" --once`,
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
 }
 
 // StripRecord removes the record wrapper from a raw crontab command,
@@ -89,7 +90,7 @@ func IsCurrentFormat(rawCommand string) bool {
 // including the name comment and optionally the disabled prefix.
 func (j Job) CrontabLine() string {
 	var b strings.Builder
-	nameComment := j.Name
+	nameComment := j.Name + " @id:" + j.ID
 	if j.OneShot {
 		nameComment += " @once"
 	}
@@ -105,12 +106,12 @@ func (j Job) CrontabLine() string {
 	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
-	scriptCmd := "sh '" + ScriptPath(j.Name) + "'"
+	scriptCmd := "sh '" + ScriptPath(j.ID) + "'"
 	var wrapped string
 	if j.OneShot {
-		wrapped = WrapWithRecordOnce(scriptCmd, j.Name)
+		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)
 	} else {
-		wrapped = WrapWithRecord(scriptCmd, j.Name)
+		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
 	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
@@ -145,6 +146,11 @@ func Parse(output string) []Job {
 			name, project = extractProject(name)
 			tag, tagColor := "", ""
 			name, tag, tagColor = extractTag(name)
+			id := ""
+			name, id = extractID(name)
+			if id == "" {
+				id = GenerateID()
+			}
 			i++
 			if i < len(lines) {
 				jobLine := strings.TrimSpace(lines[i])
@@ -153,6 +159,7 @@ func Parse(output string) []Job {
 					continue
 				}
 				if job, ok := parseJobLine(jobLine, name); ok {
+					job.ID = id
 					job.Tag = tag
 					job.TagColor = tagColor
 					job.OneShot = oneShot
@@ -171,6 +178,7 @@ func Parse(output string) []Job {
 				job.Name = fmt.Sprintf("job-%d", autoIndex)
 				autoIndex++
 			}
+			job.ID = GenerateID()
 			jobs = append(jobs, job)
 		}
 		i++
@@ -209,6 +217,29 @@ func extractTag(name string) (string, string, string) {
 	}
 	cleanName := strings.TrimSpace(name[:openIdx])
 	return cleanName, parts[0], parts[1]
+}
+
+// extractID parses an ID marker from a name like "Job Name @id:a1b2c3d4".
+// Returns the clean name and the ID string.
+func extractID(name string) (string, string) {
+	const marker = " @id:"
+	idx := strings.Index(name, marker)
+	if idx == -1 {
+		return name, ""
+	}
+	idStart := idx + len(marker)
+	rest := name[idStart:]
+	// Extract contiguous ID characters
+	idEnd := 0
+	for idEnd < len(rest) && IsIDChar(rest[idEnd]) {
+		idEnd++
+	}
+	if idEnd == 0 {
+		return name, ""
+	}
+	id := rest[:idEnd]
+	cleanName := strings.TrimSpace(name[:idx] + rest[idEnd:])
+	return cleanName, id
 }
 
 // extractProject parses a project suffix from a name like "Job Name {my-project}".

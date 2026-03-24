@@ -10,9 +10,9 @@ type Backend interface {
 	Name() string
 	ReadJobs() ([]cron.Job, error)
 	WriteJobs(jobs []cron.Job) error
-	RunJob(name, command string) (string, error)
+	RunJob(id, name, command string) (string, error)
 	LoadHistory() ([]history.Entry, error)
-	WriteHistory(jobName, output string, success bool) error
+	WriteHistory(jobID, jobName, output string, success bool) error
 	DeleteHistory(filePath string) error
 	EnsureRecordScript() error
 	Close() error

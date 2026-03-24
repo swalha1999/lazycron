@@ -26,7 +26,7 @@ func TestFileBackend_ReadWriteJobs(t *testing.T) {
 
 	// Write jobs and read back.
 	want := []cron.Job{
-		{Name: "hello", Schedule: "* * * * *", Command: "echo hi", Enabled: true, Wrapped: true},
+		{ID: "abc12345", Name: "hello", Schedule: "* * * * *", Command: "echo hi", Enabled: true, Wrapped: true},
 	}
 	if err := fb.WriteJobs(want); err != nil {
 		t.Fatalf("WriteJobs: %v", err)
@@ -52,7 +52,7 @@ func TestFileBackend_History(t *testing.T) {
 	fb := NewFileBackend(cronFile, histDir)
 
 	// Write a history entry.
-	if err := fb.WriteHistory("test-job", "output", true); err != nil {
+	if err := fb.WriteHistory("abc12345", "test-job", "output", true); err != nil {
 		t.Fatalf("WriteHistory: %v", err)
 	}
 

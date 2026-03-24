@@ -113,7 +113,7 @@ func TestWriteCrontab_Success(t *testing.T) {
 	})
 
 	jobs := []Job{
-		{Name: "test-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true},
+		{ID: "abc12345", Name: "test-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true},
 	}
 	err := WriteCrontab(jobs)
 	if err != nil {
@@ -121,8 +121,8 @@ func TestWriteCrontab_Success(t *testing.T) {
 	}
 
 	// Stdin should contain formatted crontab content
-	if !strings.Contains(gotStdin, "# test-job") {
-		t.Errorf("stdin should contain job name comment, got %q", gotStdin)
+	if !strings.Contains(gotStdin, "# test-job @id:abc12345") {
+		t.Errorf("stdin should contain job name and id comment, got %q", gotStdin)
 	}
 	if !strings.Contains(gotStdin, "0 9 * * *") {
 		t.Errorf("stdin should contain schedule, got %q", gotStdin)
@@ -135,7 +135,7 @@ func TestWriteCrontab_Error(t *testing.T) {
 		return "bad crontab", fmt.Errorf("exit status 1")
 	})
 
-	err := WriteCrontab([]Job{{Name: "j", Schedule: "* * * * *", Command: "echo", Enabled: true}})
+	err := WriteCrontab([]Job{{ID: "abc12345", Name: "j", Schedule: "* * * * *", Command: "echo", Enabled: true}})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -163,7 +163,7 @@ func TestWriteCrontab_PassesCorrectArgs(t *testing.T) {
 func TestFormatCrontab_SingleJob(t *testing.T) {
 	withFakeScriptsDir(t)
 	jobs := []Job{
-		{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true},
+		{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true},
 	}
 	got := FormatCrontab(jobs)
 
@@ -181,8 +181,8 @@ func TestFormatCrontab_SingleJob(t *testing.T) {
 func TestFormatCrontab_MultipleJobs(t *testing.T) {
 	withFakeScriptsDir(t)
 	jobs := []Job{
-		{Name: "job-a", Schedule: "0 9 * * *", Command: "echo a", Enabled: true, Wrapped: true},
-		{Name: "job-b", Schedule: "0 17 * * *", Command: "echo b", Enabled: true, Wrapped: true},
+		{ID: "aa112233", Name: "job-a", Schedule: "0 9 * * *", Command: "echo a", Enabled: true, Wrapped: true},
+		{ID: "bb445566", Name: "job-b", Schedule: "0 17 * * *", Command: "echo b", Enabled: true, Wrapped: true},
 	}
 	got := FormatCrontab(jobs)
 
@@ -208,7 +208,7 @@ func TestFormatCrontab_Empty(t *testing.T) {
 func TestFormatCrontab_DisabledJob(t *testing.T) {
 	withFakeScriptsDir(t)
 	jobs := []Job{
-		{Name: "off-job", Schedule: "0 3 * * *", Command: "echo off", Enabled: false, Wrapped: true},
+		{ID: "cc778899", Name: "off-job", Schedule: "0 3 * * *", Command: "echo off", Enabled: false, Wrapped: true},
 	}
 	got := FormatCrontab(jobs)
 
@@ -252,7 +252,7 @@ func TestRunJobNow_Success(t *testing.T) {
 		return "hello world", nil
 	})
 
-	out, err := RunJobNow("test-job", "echo hello world")
+	out, err := RunJobNow("abc12345", "echo hello world")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestRunJobNow_Failure(t *testing.T) {
 		return "command not found", fmt.Errorf("exit status 127")
 	})
 
-	out, err := RunJobNow("test-job", "nonexistent-command")
+	out, err := RunJobNow("abc12345", "nonexistent-command")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -284,16 +284,16 @@ func TestRunJobNow_CreatesScriptIfMissing(t *testing.T) {
 		return "", nil
 	})
 
-	RunJobNow("my-job", "cd /tmp && ls -la")
+	RunJobNow("abc12345", "cd /tmp && ls -la")
 
 	// Should run via quoted script path
-	expectedPath := "sh '" + dir + "/my-job.sh'"
+	expectedPath := "sh '" + dir + "/abc12345.sh'"
 	if gotCommand != expectedPath {
 		t.Errorf("command = %q, want %q", gotCommand, expectedPath)
 	}
 
 	// Script file should exist with the command
-	content, err := ReadScriptCommand(dir + "/my-job.sh")
+	content, err := ReadScriptCommand(dir + "/abc12345.sh")
 	if err != nil {
 		t.Fatalf("script file not found: %v", err)
 	}
@@ -309,12 +309,12 @@ func TestRunJobNow_DoesNotOverwriteExistingScript(t *testing.T) {
 	})
 
 	// Write a script with the "correct" command
-	WriteScript("my-job", "echo correct")
+	WriteScript("abc12345", "echo correct")
 
 	// Run with a "stale" command — should NOT overwrite
-	RunJobNow("my-job", "echo stale")
+	RunJobNow("abc12345", "echo stale")
 
-	content, _ := ReadScriptCommand(dir + "/my-job.sh")
+	content, _ := ReadScriptCommand(dir + "/abc12345.sh")
 	if content != "echo correct" {
 		t.Errorf("script was overwritten: got %q, want %q", content, "echo correct")
 	}

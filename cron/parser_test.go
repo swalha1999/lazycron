@@ -10,7 +10,7 @@ var recPath = RecordBinPath()
 
 // helper to build a current-format wrapped command.
 func wrapCmd(cmd, name string) string {
-	return WrapWithRecord(cmd, name)
+	return WrapWithRecord(cmd, "deadbeef", name)
 }
 
 // helper to build a legacy-format wrapped command.
@@ -94,7 +94,7 @@ func TestWrapStripRoundtrip(t *testing.T) {
 	}
 	for _, cmd := range commands {
 		t.Run(cmd[:min(len(cmd), 30)], func(t *testing.T) {
-			wrapped := WrapWithRecord(cmd, "test-job")
+			wrapped := WrapWithRecord(cmd, "deadbeef", "test-job")
 			got := StripRecord(wrapped)
 			if got != cmd {
 				t.Errorf("roundtrip failed:\n  in:  %q\n  out: %q", cmd, got)
@@ -107,17 +107,17 @@ func TestWrapStripRoundtrip(t *testing.T) {
 
 func TestCrontabLine_Enabled(t *testing.T) {
 	dir := withFakeScriptsDir(t)
-	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true}
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true}
 	line := j.CrontabLine()
 
-	if !strings.HasPrefix(line, "# my-job\n") {
-		t.Errorf("missing name comment: %q", line)
+	if !strings.HasPrefix(line, "# my-job @id:abc12345\n") {
+		t.Errorf("missing name/id comment: %q", line)
 	}
 	if !strings.Contains(line, "0 9 * * * "+wrapPrefix) {
 		t.Errorf("expected schedule + wrapped command: %q", line)
 	}
-	// Should reference quoted script path, not inline command
-	expectedScriptRef := "sh '" + dir + "/my-job.sh'"
+	// Should reference quoted script path using ID, not name
+	expectedScriptRef := "sh '" + dir + "/abc12345.sh'"
 	if !strings.Contains(line, expectedScriptRef) {
 		t.Errorf("expected script ref %q in line: %q", expectedScriptRef, line)
 	}
@@ -125,7 +125,7 @@ func TestCrontabLine_Enabled(t *testing.T) {
 
 func TestCrontabLine_Disabled(t *testing.T) {
 	withFakeScriptsDir(t)
-	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: false, Wrapped: true}
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: false, Wrapped: true}
 	line := j.CrontabLine()
 
 	if !strings.Contains(line, "#DISABLED 0 9 * * * ") {
@@ -372,6 +372,7 @@ func TestIsNameComment(t *testing.T) {
 func TestFullRoundtrip(t *testing.T) {
 	withFakeScriptsDir(t)
 	original := Job{
+		ID:       "aabb1122",
 		Name:     "roundtrip-test",
 		Schedule: "30 14 * * 1-5",
 		Command:  `cd /app && ./deploy.sh --env=prod`,
@@ -380,7 +381,7 @@ func TestFullRoundtrip(t *testing.T) {
 	}
 
 	// Write the script file so resolveScript can read it during parse
-	if err := WriteScript(original.Name, original.Command); err != nil {
+	if err := WriteScript(original.ID, original.Command); err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
@@ -394,6 +395,7 @@ func TestFullRoundtrip(t *testing.T) {
 	}
 
 	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
 	assertEqual(t, "Name", got.Name, original.Name)
 	assertEqual(t, "Schedule", got.Schedule, original.Schedule)
 	assertEqual(t, "Command", got.Command, original.Command)
@@ -404,6 +406,7 @@ func TestFullRoundtrip(t *testing.T) {
 func TestFullRoundtrip_Disabled(t *testing.T) {
 	withFakeScriptsDir(t)
 	original := Job{
+		ID:       "ccdd3344",
 		Name:     "disabled-roundtrip",
 		Schedule: "0 3 * * *",
 		Command:  "echo sleeping",
@@ -412,7 +415,7 @@ func TestFullRoundtrip_Disabled(t *testing.T) {
 	}
 
 	// Write the script file so resolveScript can read it during parse
-	if err := WriteScript(original.Name, original.Command); err != nil {
+	if err := WriteScript(original.ID, original.Command); err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
@@ -423,6 +426,7 @@ func TestFullRoundtrip_Disabled(t *testing.T) {
 	}
 
 	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
 	assertEqual(t, "Name", got.Name, original.Name)
 	assertEqual(t, "Command", got.Command, original.Command)
 	assertBool(t, "Enabled", got.Enabled, false)
@@ -456,6 +460,102 @@ func TestExtractOnce(t *testing.T) {
 	}
 }
 
+// --- extractID ---
+
+func TestExtractID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantName string
+		wantID   string
+	}{
+		{"with hex id", "My Job @id:a1b2c3d4", "My Job", "a1b2c3d4"},
+		{"with hex id and once", "My Job @id:a1b2c3d4 @once", "My Job @once", "a1b2c3d4"},
+		{"slug id with hyphens", "My Job @id:db-backup", "My Job", "db-backup"},
+		{"slug id with underscores", "My Job @id:salati_cleanup", "My Job", "salati_cleanup"},
+		{"slug id with once", "My Job @id:salati_cleanup @once", "My Job @once", "salati_cleanup"},
+		{"slug id with tag", "My Job @id:my-job-1 [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", "my-job-1"},
+		{"no id", "My Job", "My Job", ""},
+		{"empty id", "My Job @id:", "My Job @id:", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotID := extractID(tt.input)
+			if gotName != tt.wantName {
+				t.Errorf("extractID(%q) name = %q, want %q", tt.input, gotName, tt.wantName)
+			}
+			if gotID != tt.wantID {
+				t.Errorf("extractID(%q) id = %q, want %q", tt.input, gotID, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestParse_WithID(t *testing.T) {
+	input := "# my-job @id:deadbeef\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	assertEqual(t, "ID", jobs[0].ID, "deadbeef")
+	assertEqual(t, "Name", jobs[0].Name, "my-job")
+}
+
+func TestParse_GeneratesIDWhenMissing(t *testing.T) {
+	input := "# my-job\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].ID == "" {
+		t.Error("expected auto-generated ID, got empty")
+	}
+	if len(jobs[0].ID) != 8 {
+		t.Errorf("expected 8-char ID, got %q", jobs[0].ID)
+	}
+}
+
+func TestParse_WithSlugID(t *testing.T) {
+	input := "# my-job @id:db-backup\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	assertEqual(t, "ID", jobs[0].ID, "db-backup")
+	assertEqual(t, "Name", jobs[0].Name, "my-job")
+}
+
+func TestFullRoundtrip_SlugID(t *testing.T) {
+	withFakeScriptsDir(t)
+	original := Job{
+		ID:       "salati-cleanup",
+		Name:     "Salati Cleanup Job",
+		Schedule: "0 3 * * *",
+		Command:  "echo cleanup",
+		Enabled:  true,
+		Wrapped:  true,
+	}
+
+	if err := WriteScript(original.ID, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+
+	line := original.CrontabLine()
+	jobs := Parse(line)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after roundtrip, got %d", len(jobs))
+	}
+
+	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
+	assertEqual(t, "Name", got.Name, original.Name)
+	assertEqual(t, "Schedule", got.Schedule, original.Schedule)
+	assertEqual(t, "Command", got.Command, original.Command)
+}
+
 // --- Parse with @once ---
 
 func TestParse_OneShotJob(t *testing.T) {
@@ -487,11 +587,11 @@ func TestParse_OneShotJobWithTag(t *testing.T) {
 
 func TestCrontabLine_OneShot(t *testing.T) {
 	withFakeScriptsDir(t)
-	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true}
+	j := Job{ID: "ee556677", Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true}
 	line := j.CrontabLine()
 
-	if !strings.HasPrefix(line, "# deploy @once\n") {
-		t.Errorf("expected @once in name comment: %q", line)
+	if !strings.HasPrefix(line, "# deploy @id:ee556677 @once\n") {
+		t.Errorf("expected @id and @once in name comment: %q", line)
 	}
 	if !strings.Contains(line, "--once") {
 		t.Errorf("expected --once in wrapped command: %q", line)
@@ -500,17 +600,18 @@ func TestCrontabLine_OneShot(t *testing.T) {
 
 func TestCrontabLine_OneShotWithTag(t *testing.T) {
 	withFakeScriptsDir(t)
-	j := Job{Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true, Tag: "PROD", TagColor: "#f38ba8"}
+	j := Job{ID: "ee556677", Name: "deploy", Schedule: "30 14 22 3 *", Command: "echo deploy", Enabled: true, Wrapped: true, OneShot: true, Tag: "PROD", TagColor: "#f38ba8"}
 	line := j.CrontabLine()
 
-	if !strings.Contains(line, "# deploy @once [PROD:#f38ba8]") {
-		t.Errorf("expected @once before tag: %q", line)
+	if !strings.Contains(line, "# deploy @id:ee556677 @once [PROD:#f38ba8]") {
+		t.Errorf("expected @id before @once before tag: %q", line)
 	}
 }
 
 func TestFullRoundtrip_OneShot(t *testing.T) {
 	withFakeScriptsDir(t)
 	original := Job{
+		ID:       "ff889900",
 		Name:     "one-shot-test",
 		Schedule: "30 14 22 3 *",
 		Command:  "echo hello",
@@ -520,7 +621,7 @@ func TestFullRoundtrip_OneShot(t *testing.T) {
 	}
 
 	// Write the script file so resolveScript can read it during parse
-	if err := WriteScript(original.Name, original.Command); err != nil {
+	if err := WriteScript(original.ID, original.Command); err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
@@ -531,6 +632,7 @@ func TestFullRoundtrip_OneShot(t *testing.T) {
 	}
 
 	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
 	assertEqual(t, "Name", got.Name, original.Name)
 	assertEqual(t, "Schedule", got.Schedule, original.Schedule)
 	assertEqual(t, "Command", got.Command, original.Command)
@@ -610,27 +712,28 @@ func TestParse_OneShotWithProject(t *testing.T) {
 
 func TestCrontabLine_WithProject(t *testing.T) {
 	withFakeScriptsDir(t)
-	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Project: "backend"}
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Project: "backend"}
 	line := j.CrontabLine()
 
-	if !strings.HasPrefix(line, "# my-job {backend}\n") {
-		t.Errorf("expected project in name comment: %q", line)
+	if !strings.HasPrefix(line, "# my-job @id:abc12345 {backend}\n") {
+		t.Errorf("expected id and project in name comment: %q", line)
 	}
 }
 
 func TestCrontabLine_TagAndProject(t *testing.T) {
 	withFakeScriptsDir(t)
-	j := Job{Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Tag: "PROD", TagColor: "#f38ba8", Project: "backend"}
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, Tag: "PROD", TagColor: "#f38ba8", Project: "backend"}
 	line := j.CrontabLine()
 
-	if !strings.Contains(line, "# my-job [PROD:#f38ba8] {backend}\n") {
-		t.Errorf("expected tag before project in name comment: %q", line)
+	if !strings.Contains(line, "# my-job @id:abc12345 [PROD:#f38ba8] {backend}\n") {
+		t.Errorf("expected id, tag, project in name comment: %q", line)
 	}
 }
 
 func TestFullRoundtrip_WithProject(t *testing.T) {
 	withFakeScriptsDir(t)
 	original := Job{
+		ID:       "11223344",
 		Name:     "project-test",
 		Schedule: "30 14 * * 1-5",
 		Command:  "echo hello",
@@ -641,7 +744,7 @@ func TestFullRoundtrip_WithProject(t *testing.T) {
 		Project:  "backend",
 	}
 
-	if err := WriteScript(original.Name, original.Command); err != nil {
+	if err := WriteScript(original.ID, original.Command); err != nil {
 		t.Fatalf("WriteScript: %v", err)
 	}
 
@@ -652,6 +755,7 @@ func TestFullRoundtrip_WithProject(t *testing.T) {
 	}
 
 	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
 	assertEqual(t, "Name", got.Name, original.Name)
 	assertEqual(t, "Tag", got.Tag, original.Tag)
 	assertEqual(t, "TagColor", got.TagColor, original.TagColor)

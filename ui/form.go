@@ -40,6 +40,7 @@ type formModel struct {
 	activeField int
 	editing     bool
 	editIndex   int
+	id          string // existing job ID (preserved during editing)
 	picker      pickerModel
 	completer   completerModel
 	tag         string // colored tag from template
@@ -89,6 +90,7 @@ func newFormForEdit(job cron.Job, index int, lister DirLister) formModel {
 		}
 	}
 
+	f.id = job.ID
 	f.inputs[fieldName].SetValue(job.Name)
 	f.inputs[fieldCommand].SetValue(cmd)
 	f.inputs[fieldSchedule].SetValue(job.Schedule)
@@ -203,7 +205,13 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		finalCmd = fmt.Sprintf("cd %s && %s", workDir, finalCmd)
 	}
 
+	id := f.id
+	if id == "" {
+		id = cron.GenerateID()
+	}
+
 	return cron.Job{
+		ID:       id,
 		Name:     name,
 		Schedule: cronExpr,
 		Command:  finalCmd,

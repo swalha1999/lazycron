@@ -106,7 +106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		success := msg.err == nil
 		b := m.manager.ActiveBackend()
-		saveCmd := saveHistory(b, msg.name, output, success)
+		saveCmd := saveHistory(b, msg.id, msg.name, output, success)
 
 		if msg.err != nil {
 			m.runOutput = msg.output

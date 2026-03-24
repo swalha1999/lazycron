@@ -65,6 +65,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	job := cron.Job{
+		ID:       cron.GenerateID(),
 		Name:     addName,
 		Schedule: cronExpr,
 		Command:  finalCmd,

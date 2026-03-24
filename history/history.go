@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/swalha1999/lazycron/record"
@@ -13,6 +12,7 @@ import (
 
 // Entry represents a single history record.
 type Entry struct {
+	JobID     string `json:"job_id,omitempty"`
 	JobName   string `json:"job_name"`
 	Timestamp string `json:"timestamp"`
 	Output    string `json:"output"`
@@ -64,17 +64,18 @@ func LoadEntry(path string) (Entry, error) {
 }
 
 // WriteEntry writes a history entry to the default history directory.
-func WriteEntry(jobName, output string, success bool) error {
+func WriteEntry(jobID, jobName, output string, success bool) error {
 	if err := record.EnsureDirs(); err != nil {
 		return err
 	}
-	return WriteEntryTo(record.HistoryDir(), jobName, output, success)
+	return WriteEntryTo(record.HistoryDir(), jobID, jobName, output, success)
 }
 
 // BuildHistoryFile creates the filename and JSON data for a history entry.
-func BuildHistoryFile(jobName, output string, success bool) (filename string, data []byte, err error) {
+func BuildHistoryFile(jobID, jobName, output string, success bool) (filename string, data []byte, err error) {
 	now := time.Now()
 	e := record.Entry{
+		JobID:     jobID,
 		JobName:   jobName,
 		Timestamp: now.Format(time.RFC3339),
 		Output:    output,
@@ -86,15 +87,13 @@ func BuildHistoryFile(jobName, output string, success bool) (filename string, da
 		return "", nil, err
 	}
 
-	safeName := strings.ReplaceAll(jobName, "/", "_")
-	safeName = strings.ReplaceAll(safeName, " ", "_")
-	filename = now.Format("2006-01-02T15-04-05") + "_" + safeName + ".json"
+	filename = now.Format("2006-01-02T15-04-05") + "_" + jobID + ".json"
 	return filename, data, nil
 }
 
 // WriteEntryTo writes a history entry to the given directory.
-func WriteEntryTo(dir, jobName, output string, success bool) error {
-	filename, data, err := BuildHistoryFile(jobName, output, success)
+func WriteEntryTo(dir, jobID, jobName, output string, success bool) error {
+	filename, data, err := BuildHistoryFile(jobID, jobName, output, success)
 	if err != nil {
 		return err
 	}

@@ -146,6 +146,7 @@ func sendString(m tea.Model, s string) tea.Model {
 // sampleJob creates a simple enabled job for pre-populating.
 func sampleJob(name, command, schedule string) cron.Job {
 	return cron.Job{
+		ID:       cron.GenerateID(),
 		Name:     name,
 		Schedule: schedule,
 		Command:  command,

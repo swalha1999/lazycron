@@ -56,8 +56,11 @@ func runRecordScript(t *testing.T, input string, args ...string) (Entry, string)
 // --- Basic functionality ---
 
 func TestScript_BasicSuccess(t *testing.T) {
-	entry, _ := runRecordScript(t, "hello world", "test-job", "0")
+	entry, _ := runRecordScript(t, "hello world", "abc12345", "test-job", "0")
 
+	if entry.JobID != "abc12345" {
+		t.Errorf("JobID = %q, want %q", entry.JobID, "abc12345")
+	}
 	if entry.JobName != "test-job" {
 		t.Errorf("JobName = %q, want %q", entry.JobName, "test-job")
 	}
@@ -70,7 +73,7 @@ func TestScript_BasicSuccess(t *testing.T) {
 }
 
 func TestScript_NonZeroExit(t *testing.T) {
-	entry, _ := runRecordScript(t, "error output", "fail-job", "1")
+	entry, _ := runRecordScript(t, "error output", "def67890", "fail-job", "1")
 
 	if entry.JobName != "fail-job" {
 		t.Errorf("JobName = %q, want %q", entry.JobName, "fail-job")
@@ -84,7 +87,7 @@ func TestScript_NonZeroExit(t *testing.T) {
 }
 
 func TestScript_ExitCode127(t *testing.T) {
-	entry, _ := runRecordScript(t, "command not found", "missing-cmd", "127")
+	entry, _ := runRecordScript(t, "command not found", "aabb1122", "missing-cmd", "127")
 
 	if entry.Success == nil || *entry.Success != false {
 		t.Errorf("Success = %v, want false (exit 127)", entry.Success)
@@ -92,7 +95,7 @@ func TestScript_ExitCode127(t *testing.T) {
 }
 
 func TestScript_DefaultExitCode(t *testing.T) {
-	entry, _ := runRecordScript(t, "output", "default-exit")
+	entry, _ := runRecordScript(t, "output", "ccdd3344", "default-exit")
 
 	if entry.Success == nil || *entry.Success != true {
 		t.Errorf("Success = %v, want true (default exit 0)", entry.Success)
@@ -100,7 +103,7 @@ func TestScript_DefaultExitCode(t *testing.T) {
 }
 
 func TestScript_EmptyOutput(t *testing.T) {
-	entry, _ := runRecordScript(t, "", "empty-job", "0")
+	entry, _ := runRecordScript(t, "", "eeff5566", "empty-job", "0")
 
 	if entry.Output != "" {
 		t.Errorf("Output = %q, want empty", entry.Output)
@@ -111,7 +114,7 @@ func TestScript_EmptyOutput(t *testing.T) {
 
 func TestScript_MultiLineOutput(t *testing.T) {
 	input := "line1\nline2\nline3"
-	entry, _ := runRecordScript(t, input, "multi-line", "0")
+	entry, _ := runRecordScript(t, input, "a1000001", "multi-line", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -120,7 +123,7 @@ func TestScript_MultiLineOutput(t *testing.T) {
 
 func TestScript_TrailingNewline(t *testing.T) {
 	// Command substitution strips trailing newlines, so "hello\n" becomes "hello"
-	entry, _ := runRecordScript(t, "hello\n", "trail-nl", "0")
+	entry, _ := runRecordScript(t, "hello\n", "a1000002", "trail-nl", "0")
 
 	if entry.Output != "hello" {
 		t.Errorf("Output = %q, want %q", entry.Output, "hello")
@@ -131,7 +134,7 @@ func TestScript_TrailingNewline(t *testing.T) {
 
 func TestScript_OutputWithQuotes(t *testing.T) {
 	input := `he said "hello" and "goodbye"`
-	entry, _ := runRecordScript(t, input, "quotes-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000003", "quotes-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -140,7 +143,7 @@ func TestScript_OutputWithQuotes(t *testing.T) {
 
 func TestScript_OutputWithBackslashes(t *testing.T) {
 	input := `path\to\file`
-	entry, _ := runRecordScript(t, input, "backslash-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000004", "backslash-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -149,7 +152,7 @@ func TestScript_OutputWithBackslashes(t *testing.T) {
 
 func TestScript_OutputWithTabs(t *testing.T) {
 	input := "col1\tcol2\tcol3"
-	entry, _ := runRecordScript(t, input, "tab-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000005", "tab-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -158,7 +161,7 @@ func TestScript_OutputWithTabs(t *testing.T) {
 
 func TestScript_OutputWithDollarSign(t *testing.T) {
 	input := "price is $100 and $HOME is set"
-	entry, _ := runRecordScript(t, input, "dollar-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000006", "dollar-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -167,7 +170,7 @@ func TestScript_OutputWithDollarSign(t *testing.T) {
 
 func TestScript_OutputWithBackticks(t *testing.T) {
 	input := "result is `command` output"
-	entry, _ := runRecordScript(t, input, "backtick-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000007", "backtick-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -176,7 +179,7 @@ func TestScript_OutputWithBackticks(t *testing.T) {
 
 func TestScript_OutputWithSingleQuotes(t *testing.T) {
 	input := "it's a test with 'quotes'"
-	entry, _ := runRecordScript(t, input, "single-quote-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000008", "single-quote-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -185,7 +188,7 @@ func TestScript_OutputWithSingleQuotes(t *testing.T) {
 
 func TestScript_OutputWithBraces(t *testing.T) {
 	input := `{"key": "value", "arr": [1, 2, 3]}`
-	entry, _ := runRecordScript(t, input, "braces-job", "0")
+	entry, _ := runRecordScript(t, input, "a1000009", "braces-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -194,7 +197,7 @@ func TestScript_OutputWithBraces(t *testing.T) {
 
 func TestScript_OutputWithSymbols(t *testing.T) {
 	input := "!@#$%^&*()_+-=[]{}|;':,./<>?"
-	entry, _ := runRecordScript(t, input, "symbols-job", "0")
+	entry, _ := runRecordScript(t, input, "a100000a", "symbols-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -203,7 +206,7 @@ func TestScript_OutputWithSymbols(t *testing.T) {
 
 func TestScript_OutputWithMixedSpecialChars(t *testing.T) {
 	input := "line1: \"quoted\"\nline2: back\\slash\nline3: tab\there\nline4: $var and `cmd`"
-	entry, _ := runRecordScript(t, input, "mixed-job", "0")
+	entry, _ := runRecordScript(t, input, "a100000b", "mixed-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -212,7 +215,7 @@ func TestScript_OutputWithMixedSpecialChars(t *testing.T) {
 
 func TestScript_OutputWithUnicode(t *testing.T) {
 	input := "unicode: caf\u00e9 r\u00e9sum\u00e9 \u2603 \u2764"
-	entry, _ := runRecordScript(t, input, "unicode-job", "0")
+	entry, _ := runRecordScript(t, input, "a100000c", "unicode-job", "0")
 
 	if entry.Output != input {
 		t.Errorf("Output = %q, want %q", entry.Output, input)
@@ -222,34 +225,30 @@ func TestScript_OutputWithUnicode(t *testing.T) {
 // --- Job name sanitization ---
 
 func TestScript_JobNameWithSlash(t *testing.T) {
-	entry, path := runRecordScript(t, "output", "path/to/job", "0")
+	entry, path := runRecordScript(t, "output", "a100000d", "path/to/job", "0")
 
 	if entry.JobName != "path/to/job" {
 		t.Errorf("JobName = %q, want %q", entry.JobName, "path/to/job")
 	}
 
 	filename := filepath.Base(path)
-	if strings.Contains(filename, "/") {
-		t.Errorf("filename should not contain /: %s", filename)
-	}
-	if !strings.Contains(filename, "path_to_job") {
-		t.Errorf("filename should sanitize slashes: %s", filename)
+	// Filename should use ID, not sanitized name
+	if !strings.Contains(filename, "a100000d") {
+		t.Errorf("filename should contain job ID: %s", filename)
 	}
 }
 
 func TestScript_JobNameWithSpaces(t *testing.T) {
-	entry, path := runRecordScript(t, "output", "my job name", "0")
+	entry, path := runRecordScript(t, "output", "a100000e", "my job name", "0")
 
 	if entry.JobName != "my job name" {
 		t.Errorf("JobName = %q, want %q", entry.JobName, "my job name")
 	}
 
 	filename := filepath.Base(path)
-	if strings.Contains(filename, " ") {
-		t.Errorf("filename should not contain spaces: %s", filename)
-	}
-	if !strings.Contains(filename, "my_job_name") {
-		t.Errorf("filename should sanitize spaces: %s", filename)
+	// Filename should use ID, not sanitized name
+	if !strings.Contains(filename, "a100000e") {
+		t.Errorf("filename should contain job ID: %s", filename)
 	}
 }
 
@@ -266,7 +265,7 @@ func TestScript_CreatesHistoryDir(t *testing.T) {
 	scriptPath := filepath.Join(t.TempDir(), "record")
 	os.WriteFile(scriptPath, ScriptContent, 0o755)
 
-	cmd := exec.Command("sh", scriptPath, "dir-test", "0")
+	cmd := exec.Command("sh", scriptPath, "a100000f", "dir-test", "0")
 	cmd.Stdin = strings.NewReader("hello")
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 
@@ -287,7 +286,7 @@ func TestScript_HistoryDirAlreadyExists(t *testing.T) {
 	scriptPath := filepath.Join(t.TempDir(), "record")
 	os.WriteFile(scriptPath, ScriptContent, 0o755)
 
-	cmd := exec.Command("sh", scriptPath, "dir-test", "0")
+	cmd := exec.Command("sh", scriptPath, "a1000010", "dir-test", "0")
 	cmd.Stdin = strings.NewReader("hello")
 	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 
@@ -303,11 +302,11 @@ func TestScript_HistoryDirAlreadyExists(t *testing.T) {
 }
 
 func TestScript_FilenameFormat(t *testing.T) {
-	_, path := runRecordScript(t, "hello", "format-job", "0")
+	_, path := runRecordScript(t, "hello", "a1000011", "format-job", "0")
 
 	filename := filepath.Base(path)
-	if !strings.HasSuffix(filename, "_format-job.json") {
-		t.Errorf("unexpected filename suffix: %s", filename)
+	if !strings.HasSuffix(filename, "_a1000011.json") {
+		t.Errorf("unexpected filename suffix: %s, want _a1000011.json", filename)
 	}
 	// Should start with YYYY-MM-DDTHH-MM-SS
 	if len(filename) < 20 {
@@ -321,7 +320,7 @@ func TestScript_FilenameFormat(t *testing.T) {
 // --- Timestamp ---
 
 func TestScript_TimestampPresent(t *testing.T) {
-	entry, _ := runRecordScript(t, "hello", "ts-job", "0")
+	entry, _ := runRecordScript(t, "hello", "a1000012", "ts-job", "0")
 
 	if entry.Timestamp == "" {
 		t.Fatal("Timestamp is empty")
@@ -365,7 +364,7 @@ func TestScript_ValidJSON(t *testing.T) {
 			scriptPath := filepath.Join(t.TempDir(), "record")
 			os.WriteFile(scriptPath, ScriptContent, 0o755)
 
-			cmd := exec.Command("sh", scriptPath, "json-test", "0")
+			cmd := exec.Command("sh", scriptPath, "a1000013", "json-test", "0")
 			cmd.Stdin = strings.NewReader(tt.input)
 			cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 
@@ -394,6 +393,7 @@ func TestScript_NoArgs(t *testing.T) {
 	scriptPath := filepath.Join(t.TempDir(), "record")
 	os.WriteFile(scriptPath, ScriptContent, 0o755)
 
+	// No args at all
 	cmd := exec.Command("sh", scriptPath)
 	cmd.Stdin = strings.NewReader("hello")
 	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
@@ -402,12 +402,22 @@ func TestScript_NoArgs(t *testing.T) {
 	if err == nil {
 		t.Error("expected script to fail with no args")
 	}
+
+	// Only one arg (needs at least 2: id + name)
+	cmd2 := exec.Command("sh", scriptPath, "abc12345")
+	cmd2.Stdin = strings.NewReader("hello")
+	cmd2.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
+
+	err = cmd2.Run()
+	if err == nil {
+		t.Error("expected script to fail with only 1 arg")
+	}
 }
 
 // --- Compatibility with Go history loader ---
 
 func TestScript_CompatibleWithGoEntry(t *testing.T) {
-	entry, _ := runRecordScript(t, "test output", "compat-job", "0")
+	entry, _ := runRecordScript(t, "test output", "a1000014", "compat-job", "0")
 
 	// Verify all fields expected by history.LoadEntry / record.Entry
 	if entry.JobName == "" {
@@ -430,7 +440,7 @@ func TestScript_TwoRunsProduceTwoFiles(t *testing.T) {
 
 	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
 
-	cmd1 := exec.Command("sh", scriptPath, "myjob", "0")
+	cmd1 := exec.Command("sh", scriptPath, "a1000015", "myjob", "0")
 	cmd1.Stdin = strings.NewReader("first")
 	cmd1.Env = env
 	if err := cmd1.Run(); err != nil {
@@ -440,7 +450,7 @@ func TestScript_TwoRunsProduceTwoFiles(t *testing.T) {
 	// Sleep 1 second so the timestamp-based filename differs
 	time.Sleep(1 * time.Second)
 
-	cmd2 := exec.Command("sh", scriptPath, "myjob", "0")
+	cmd2 := exec.Command("sh", scriptPath, "a1000016", "myjob", "0")
 	cmd2.Stdin = strings.NewReader("second")
 	cmd2.Env = env
 	if err := cmd2.Run(); err != nil {
