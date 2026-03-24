@@ -1,0 +1,20 @@
+name: Feature Builder Agent
+schedule: "0 10 * * *"
+command: >-
+  cd /home/swalha/code/lazycron &&
+  OPEN_PRS=$(gh pr list --state open --json number -q 'length') &&
+  if [ "$OPEN_PRS" -ge 3 ]; then echo "Too many open PRs ($OPEN_PRS), skipping"; exit 0; fi &&
+  ISSUE=$(gh issue list -l enhancement --state open --json number,title --jq 'sort_by(.number) | .[0].number') &&
+  if [ -z "$ISSUE" ]; then echo "No open enhancement issues, skipping"; exit 0; fi &&
+  BRANCH="feat/issue-${ISSUE}-$(date +%Y%m%d)" &&
+  git checkout main && git pull && git checkout -b "$BRANCH" &&
+  claude -p --dangerously-skip-permissions "You are an issue worker agent. Your job:
+  1. Read issue #${ISSUE} using \`gh issue view ${ISSUE}\`.
+  2. Implement the feature described in the issue. Follow existing code patterns and conventions.
+  3. Commit your changes with a clear message referencing the issue.
+  4. Push the branch and open a PR with \`gh pr create --title \"Feat #${ISSUE}: <short description>\" --body \"Closes #${ISSUE}\n\n<explanation of changes>\" --label enhancement\`.
+  Rules: Implement only ONE issue. Do NOT modify unrelated code. Keep the diff focused and reviewable.
+  IMPORTANT: Every PR must be complete and fully working. No half-done implementations, no TODOs, no placeholder code. The build, linting, and tests must all pass before opening a PR. If you cannot finish the feature end-to-end, do not open a PR."
+project: LazyCron
+tag: BP
+tag_color: "#f38ba8"
