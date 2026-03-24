@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
@@ -99,6 +102,14 @@ type Model struct {
 
 	// App version (for self-update)
 	version string
+}
+
+// setStatus updates the status bar and returns a Cmd that clears it after d.
+func (m *Model) setStatus(msg string, kind statusType, d time.Duration) tea.Cmd {
+	m.statusMsg = msg
+	m.statusKind = kind
+	m.statusID++
+	return clearStatusAfter(m.statusID, d)
 }
 
 func newPasswordInput() textinput.Model {

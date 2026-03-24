@@ -36,10 +36,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "esc":
 			m.mode = modeNormal
-			m.statusMsg = "Cancelled"
-			m.statusKind = statusInfo
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 3*time.Second)
+			return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 		case "tab":
 			cmd := m.form.nextField()
 			return m, cmd
@@ -99,39 +96,32 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc":
 		m.mode = modeNormal
-		m.statusMsg = "Cancelled"
-		m.statusKind = statusInfo
-		m.statusID++
-		return m, clearStatusAfter(m.statusID, 3*time.Second)
+		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
 
 	case "enter":
 		job, err := m.form.buildJob()
 		if err != nil {
-			m.statusMsg = err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus(err.Error(), statusError, 5*time.Second)
 		}
 
 		b := m.manager.ActiveBackend()
+		var statusText string
 		if m.form.editing {
 			job.Enabled = m.jobs[m.form.editIndex].Enabled
 			m.jobs[m.form.editIndex] = job
 			// Re-position selection to follow the job (project may have changed)
 			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			m.selectedRow = rowForJobIdx(rows, m.form.editIndex)
-			m.statusMsg = fmt.Sprintf("Updated job '%s'", job.Name)
+			statusText = fmt.Sprintf("Updated job '%s'", job.Name)
 		} else {
 			m.jobs = append(m.jobs, job)
 			// Point selectedRow to the new job's visual row
 			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			m.selectedRow = rowForJobIdx(rows, len(m.jobs)-1)
-			m.statusMsg = fmt.Sprintf("Created job '%s'", job.Name)
+			statusText = fmt.Sprintf("Created job '%s'", job.Name)
 		}
-		m.statusKind = statusSuccess
 		m.mode = modeNormal
-		m.statusID++
-		return m, tea.Batch(saveJobs(b, m.jobs), clearStatusAfter(m.statusID, 4*time.Second))
+		return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(statusText, statusSuccess, 4*time.Second))
 
 	case "tab":
 		cmd := m.form.nextField()

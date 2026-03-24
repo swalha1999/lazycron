@@ -25,18 +25,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case jobsLoadedMsg:
 		if msg.err != nil {
-			m.statusMsg = msg.err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus(msg.err.Error(), statusError, 5*time.Second)
 		}
 		m.jobs = msg.jobs
 		cmds := []tea.Cmd{}
 		if len(m.jobs) > 0 {
-			m.statusMsg = fmt.Sprintf("Loaded %d job(s)", len(m.jobs))
-			m.statusKind = statusInfo
-			m.statusID++
-			cmds = append(cmds, clearStatusAfter(m.statusID, 2*time.Second))
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Loaded %d job(s)", len(m.jobs)), statusInfo, 2*time.Second))
 		}
 		// Auto-disable completed one-shot jobs (backup for record.sh)
 		if len(m.jobs) > 0 && len(m.history) > 0 {
@@ -46,10 +40,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case jobSavedMsg:
 		if msg.err != nil {
-			m.statusMsg = "Save failed: " + msg.err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus("Save failed: "+msg.err.Error(), statusError, 5*time.Second)
 		}
 		m.manager.InvalidateCache(m.manager.ActiveIndex())
 		return m, nil
@@ -70,10 +61,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case disableCompletedOneShotsMsg:
 		if msg.err != nil {
-			m.statusMsg = "Auto-disable failed: " + msg.err.Error()
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus("Auto-disable failed: "+msg.err.Error(), statusError, 5*time.Second)
 		}
 		if msg.disabled > 0 {
 			// Reload jobs to reflect the changes
@@ -91,15 +79,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case historyDeletedMsg:
 		if msg.err != nil {
-			m.statusMsg = fmt.Sprintf("Failed to delete history: %v", msg.err)
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 4*time.Second)
+			return m, m.setStatus(fmt.Sprintf("Failed to delete history: %v", msg.err), statusError, 4*time.Second)
 		}
 		return m, nil
 
 	case jobRanMsg:
-		m.statusID++
 		output := msg.output
 		if output == "" && msg.err != nil {
 			output = msg.err.Error()
@@ -129,9 +113,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = ""
 			return m, saveCmd
 		}
-		m.statusMsg = fmt.Sprintf("Job '%s' ran successfully", msg.name)
-		m.statusKind = statusSuccess
-		return m, tea.Batch(saveCmd, clearStatusAfter(m.statusID, 4*time.Second))
+		return m, tea.Batch(saveCmd, m.setStatus(fmt.Sprintf("Job '%s' ran successfully", msg.name), statusSuccess, 4*time.Second))
 
 	case serverConnectedMsg:
 		if msg.err != nil {
@@ -146,20 +128,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusKind = statusInfo
 				return m, m.passwordInput.Focus()
 			}
-			m.statusMsg = fmt.Sprintf("Connection failed: %s", msg.err)
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus(fmt.Sprintf("Connection failed: %s", msg.err), statusError, 5*time.Second)
 		}
 		return m, loadServerData(m.manager, msg.index)
 
 	case serverDataLoadedMsg:
 		m.serverSwitching = false
 		if msg.err != nil {
-			m.statusMsg = fmt.Sprintf("Failed to load data: %s", msg.err)
-			m.statusKind = statusError
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus(fmt.Sprintf("Failed to load data: %s", msg.err), statusError, 5*time.Second)
 		}
 		m.manager.SetCache(msg.index, &backend.CachedData{
 			Jobs:      msg.jobs,
@@ -173,44 +149,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedRow = 0
 			m.historySelected = 0
 			serverName := m.manager.ServerAt(msg.index).Name
-			m.statusMsg = fmt.Sprintf("Switched to %s", serverName)
-			m.statusKind = statusSuccess
-			m.statusID++
-			return m, clearStatusAfter(m.statusID, 3*time.Second)
+			return m, m.setStatus(fmt.Sprintf("Switched to %s", serverName), statusSuccess, 3*time.Second)
 		}
 		return m, nil
 
 	case selfUpdateMsg:
-		m.statusID++
 		if msg.err != nil {
-			m.statusMsg = "Update failed: " + msg.err.Error()
-			m.statusKind = statusError
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus("Update failed: "+msg.err.Error(), statusError, 5*time.Second)
 		}
 		if msg.newVersion == "" {
-			m.statusMsg = "Already on the latest version"
-			m.statusKind = statusSuccess
-			return m, clearStatusAfter(m.statusID, 3*time.Second)
+			return m, m.setStatus("Already on the latest version", statusSuccess, 3*time.Second)
 		}
 		if msg.needsSudo {
 			m.statusMsg = "Need sudo to install — enter your password..."
 			m.statusKind = statusInfo
 			return m, sudoInstall(msg.newVersion, msg.tmpBinary, msg.targetPath)
 		}
-		m.statusMsg = fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion)
-		m.statusKind = statusSuccess
-		return m, clearStatusAfter(m.statusID, 8*time.Second)
+		return m, m.setStatus(fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion), statusSuccess, 8*time.Second)
 
 	case selfUpdateSudoMsg:
-		m.statusID++
 		if msg.err != nil {
-			m.statusMsg = "Update failed: " + msg.err.Error()
-			m.statusKind = statusError
-			return m, clearStatusAfter(m.statusID, 5*time.Second)
+			return m, m.setStatus("Update failed: "+msg.err.Error(), statusError, 5*time.Second)
 		}
-		m.statusMsg = fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion)
-		m.statusKind = statusSuccess
-		return m, clearStatusAfter(m.statusID, 8*time.Second)
+		return m, m.setStatus(fmt.Sprintf("Updated to %s — restart lazycron to use the new version", msg.newVersion), statusSuccess, 8*time.Second)
 
 	case clearStatusMsg:
 		if msg.id == m.statusID {
