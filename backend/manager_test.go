@@ -6,6 +6,7 @@ import (
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
+	"github.com/swalha1999/lazycron/monitor"
 )
 
 // mockBackend implements Backend for testing.
@@ -14,16 +15,18 @@ type mockBackend struct {
 	closed bool
 }
 
-func (m *mockBackend) Name() string                                        { return m.name }
-func (m *mockBackend) ReadJobs() ([]cron.Job, error)                       { return nil, nil }
-func (m *mockBackend) WriteJobs(jobs []cron.Job) error                     { return nil }
+func (m *mockBackend) Name() string                                              { return m.name }
+func (m *mockBackend) ReadJobs() ([]cron.Job, error)                             { return nil, nil }
+func (m *mockBackend) WriteJobs(jobs []cron.Job) error                           { return nil }
 func (m *mockBackend) RunJob(id, name, command string) (string, error)           { return "", nil }
 func (m *mockBackend) LoadHistory() ([]history.Entry, error)                     { return nil, nil }
 func (m *mockBackend) WriteHistory(jobID, jobName, output string, ok bool) error { return nil }
-func (m *mockBackend) DeleteHistory(filePath string) error                 { return nil }
-func (m *mockBackend) EnsureRecordScript() error                           { return nil }
-func (m *mockBackend) GetTimezone() (string, int, error)                  { return "UTC", 0, nil }
-func (m *mockBackend) Close() error                                        { m.closed = true; return nil }
+func (m *mockBackend) DeleteHistory(filePath string) error                       { return nil }
+func (m *mockBackend) EnsureRecordScript() error                                 { return nil }
+func (m *mockBackend) GetTimezone() (string, int, error)                        { return "UTC", 0, nil }
+func (m *mockBackend) GetRunningJobs() ([]monitor.RunningJob, error)             { return nil, nil }
+func (m *mockBackend) KillJob(pid int) error                                     { return nil }
+func (m *mockBackend) Close() error                                              { m.closed = true; return nil }
 
 // newTestManager creates a Manager with a mock local backend (avoids system crontab).
 func newTestManager() *Manager {

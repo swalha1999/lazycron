@@ -92,6 +92,9 @@ func (m Model) View() string {
 		fg := renderProjectPrompt(&m.projectInput, m.jobs, m.selectedJobIndex(), m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
+	case modeMonitor:
+		content = m.renderMonitorView()
+
 	default:
 		content = panels
 	}

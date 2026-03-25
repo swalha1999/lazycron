@@ -57,6 +57,8 @@ func renderTopBar(m mode, serverInfo backend.ServerInfo, version string, width i
 		modeStr = modeStyle.Render("TEMPLATE")
 	case modeSearch:
 		modeStr = modeStyle.Render("SEARCH")
+	case modeMonitor:
+		modeStr = modeStyle.Render("MONITOR")
 	}
 
 	leftPart := title + " " + versionTag + "  " + serverTag
@@ -117,6 +119,12 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 		help = helpKeyStyle.Render("/") + " " + searchView + "  " +
 			helpBinding("enter", "accept") + helpSep() +
 			helpBinding("esc", "clear")
+	case modeMonitor:
+		help = helpBinding("↑/↓", "navigate") + helpSep() +
+			helpBinding("k", "kill") + helpSep() +
+			helpBinding("r", "refresh now") + helpSep() +
+			helpBinding("q/esc", "close") + "  " +
+			helpDescStyle.Render("[auto-refresh: 2s]")
 	}
 
 	var status string

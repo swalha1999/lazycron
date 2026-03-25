@@ -10,6 +10,7 @@ import (
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
+	"github.com/swalha1999/lazycron/monitor"
 )
 
 // FileBackend reads/writes a plain crontab file and uses a temp history
@@ -101,6 +102,16 @@ func (b *FileBackend) GetTimezone() (string, int, error) {
 	_, offset := now.Zone()
 	tzName := now.Format("MST")
 	return tzName, offset, nil
+}
+
+// GetRunningJobs returns empty list for file backend (monitoring not supported).
+func (b *FileBackend) GetRunningJobs() ([]monitor.RunningJob, error) {
+	return nil, nil
+}
+
+// KillJob is not supported for file backend.
+func (b *FileBackend) KillJob(pid int) error {
+	return fmt.Errorf("kill job not supported for file backend")
 }
 
 func (b *FileBackend) Close() error { return nil }

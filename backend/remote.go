@@ -9,6 +9,7 @@ import (
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
+	"github.com/swalha1999/lazycron/monitor"
 	"github.com/swalha1999/lazycron/record"
 	sshclient "github.com/swalha1999/lazycron/ssh"
 )
@@ -249,6 +250,31 @@ func (b *RemoteBackend) GetTimezone() (string, int, error) {
 	}
 
 	return tzName, offsetSeconds, nil
+}
+
+// GetRunningJobs returns all currently running lazycron jobs on the remote system.
+func (b *RemoteBackend) GetRunningJobs() ([]monitor.RunningJob, error) {
+	// Run ps on the remote system
+	output, err := b.client.Run("ps -eo pid,etime,command")
+	if err != nil {
+		return nil, fmt.Errorf("remote ps command failed: %w", err)
+	}
+
+	// Get remote scripts directory
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return nil, err
+	}
+	remoteScriptsDir := lcDir + "/scripts"
+
+	// Use the same parsing logic as local
+	return monitor.ParseRunningJobs(output, remoteScriptsDir)
+}
+
+// KillJob kills a running job by PID on the remote system.
+func (b *RemoteBackend) KillJob(pid int) error {
+	_, err := b.client.Run(fmt.Sprintf("kill %d", pid))
+	return err
 }
 
 func (b *RemoteBackend) Close() error {

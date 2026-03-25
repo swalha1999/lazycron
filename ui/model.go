@@ -28,6 +28,7 @@ const (
 	modeConfirmDeleteHistory
 	modeProjectPrompt
 	modeSearch
+	modeMonitor
 )
 
 type statusType int
@@ -102,6 +103,11 @@ type Model struct {
 
 	// Last-run status indicator per job (maps job ID → success of most recent run)
 	lastRunStatus map[string]*bool
+
+	// Monitor state
+	monitorGroups   []monitorGroupRow // grouped running jobs for display
+	monitorSelected int               // selected row in monitor view
+	monitorScroll   int               // scroll offset in monitor view
 
 	// App version (for self-update)
 	version string

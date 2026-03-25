@@ -185,6 +185,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case monitorRefreshMsg:
+		if m.mode == modeMonitor {
+			m.buildMonitorRows()
+			return m, monitorTickCmd()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -254,6 +261,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleProjectPromptKey(msg)
 	case modeSearch:
 		return m.handleSearchKey(msg)
+	case modeMonitor:
+		return m, m.handleMonitorKey(msg.String())
 	default:
 		return m.handleNormalKey(msg)
 	}

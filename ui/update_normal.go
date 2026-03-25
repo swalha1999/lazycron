@@ -253,6 +253,15 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 		return m, nil
 
+	case "m":
+		// Switch to monitor view
+		m.mode = modeMonitor
+		m.monitorSelected = 0
+		m.monitorScroll = 0
+		m.statusMsg = ""
+		m.buildMonitorRows()
+		return m, monitorTickCmd()
+
 	case "D":
 		if m.focusPanel == panelServers {
 			if m.serverSelected == 0 {

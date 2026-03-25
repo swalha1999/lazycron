@@ -9,6 +9,7 @@ import (
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
+	"github.com/swalha1999/lazycron/monitor"
 	"github.com/swalha1999/lazycron/record"
 )
 
@@ -78,6 +79,17 @@ func (b *LocalBackend) GetTimezone() (string, int, error) {
 	_, offset := now.Zone()
 	tzName := now.Format("MST")
 	return tzName, offset, nil
+}
+
+// GetRunningJobs returns all currently running lazycron jobs on the local system.
+func (b *LocalBackend) GetRunningJobs() ([]monitor.RunningJob, error) {
+	scriptsDir := cron.ScriptsDir()
+	return monitor.GetRunningJobs(scriptsDir)
+}
+
+// KillJob kills a running job by PID on the local system.
+func (b *LocalBackend) KillJob(pid int) error {
+	return monitor.KillJob(pid)
 }
 
 func (b *LocalBackend) Close() error { return nil }
