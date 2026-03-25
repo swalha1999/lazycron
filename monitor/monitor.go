@@ -21,6 +21,7 @@ type RunningJob struct {
 	CPU       string        // CPU usage percentage
 	Memory    string        // Memory usage (RSS)
 	State     string        // Process state (R, S, D, etc.)
+	Command   string        // Full command line
 }
 
 // JobGroup represents multiple instances of the same job.
@@ -121,6 +122,7 @@ func ParseRunningJobs(psOutput, scriptsDir string) ([]RunningJob, error) {
 			CPU:       cpu,
 			Memory:    memStr,
 			State:     state,
+			Command:   command,
 		})
 	}
 

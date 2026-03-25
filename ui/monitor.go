@@ -25,6 +25,7 @@ type monitorGroupRow struct {
 	memory    string
 	elapsed   string
 	startTime time.Time
+	command   string
 }
 
 // monitorRefreshMsg is sent when it's time to refresh the monitor view.
@@ -92,6 +93,7 @@ func (m *Model) buildMonitorRows() {
 				memory:    inst.Memory,
 				elapsed:   monitor.FormatElapsed(inst.Elapsed),
 				startTime: inst.StartTime,
+				command:   inst.Command,
 			})
 		}
 	}
@@ -211,7 +213,7 @@ func (m Model) renderMonitorTableHeader() string {
 		padRight("CPU%", 6),
 		padRight("MEM", 8),
 		padRight("ELAPSED", 12),
-		padRight("STARTED", 12),
+		"COMMAND",
 	}
 
 	headerText := "  " + strings.Join(headers, " ")
@@ -270,9 +272,6 @@ func (m Model) renderMonitorInstanceRow(row monitorGroupRow, selected bool, widt
 		jobName = jobName[:25] + "..."
 	}
 
-	// Format start time
-	startTimeStr := row.startTime.Format("15:04:05")
-
 	// Format state with color (but not when selected - background would override)
 	stateText := row.state
 	if !selected {
@@ -291,6 +290,13 @@ func (m Model) renderMonitorInstanceRow(row monitorGroupRow, selected bool, widt
 		stateText = stateStyle.Render(row.state)
 	}
 
+	// Truncate command if too long
+	command := row.command
+	maxCmdLen := 50
+	if len(command) > maxCmdLen {
+		command = command[:maxCmdLen-3] + "..."
+	}
+
 	columns := []string{
 		padRight("    "+jobName, 30),
 		padRight(fmt.Sprintf("%d", row.pid), 8),
@@ -298,7 +304,7 @@ func (m Model) renderMonitorInstanceRow(row monitorGroupRow, selected bool, widt
 		padRight(row.cpu+"%", 6),
 		padRight(row.memory, 8),
 		padRight(row.elapsed, 12),
-		padRight(startTimeStr, 12),
+		command,
 	}
 
 	text := "  " + strings.Join(columns, " ")
