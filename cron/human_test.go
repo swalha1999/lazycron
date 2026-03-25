@@ -26,6 +26,13 @@ func TestCronToHuman(t *testing.T) {
 		{"* */2 * * *", "Every minute, every 2nd hour"},
 		{"*/10 */2 * * *", "Every 10th minute, every 2nd hour"},
 
+		// Range/step hours
+		{"30 8-20/2 * * *", "Every 2nd hour from 8 AM to 8 PM at minute 30"},
+		{"0 8-20/2 * * *", "Every 2nd hour from 8 AM to 8 PM"},
+		{"* 8-20/2 * * *", "Every minute, every 2nd hour from 8 AM to 8 PM"},
+		{"*/10 8-20/2 * * *", "Every 10th minute, every 2nd hour from 8 AM to 8 PM"},
+		{"0 9-17/1 * * *", "Every hour from 9 AM to 5 PM"},
+
 		// Specific times
 		{"30 8 * * *", "At 8:30 AM"},
 		{"0 9 * * *", "At 9 AM"},
