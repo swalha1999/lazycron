@@ -99,11 +99,11 @@ func (m *Model) buildMonitorRows() {
 	m.monitorGroups = rows
 
 	// Adjust selection if out of bounds
-	if m.monitorSelected >= len(m.monitorGroups) {
-		m.monitorSelected = len(m.monitorGroups) - 1
-	}
-	if m.monitorSelected < 0 {
+	if len(m.monitorGroups) == 0 {
 		m.monitorSelected = 0
+		m.monitorScroll = 0
+	} else if m.monitorSelected >= len(m.monitorGroups) {
+		m.monitorSelected = len(m.monitorGroups) - 1
 	}
 }
 
@@ -391,6 +391,9 @@ func (m *Model) handleMonitorKey(key string) tea.Cmd {
 		m.monitorSelected++
 		if m.monitorSelected >= len(m.monitorGroups) {
 			m.monitorSelected = len(m.monitorGroups) - 1
+		}
+		if m.monitorSelected < 0 {
+			m.monitorSelected = 0
 		}
 		return nil
 
