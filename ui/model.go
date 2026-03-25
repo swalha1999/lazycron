@@ -100,6 +100,9 @@ type Model struct {
 	searchPanel int          // panel the filter applies to (-1 = none)
 	searchJobMatch map[int]bool // set of matching job indices (nil = all)
 
+	// Last-run status indicator per job (maps job ID → success of most recent run)
+	lastRunStatus map[string]*bool
+
 	// App version (for self-update)
 	version string
 }
@@ -146,6 +149,23 @@ func NewModel(mgr *backend.Manager, version string) Model {
 		searchPanel:       -1,
 		version:           version,
 	}
+}
+
+// buildLastRunStatus builds a map from job ID to the success status of the
+// most recent history entry. History entries are already sorted newest-first,
+// so the first occurrence of each job ID is its latest run.
+func buildLastRunStatus(entries []history.Entry) map[string]*bool {
+	m := make(map[string]*bool, len(entries))
+	for _, e := range entries {
+		key := e.JobID
+		if key == "" {
+			continue
+		}
+		if _, exists := m[key]; !exists {
+			m[key] = e.Success
+		}
+	}
+	return m
 }
 
 // activeDirLister returns a DirLister for the active backend.
