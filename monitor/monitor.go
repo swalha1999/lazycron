@@ -111,6 +111,12 @@ func ParseRunningJobs(psOutput, scriptsDir string) ([]RunningJob, error) {
 			continue
 		}
 
+		// Skip wrapper processes (record script wrappers that contain the script path but aren't the actual script)
+		// These have __lc_out= in their command line
+		if strings.Contains(command, "__lc_out=") {
+			continue
+		}
+
 		// Extract job ID from script path
 		jobID := matches[2]
 
