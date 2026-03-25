@@ -255,7 +255,7 @@ func (b *RemoteBackend) GetTimezone() (string, int, error) {
 // GetRunningJobs returns all currently running lazycron jobs on the remote system.
 func (b *RemoteBackend) GetRunningJobs() ([]monitor.RunningJob, error) {
 	// Run ps on the remote system
-	output, err := b.client.Run("ps -eo pid,etime,command")
+	output, err := b.client.Run("ps -eo pid,etime,state,%cpu,%mem,rss,command")
 	if err != nil {
 		return nil, fmt.Errorf("remote ps command failed: %w", err)
 	}
