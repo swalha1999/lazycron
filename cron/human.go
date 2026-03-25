@@ -158,13 +158,43 @@ func describeDow(field string) string {
 	return field
 }
 
-// describeStep converts "*/N" into "every Nth <unit>".
+// describeStep converts "*/N" into "every Nth <unit>" and
+// "start-end/N" into "every Nth <unit> from <start> to <end>".
 func describeStep(field, unit string) string {
+	if isRangeStep(field) {
+		return describeRangeStep(field, unit)
+	}
 	n, _ := strconv.Atoi(strings.TrimPrefix(field, "*/"))
 	if n == 1 {
 		return "every " + unit
 	}
 	return fmt.Sprintf("every %s %s", ordinal(n), unit)
+}
+
+// describeRangeStep converts "start-end/step" into a human-readable string.
+func describeRangeStep(field, unit string) string {
+	slashIdx := strings.Index(field, "/")
+	rangePart := field[:slashIdx]
+	step, _ := strconv.Atoi(field[slashIdx+1:])
+	dashIdx := strings.Index(rangePart, "-")
+	lo, _ := strconv.Atoi(rangePart[:dashIdx])
+	hi, _ := strconv.Atoi(rangePart[dashIdx+1:])
+
+	var stepStr string
+	if step == 1 {
+		stepStr = "every " + unit
+	} else {
+		stepStr = fmt.Sprintf("every %s %s", ordinal(step), unit)
+	}
+
+	switch unit {
+	case "hour":
+		return fmt.Sprintf("%s from %s to %s", stepStr, formatHourOnly(lo), formatHourOnly(hi))
+	case "minute":
+		return fmt.Sprintf("%s from %d to %d", stepStr, lo, hi)
+	default:
+		return fmt.Sprintf("%s from %d to %d", stepStr, lo, hi)
+	}
 }
 
 func ordinal(n int) string {
@@ -184,7 +214,25 @@ func ordinal(n int) string {
 }
 
 func isStep(field string) bool {
-	return strings.HasPrefix(field, "*/")
+	return strings.HasPrefix(field, "*/") || isRangeStep(field)
+}
+
+// isRangeStep checks for patterns like "8-20/2" (start-end/step).
+func isRangeStep(field string) bool {
+	slashIdx := strings.Index(field, "/")
+	if slashIdx < 0 {
+		return false
+	}
+	rangePart := field[:slashIdx]
+	stepPart := field[slashIdx+1:]
+	dashIdx := strings.Index(rangePart, "-")
+	if dashIdx < 0 {
+		return false
+	}
+	_, err1 := strconv.Atoi(rangePart[:dashIdx])
+	_, err2 := strconv.Atoi(rangePart[dashIdx+1:])
+	_, err3 := strconv.Atoi(stepPart)
+	return err1 == nil && err2 == nil && err3 == nil
 }
 
 func isValue(field string) bool {
@@ -203,6 +251,11 @@ func formatTime(h, m int) string {
 func formatHour(h int) string {
 	t := time.Date(2000, 1, 1, h, 0, 0, 0, time.Local)
 	return t.Format("3 PM") + " hour"
+}
+
+func formatHourOnly(h int) string {
+	t := time.Date(2000, 1, 1, h, 0, 0, 0, time.Local)
+	return t.Format("3 PM")
 }
 
 func monthName(m int) string {
