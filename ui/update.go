@@ -49,6 +49,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		b := m.manager.ActiveBackend()
 		return m, tea.Batch(loadHistory(b), historyTick())
 
+	case timeTickMsg:
+		return m, timeTick()
+
 	case historyLoadedMsg:
 		if msg.err == nil {
 			m.history = msg.entries

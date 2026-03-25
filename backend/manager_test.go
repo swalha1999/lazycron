@@ -22,6 +22,7 @@ func (m *mockBackend) LoadHistory() ([]history.Entry, error)                    
 func (m *mockBackend) WriteHistory(jobID, jobName, output string, ok bool) error { return nil }
 func (m *mockBackend) DeleteHistory(filePath string) error                 { return nil }
 func (m *mockBackend) EnsureRecordScript() error                           { return nil }
+func (m *mockBackend) GetTimezone() (string, int, error)                  { return "UTC", 0, nil }
 func (m *mockBackend) Close() error                                        { m.closed = true; return nil }
 
 // newTestManager creates a Manager with a mock local backend (avoids system crontab).

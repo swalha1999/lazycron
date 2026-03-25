@@ -3,14 +3,37 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/swalha1999/lazycron/backend"
 )
 
-func renderTopBar(m mode, serverName string, version string, width int) string {
+func renderTopBar(m mode, serverInfo backend.ServerInfo, version string, width int) string {
 	title := titleStyle.Render("lazycron")
 	versionTag := lipgloss.NewStyle().Foreground(colorMuted).Render(version)
-	serverTag := lipgloss.NewStyle().Foreground(colorCyan).Render("[" + serverName + "]")
+
+	// Build server tag with time and timezone
+	serverText := serverInfo.Name
+	if serverInfo.Timezone != "" {
+		// Calculate server time using the offset
+		now := time.Now().UTC()
+		serverTime := now.Add(time.Duration(serverInfo.TimezoneOffset) * time.Second)
+		timeStr := serverTime.Format("15:04")
+
+		// Format timezone offset (e.g., UTC+0, UTC+2, UTC-5)
+		offsetHours := serverInfo.TimezoneOffset / 3600
+		var tzStr string
+		if offsetHours >= 0 {
+			tzStr = fmt.Sprintf("%s+%d", serverInfo.Timezone, offsetHours)
+		} else {
+			tzStr = fmt.Sprintf("%s%d", serverInfo.Timezone, offsetHours)
+		}
+
+		serverText = fmt.Sprintf("%s • %s %s", serverInfo.Name, timeStr, tzStr)
+	}
+
+	serverTag := lipgloss.NewStyle().Foreground(colorCyan).Render("[" + serverText + "]")
 
 	var modeStr string
 	switch m {

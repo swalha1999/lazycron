@@ -44,6 +44,8 @@ type clearStatusMsg struct {
 
 type historyTickMsg struct{}
 
+type timeTickMsg struct{}
+
 type splashDoneMsg struct{}
 
 // Server-related messages
@@ -71,6 +73,12 @@ func historyTick() tea.Cmd {
 	})
 }
 
+func timeTick() tea.Cmd {
+	return tea.Tick(time.Minute, func(time.Time) tea.Msg {
+		return timeTickMsg{}
+	})
+}
+
 func splashTimer() tea.Cmd {
 	return tea.Tick(1200*time.Millisecond, func(time.Time) tea.Msg {
 		return splashDoneMsg{}
@@ -79,7 +87,12 @@ func splashTimer() tea.Cmd {
 
 func (m Model) Init() tea.Cmd {
 	b := m.manager.ActiveBackend()
-	return tea.Batch(loadJobs(b), loadHistory(b), historyTick(), splashTimer())
+	// Get timezone for local server (index 0)
+	tzName, tzOffset, tzErr := b.GetTimezone()
+	if tzErr == nil {
+		m.manager.SetServerTimezone(0, tzName, tzOffset)
+	}
+	return tea.Batch(loadJobs(b), loadHistory(b), historyTick(), timeTick(), splashTimer())
 }
 
 // disableCompletedOneShotsMsg is sent after one-shot jobs have been auto-disabled.
@@ -188,6 +201,11 @@ func connectServerWithPassword(mgr *backend.Manager, index int, password string)
 		if err != nil {
 			mgr.SetServerStatus(index, backend.ConnError, err.Error())
 			return serverConnectedMsg{index: index, err: err}
+		}
+		// Get timezone information
+		tzName, tzOffset, tzErr := b.GetTimezone()
+		if tzErr == nil {
+			mgr.SetServerTimezone(index, tzName, tzOffset)
 		}
 		mgr.SetServerStatus(index, backend.ConnConnected, "")
 		return serverConnectedMsg{index: index, err: nil}
