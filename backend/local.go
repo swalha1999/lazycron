@@ -1,7 +1,10 @@
 package backend
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
@@ -42,7 +45,26 @@ func (b *LocalBackend) WriteHistory(jobID, jobName, output string, success bool)
 }
 
 func (b *LocalBackend) DeleteHistory(filePath string) error {
-	return os.Remove(filePath)
+	absHistoryDir, err := filepath.Abs(filepath.Clean(record.HistoryDir()))
+	if err != nil {
+		return fmt.Errorf("failed to resolve history dir: %w", err)
+	}
+
+	absFilePath, err := filepath.Abs(filepath.Clean(filePath))
+	if err != nil {
+		return fmt.Errorf("failed to resolve file path: %w", err)
+	}
+
+	rel, err := filepath.Rel(absHistoryDir, absFilePath)
+	if err != nil {
+		return fmt.Errorf("refusing to delete file outside history dir")
+	}
+
+	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return fmt.Errorf("refusing to delete file outside history dir")
+	}
+
+	return os.Remove(absFilePath)
 }
 
 func (b *LocalBackend) EnsureRecordScript() error {
