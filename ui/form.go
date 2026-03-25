@@ -70,6 +70,41 @@ func newForm(lister DirLister) formModel {
 	return f
 }
 
+func newFormForDuplicate(job cron.Job, lister DirLister) formModel {
+	f := formModel{}
+	for i := 0; i < fieldCount; i++ {
+		f.inputs[i] = newInput(i)
+	}
+	f.completer.lister = lister
+
+	// Extract workdir from command
+	cmd := job.Command
+	workDir := ""
+	if strings.HasPrefix(cmd, "cd ") {
+		if idx := strings.Index(cmd, " && "); idx != -1 {
+			workDir = strings.TrimPrefix(cmd[:idx], "cd ")
+			cmd = strings.TrimSpace(cmd[idx+4:])
+		}
+	}
+
+	// No ID — a new one will be generated on save
+	f.inputs[fieldName].SetValue(job.Name + " (copy)")
+	f.inputs[fieldCommand].SetValue(cmd)
+	f.inputs[fieldSchedule].SetValue(job.Schedule)
+	f.inputs[fieldWorkDir].SetValue(workDir)
+	f.inputs[fieldProject].SetValue(job.Project)
+	f.tag = job.Tag
+	f.tagColor = job.TagColor
+	f.oneShot = job.OneShot
+
+	f.picker = newPicker()
+	if !f.oneShot {
+		f.picker.ParseExpression(job.Schedule)
+	}
+
+	return f
+}
+
 func newFormForEdit(job cron.Job, index int, lister DirLister) formModel {
 	f := formModel{
 		editing:   true,

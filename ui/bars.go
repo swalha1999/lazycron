@@ -54,6 +54,7 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 				helpBinding("D", "remove") + helpSep()
 		} else if focusPanel == panelJobs {
 			help = helpBinding("n", "new") + helpSep() +
+				helpBinding("d", "duplicate") + helpSep() +
 				helpBinding("enter", "edit") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
@@ -135,6 +136,7 @@ func renderHelpScreen() string {
 		{"D", "Remove server"},
 		{"", "── Jobs Panel ──"},
 		{"n", "Create new job"},
+		{"d", "Duplicate selected job"},
 		{"enter / e", "Edit selected job"},
 		{"D", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
