@@ -216,6 +216,15 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "d":
+		if m.focusPanel == panelJobs && len(m.jobs) > 0 && !m.isOnHeader() {
+			jobIdx := m.currentJobIndex()
+			if jobIdx >= 0 {
+				m.mode = modeForm
+				m.form = newFormForDuplicate(m.jobs[jobIdx], m.activeDirLister())
+				m.statusMsg = ""
+				return m, m.form.focusActive()
+			}
+		}
 		if m.focusPanel == panelServers {
 			idx := m.serverSelected
 			if idx == 0 {
