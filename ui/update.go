@@ -52,6 +52,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyLoadedMsg:
 		if msg.err == nil {
 			m.history = msg.entries
+			m.lastRunStatus = buildLastRunStatus(m.history)
 			// Auto-disable completed one-shot jobs (backup for record.sh)
 			if len(m.jobs) > 0 && len(m.history) > 0 {
 				return m, disableCompletedOneShots(m.manager.ActiveBackend(), m.jobs, m.history)
@@ -145,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.index == m.manager.ActiveIndex() {
 			m.jobs = msg.jobs
 			m.history = msg.history
+			m.lastRunStatus = buildLastRunStatus(m.history)
 			m.selected = 0
 			m.selectedRow = 0
 			m.historySelected = 0

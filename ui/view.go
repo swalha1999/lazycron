@@ -171,7 +171,7 @@ func (m Model) renderPanels(height int) string {
 
 	// [2] Jobs panel
 	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	listContent := renderJobList(m.jobs, m.selectedRow, rows, listWidth-4, jobsHeight, m.collapsedProjects)
+	listContent := renderJobList(m.jobs, m.selectedRow, rows, listWidth-4, jobsHeight, m.collapsedProjects, m.lastRunStatus)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
 	if jobsActive {

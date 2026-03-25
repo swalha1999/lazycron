@@ -128,7 +128,7 @@ func findSiblingJob(jobs []cron.Job, jobIdx int, direction int) int {
 	return siblings[targetPos]
 }
 
-func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height int, collapsed map[string]bool) string {
+func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height int, collapsed map[string]bool, lastRunStatus map[string]*bool) string {
 	if len(jobs) == 0 {
 		empty := mutedItemStyle.Render("No cron jobs found")
 		hint := mutedItemStyle.Render("Press 'n' to create one")
@@ -177,7 +177,7 @@ func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height in
 			b.WriteString(line)
 		} else {
 			job := jobs[row.jobIdx]
-			line := renderJobRow(job, maxNameWidth)
+			line := renderJobRow(job, maxNameWidth, lastRunStatus)
 			if i == selRow {
 				line = selectedStyle.Render("▶ " + line)
 			} else {
@@ -223,7 +223,7 @@ func renderGroupHeader(project string, jobs []cron.Job, collapsed map[string]boo
 	return lipgloss.NewStyle().Foreground(colorMauve).Bold(true).Render(header)
 }
 
-func renderJobRow(job cron.Job, maxNameWidth int) string {
+func renderJobRow(job cron.Job, maxNameWidth int, lastRunStatus map[string]*bool) string {
 	// Status dot
 	dot := enabledDotStyle.Render("●")
 	if !job.Enabled {
@@ -236,8 +236,18 @@ func renderJobRow(job cron.Job, maxNameWidth int) string {
 		name = name[:maxNameWidth-1] + "…"
 	}
 
+	// Last-run health indicator
+	healthIndicator := ""
+	if status, ok := lastRunStatus[job.ID]; ok && status != nil {
+		if *status {
+			healthIndicator = " " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓")
+		} else {
+			healthIndicator = " " + lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render("✗")
+		}
+	}
+
 	// Build inline badges right after the name
-	nameWithBadges := name
+	nameWithBadges := name + healthIndicator
 	if job.Tag != "" {
 		tagColor := job.TagColor
 		if tagColor == "" {
