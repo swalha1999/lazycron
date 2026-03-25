@@ -20,8 +20,8 @@ func (m Model) View() string {
 		return renderSplash(m.version, m.width, m.height)
 	}
 
-	serverName := m.manager.ServerAt(m.manager.ActiveIndex()).Name
-	topBar := renderTopBar(m.mode, serverName, m.version, m.width)
+	serverInfo := m.manager.ServerAt(m.manager.ActiveIndex())
+	topBar := renderTopBar(m.mode, serverInfo, m.version, m.width)
 
 	var searchView string
 	if m.mode == modeSearch {

@@ -21,12 +21,14 @@ const (
 
 // ServerInfo holds metadata about a configured server.
 type ServerInfo struct {
-	Name   string
-	Host   string
-	Port   int
-	User   string
-	Status ConnStatus
-	Error  string
+	Name           string
+	Host           string
+	Port           int
+	User           string
+	Status         ConnStatus
+	Error          string
+	Timezone       string // e.g. "UTC", "EST", "PST"
+	TimezoneOffset int    // offset in seconds from UTC
 }
 
 // CachedData holds cached jobs and history for a server.
@@ -147,6 +149,16 @@ func (m *Manager) SetServerStatus(index int, status ConnStatus, errMsg string) {
 	if index >= 0 && index < len(m.servers) {
 		m.servers[index].Status = status
 		m.servers[index].Error = errMsg
+	}
+}
+
+// SetServerTimezone updates a server's timezone information.
+func (m *Manager) SetServerTimezone(index int, timezone string, offset int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if index >= 0 && index < len(m.servers) {
+		m.servers[index].Timezone = timezone
+		m.servers[index].TimezoneOffset = offset
 	}
 }
 

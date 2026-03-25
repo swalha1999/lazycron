@@ -15,5 +15,6 @@ type Backend interface {
 	WriteHistory(jobID, jobName, output string, success bool) error
 	DeleteHistory(filePath string) error
 	EnsureRecordScript() error
+	GetTimezone() (string, int, error) // returns timezone name and offset in seconds
 	Close() error
 }

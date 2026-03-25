@@ -220,6 +220,37 @@ func (b *RemoteBackend) DirLister() *RemoteDirLister {
 	return NewRemoteDirLister(b.client)
 }
 
+// GetTimezone returns the remote server's timezone name and UTC offset in seconds.
+func (b *RemoteBackend) GetTimezone() (string, int, error) {
+	// Get timezone offset in format like "+0200" or "-0500"
+	offsetStr, err := b.client.Run("date +%z")
+	if err != nil {
+		return "", 0, fmt.Errorf("get timezone offset: %w", err)
+	}
+	offsetStr = strings.TrimSpace(offsetStr)
+
+	// Get timezone name (e.g., "UTC", "EST")
+	tzName, err := b.client.Run("date +%Z")
+	if err != nil {
+		return "", 0, fmt.Errorf("get timezone name: %w", err)
+	}
+	tzName = strings.TrimSpace(tzName)
+
+	// Parse offset string (e.g., "+0200" -> 7200 seconds)
+	var offsetSeconds int
+	if len(offsetStr) == 5 && (offsetStr[0] == '+' || offsetStr[0] == '-') {
+		sign := 1
+		if offsetStr[0] == '-' {
+			sign = -1
+		}
+		var hours, minutes int
+		fmt.Sscanf(offsetStr[1:], "%2d%2d", &hours, &minutes)
+		offsetSeconds = sign * (hours*3600 + minutes*60)
+	}
+
+	return tzName, offsetSeconds, nil
+}
+
 func (b *RemoteBackend) Close() error {
 	return b.client.Close()
 }

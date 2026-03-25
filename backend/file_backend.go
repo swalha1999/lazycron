@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
@@ -93,5 +94,13 @@ func (b *FileBackend) DeleteHistory(filePath string) error {
 }
 
 func (b *FileBackend) EnsureRecordScript() error { return nil }
+
+// GetTimezone returns the local timezone name and UTC offset in seconds.
+func (b *FileBackend) GetTimezone() (string, int, error) {
+	now := time.Now()
+	_, offset := now.Zone()
+	tzName := now.Format("MST")
+	return tzName, offset, nil
+}
 
 func (b *FileBackend) Close() error { return nil }
