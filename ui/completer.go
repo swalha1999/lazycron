@@ -41,13 +41,7 @@ type completerModel struct {
 
 // activate initializes the completer for a given input value.
 func (c *completerModel) activate(input string) {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		c.showSeeds()
-		return
-	}
-	c.parseInput(input)
-	c.refresh()
+	c.update(input)
 }
 
 // update refreshes suggestions as the user types.
@@ -59,6 +53,35 @@ func (c *completerModel) update(input string) {
 	}
 	c.parseInput(input)
 	c.refresh()
+}
+
+// handleKey processes completer navigation keys.
+// setInput is called with the selected path when the user drills in/out.
+// Returns true if the key was handled by the completer.
+func (c *completerModel) handleKey(key string, setInput func(string)) bool {
+	switch key {
+	case "down":
+		c.selectNext()
+	case "up":
+		c.selectPrev()
+	case "enter", "right":
+		if c.selected >= 0 {
+			if path := c.drillIn(); path != "" {
+				setInput(path)
+			}
+		} else if key == "right" {
+			// right with no selection: handled (consume the key)
+		} else {
+			return false // enter with no selection: let caller handle
+		}
+	case "left":
+		setInput(c.drillOut())
+	case "esc":
+		c.reset()
+	default:
+		return false
+	}
+	return true
 }
 
 // parseInput splits input into browseDir and filterText.

@@ -52,32 +52,11 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.form.activeField == fieldWorkDir && m.form.completer.active {
-		switch key {
-		case "down":
-			m.form.completer.selectNext()
-			return m, nil
-		case "up":
-			m.form.completer.selectPrev()
-			return m, nil
-		case "enter", "right":
-			if m.form.completer.selected >= 0 {
-				path := m.form.completer.drillIn()
-				if path != "" {
-					m.form.inputs[fieldWorkDir].SetValue(path)
-					m.form.inputs[fieldWorkDir].CursorEnd()
-				}
-				return m, nil
-			}
-			if key == "right" {
-				return m, nil
-			}
-		case "left":
-			path := m.form.completer.drillOut()
+		handled := m.form.completer.handleKey(key, func(path string) {
 			m.form.inputs[fieldWorkDir].SetValue(path)
 			m.form.inputs[fieldWorkDir].CursorEnd()
-			return m, nil
-		case "esc":
-			m.form.completer.reset()
+		})
+		if handled {
 			return m, nil
 		}
 	}
@@ -203,33 +182,11 @@ func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case phaseVariables:
 		// Handle completer interactions when active on a path variable
 		if tp.activeVarIsPath() && tp.completer.active {
-			switch key {
-			case "down":
-				tp.completer.selectNext()
-				return m, nil
-			case "up":
-				tp.completer.selectPrev()
-				return m, nil
-			case "enter", "right":
-				if tp.completer.selected >= 0 {
-					path := tp.completer.drillIn()
-					if path != "" {
-						tp.variableInputs[tp.activeVariable].SetValue(path)
-						tp.variableInputs[tp.activeVariable].CursorEnd()
-					}
-					return m, nil
-				}
-				if key == "right" {
-					return m, nil
-				}
-				// enter with no selection falls through to create job
-			case "left":
-				path := tp.completer.drillOut()
+			handled := tp.completer.handleKey(key, func(path string) {
 				tp.variableInputs[tp.activeVariable].SetValue(path)
 				tp.variableInputs[tp.activeVariable].CursorEnd()
-				return m, nil
-			case "esc":
-				tp.completer.reset()
+			})
+			if handled {
 				return m, nil
 			}
 		}
