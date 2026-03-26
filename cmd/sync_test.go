@@ -28,7 +28,7 @@ schedule: "0 0 * * 0"
 command: logrotate /etc/logrotate.conf
 `)
 
-	jobs, err := readJobFiles(dir)
+	jobs, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestReadJobFiles_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, "bad-job.yaml", `not: valid: yaml: [`)
 
-	_, err := readJobFiles(dir)
+	_, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
@@ -81,7 +81,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir)
+	_, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for uppercase filename")
 	}
@@ -94,7 +94,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir)
+	_, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for missing name")
 	}
@@ -102,7 +102,7 @@ command: echo hi
 
 func TestReadJobFiles_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	jobs, err := readJobFiles(dir)
+	jobs, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -120,7 +120,7 @@ command: echo off
 enabled: false
 `)
 
-	jobs, err := readJobFiles(dir)
+	jobs, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -129,6 +129,71 @@ enabled: false
 	}
 	if jobs[0].Enabled {
 		t.Error("expected enabled=false")
+	}
+}
+
+// --- readJobFiles with env vars ---
+
+func TestReadJobFiles_EnvSubstitution(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "db-backup.yaml", `
+name: Database Backup
+schedule: "0 3 * * *"
+command: pg_dump -h ${DB_HOST} ${DB_NAME}
+`)
+
+	vars := map[string]string{
+		"DB_HOST": "prod-db.example.com",
+		"DB_NAME": "appdb",
+	}
+
+	jobs, err := readJobFiles(dir, vars)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	want := "pg_dump -h prod-db.example.com appdb"
+	if jobs[0].Command != want {
+		t.Errorf("command = %q, want %q", jobs[0].Command, want)
+	}
+}
+
+func TestReadJobFiles_UndefinedVarError(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "db-backup.yaml", `
+name: Database Backup
+schedule: "0 3 * * *"
+command: pg_dump -h ${DB_HOST} ${DB_NAME}
+`)
+
+	vars := map[string]string{"DB_HOST": "localhost"}
+
+	_, err := readJobFiles(dir, vars)
+	if err == nil {
+		t.Fatal("expected error for undefined variable")
+	}
+}
+
+func TestReadJobFiles_NilVarsSkipsSubstitution(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "job.yaml", `
+name: Test Job
+schedule: "* * * * *"
+command: echo ${NOT_SUBSTITUTED}
+`)
+
+	// nil vars means no substitution — ${...} is preserved as-is.
+	jobs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if jobs[0].Command != "echo ${NOT_SUBSTITUTED}" {
+		t.Errorf("command = %q, expected literal ${NOT_SUBSTITUTED}", jobs[0].Command)
 	}
 }
 
