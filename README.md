@@ -16,6 +16,8 @@ curl -fsSL https://get.lazycron.com | sh
 go install github.com/swalha1999/lazycron@latest   # Go
 ```
 
+**macOS Users:** On first run, macOS will ask you to allow your terminal to "administer your computer." Click Allow — this is needed for crontab access. If the prompt keeps appearing, go to System Settings → Privacy & Security → App Management and add your terminal app.
+
 ## Features
 
 ### 4-Panel Layout
