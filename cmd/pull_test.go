@@ -264,7 +264,7 @@ func TestWriteJobYAML_RoundTrip(t *testing.T) {
 	}
 
 	// Read back using the sync command's readJobFiles.
-	jobs, err := readJobFiles(dir)
+	jobs, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}

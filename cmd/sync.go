@@ -10,6 +10,7 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
+	"github.com/swalha1999/lazycron/envsubst"
 	"github.com/swalha1999/lazycron/record"
 	sshclient "github.com/swalha1999/lazycron/ssh"
 	"gopkg.in/yaml.v3"
@@ -25,11 +26,13 @@ var syncCmd = &cobra.Command{
 var (
 	syncServer string
 	syncDir    string
+	syncVars   []string
 )
 
 func init() {
 	syncCmd.Flags().StringVarP(&syncServer, "server", "s", "", "target server name from config")
 	syncCmd.Flags().StringVar(&syncDir, "dir", "", "path to .lazycron directory (default: ./.lazycron)")
+	syncCmd.Flags().StringArrayVar(&syncVars, "var", nil, "variable substitution in KEY=VALUE format (can be repeated)")
 	rootCmd.AddCommand(syncCmd)
 }
 
@@ -58,8 +61,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no jobs directory found at %s", jobsDir)
 	}
 
+	// Build variable map for substitution.
+	envFile := filepath.Join(dir, ".env")
+	vars, err := envsubst.BuildVarMap(syncVars, envFile)
+	if err != nil {
+		return err
+	}
+
 	// Read YAML job files.
-	incoming, err := readJobFiles(jobsDir)
+	incoming, err := readJobFiles(jobsDir, vars)
 	if err != nil {
 		return err
 	}
@@ -96,7 +106,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 // readJobFiles reads all .yaml files from dir and returns them as cron.Jobs.
 // The filename (minus .yaml) is used as the job ID.
-func readJobFiles(dir string) ([]cron.Job, error) {
+// If vars is non-nil, ${VAR} references in file content are substituted.
+func readJobFiles(dir string, vars map[string]string) ([]cron.Job, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
 		return nil, err
@@ -114,8 +125,16 @@ func readJobFiles(dir string) ([]cron.Job, error) {
 			return nil, fmt.Errorf("reading %s: %w", filepath.Base(f), err)
 		}
 
+		content := string(data)
+		if vars != nil {
+			content, err = envsubst.Substitute(content, vars)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", filepath.Base(f), err)
+			}
+		}
+
 		var jf jobFile
-		if err := yaml.Unmarshal(data, &jf); err != nil {
+		if err := yaml.Unmarshal([]byte(content), &jf); err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", filepath.Base(f), err)
 		}
 
