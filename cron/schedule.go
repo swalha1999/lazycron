@@ -241,51 +241,94 @@ func matchesCron(t time.Time, parts []string) bool {
 		matchField(parts[4], int(t.Weekday()), 0, 6)
 }
 
-func matchField(field string, value, min, max int) bool {
-	if field == "*" {
-		return true
-	}
+// fieldPart represents one component of a parsed cron field.
+type fieldPart struct {
+	start, end, step int
+}
 
-	for _, part := range strings.Split(field, ",") {
-		// Handle step values
-		if strings.Contains(part, "/") {
-			sp := strings.SplitN(part, "/", 2)
-			step, err := strconv.Atoi(sp[1])
-			if err != nil || step == 0 {
-				continue
-			}
-			start := min
-			if sp[0] != "*" {
-				start, err = strconv.Atoi(sp[0])
-				if err != nil {
-					continue
-				}
-			}
-			for v := start; v <= max; v += step {
-				if v == value {
-					return true
-				}
-			}
-			continue
-		}
-
-		// Handle ranges
-		if strings.Contains(part, "-") {
-			rng := strings.SplitN(part, "-", 2)
-			lo, err1 := strconv.Atoi(rng[0])
-			hi, err2 := strconv.Atoi(rng[1])
-			if err1 == nil && err2 == nil && value >= lo && value <= hi {
+// contains reports whether value is matched by this field part.
+func (p fieldPart) contains(value int) bool {
+	if p.step > 0 {
+		for v := p.start; v <= p.end; v += p.step {
+			if v == value {
 				return true
 			}
-			continue
+		}
+		return false
+	}
+	return value >= p.start && value <= p.end
+}
+
+// parseCronField parses a single cron field into its component parts.
+// It returns an error if the field contains invalid syntax or out-of-range values.
+func parseCronField(field string, min, max int) ([]fieldPart, error) {
+	if field == "*" {
+		return []fieldPart{{start: min, end: max}}, nil
+	}
+
+	var parts []fieldPart
+	for _, tok := range strings.Split(field, ",") {
+		base := tok
+		stepVal := 0
+
+		if strings.Contains(tok, "/") {
+			sp := strings.SplitN(tok, "/", 2)
+			base = sp[0]
+			s, err := strconv.Atoi(sp[1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid step %q", sp[1])
+			}
+			if s == 0 {
+				return nil, fmt.Errorf("step must not be zero")
+			}
+			stepVal = s
 		}
 
-		// Simple value
-		if v, err := strconv.Atoi(part); err == nil && v == value {
+		switch {
+		case base == "*":
+			parts = append(parts, fieldPart{start: min, end: max, step: stepVal})
+
+		case strings.Contains(base, "-"):
+			rng := strings.SplitN(base, "-", 2)
+			lo, err1 := strconv.Atoi(rng[0])
+			hi, err2 := strconv.Atoi(rng[1])
+			if err1 != nil || err2 != nil {
+				return nil, fmt.Errorf("invalid range %q", base)
+			}
+			if lo < min || hi > max || lo > hi {
+				return nil, fmt.Errorf("range %d-%d out of bounds [%d-%d]", lo, hi, min, max)
+			}
+			parts = append(parts, fieldPart{start: lo, end: hi, step: stepVal})
+
+		default:
+			v, err := strconv.Atoi(base)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value %q", base)
+			}
+			if v < min || v > max {
+				return nil, fmt.Errorf("value %d out of bounds [%d-%d]", v, min, max)
+			}
+			end := v
+			if stepVal > 0 {
+				end = max
+			}
+			parts = append(parts, fieldPart{start: v, end: end, step: stepVal})
+		}
+	}
+
+	return parts, nil
+}
+
+func matchField(field string, value, min, max int) bool {
+	parts, err := parseCronField(field, min, max)
+	if err != nil {
+		return false
+	}
+	for _, p := range parts {
+		if p.contains(value) {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -300,55 +343,9 @@ func ValidateCron(expr string) error {
 	ranges := [][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
 
 	for i, part := range parts {
-		if err := validateField(part, ranges[i][0], ranges[i][1]); err != nil {
+		if _, err := parseCronField(part, ranges[i][0], ranges[i][1]); err != nil {
 			return fmt.Errorf("invalid %s field %q: %w", names[i], part, err)
 		}
 	}
-	return nil
-}
-
-func validateField(field string, min, max int) error {
-	if field == "*" {
-		return nil
-	}
-
-	for _, part := range strings.Split(field, ",") {
-		base := part
-		step := ""
-		if strings.Contains(part, "/") {
-			sp := strings.SplitN(part, "/", 2)
-			base = sp[0]
-			step = sp[1]
-			if _, err := strconv.Atoi(step); err != nil {
-				return fmt.Errorf("invalid step %q", step)
-			}
-		}
-
-		if base == "*" {
-			continue
-		}
-
-		if strings.Contains(base, "-") {
-			rng := strings.SplitN(base, "-", 2)
-			lo, err1 := strconv.Atoi(rng[0])
-			hi, err2 := strconv.Atoi(rng[1])
-			if err1 != nil || err2 != nil {
-				return fmt.Errorf("invalid range %q", base)
-			}
-			if lo < min || hi > max || lo > hi {
-				return fmt.Errorf("range %d-%d out of bounds [%d-%d]", lo, hi, min, max)
-			}
-			continue
-		}
-
-		v, err := strconv.Atoi(base)
-		if err != nil {
-			return fmt.Errorf("invalid value %q", base)
-		}
-		if v < min || v > max {
-			return fmt.Errorf("value %d out of bounds [%d-%d]", v, min, max)
-		}
-	}
-
 	return nil
 }
