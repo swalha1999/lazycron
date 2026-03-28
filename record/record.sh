@@ -57,6 +57,12 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
   printf '}\n'
 } > "$DIR/${STAMP}_${JOB_ID}.json"
 
+# Send notifications (if configured for this job).
+NOTIFY_BIN="$HOME/.lazycron/bin/notify"
+if [ -x "$NOTIFY_BIN" ]; then
+  "$NOTIFY_BIN" "$JOB_ID" "$JOB" "$EXIT" "$OUTPUT" >/dev/null 2>&1 || true
+fi
+
 # One-shot jobs: disable the crontab entry after execution
 if [ "$4" = "--once" ]; then
   crontab -l 2>/dev/null | sed "/@id:${JOB_ID}/{ n; s/^/#DISABLED /; }" | crontab -

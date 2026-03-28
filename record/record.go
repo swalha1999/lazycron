@@ -9,6 +9,9 @@ import (
 //go:embed record.sh
 var ScriptContent []byte
 
+//go:embed notify.sh
+var notifyScript []byte
+
 // Entry is the JSON structure written to history files.
 type Entry struct {
 	JobID     string `json:"job_id,omitempty"`
@@ -43,10 +46,18 @@ func EnsureDirs() error {
 	return os.MkdirAll(HistoryDir(), 0o700)
 }
 
-// InstallRecord writes the embedded POSIX shell script to ~/.lazycron/bin/record.
+// NotifyPath returns the full path to the notify script.
+func NotifyPath() string {
+	return filepath.Join(BinDir(), "notify")
+}
+
+// InstallRecord writes the embedded POSIX shell scripts to ~/.lazycron/bin/.
 func InstallRecord() error {
 	if err := EnsureDirs(); err != nil {
 		return err
 	}
-	return os.WriteFile(RecordPath(), ScriptContent, 0o755)
+	if err := os.WriteFile(RecordPath(), ScriptContent, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(NotifyPath(), notifyScript, 0o755)
 }

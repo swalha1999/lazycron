@@ -11,6 +11,7 @@ import (
 	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/envsubst"
+	"github.com/swalha1999/lazycron/notify"
 	"github.com/swalha1999/lazycron/record"
 	sshclient "github.com/swalha1999/lazycron/ssh"
 	"gopkg.in/yaml.v3"
@@ -38,14 +39,16 @@ func init() {
 
 // jobFile is the YAML structure for a job definition file.
 type jobFile struct {
-	Name     string `yaml:"name"`
-	Schedule string `yaml:"schedule"`
-	Command  string `yaml:"command"`
-	Project  string `yaml:"project,omitempty"`
-	Tag      string `yaml:"tag,omitempty"`
-	TagColor string `yaml:"tag_color,omitempty"`
-	Enabled  *bool  `yaml:"enabled,omitempty"`
-	Once     bool   `yaml:"once,omitempty"`
+	Name      string           `yaml:"name"`
+	Schedule  string           `yaml:"schedule"`
+	Command   string           `yaml:"command"`
+	Project   string           `yaml:"project,omitempty"`
+	Tag       string           `yaml:"tag,omitempty"`
+	TagColor  string           `yaml:"tag_color,omitempty"`
+	Enabled   *bool            `yaml:"enabled,omitempty"`
+	Once      bool             `yaml:"once,omitempty"`
+	OnFailure []notify.Action  `yaml:"on_failure,omitempty"`
+	OnSuccess []notify.Action  `yaml:"on_success,omitempty"`
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -69,13 +72,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Read YAML job files.
-	incoming, err := readJobFiles(jobsDir, vars)
+	incoming, notifyConfigs, err := readJobFiles(jobsDir, vars)
 	if err != nil {
 		return err
 	}
 	if len(incoming) == 0 {
 		fmt.Printf("No job files found in %s\n", jobsDir)
 		return nil
+	}
+
+	// Load global notification defaults.
+	globalCfg, err := config.Load()
+	if err != nil {
+		globalCfg = &config.Config{}
 	}
 
 	// Resolve backend.
@@ -100,6 +109,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Write per-job notification configs (local only).
+	if syncServer == "" {
+		if err := syncNotifyConfigs(incoming, notifyConfigs, globalCfg.Notifications); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to write notification configs: %v\n", err)
+		}
+	}
+
 	fmt.Printf("Synced: %d added, %d updated, %d unchanged\n", added, updated, unchanged)
 	return nil
 }
@@ -107,56 +123,65 @@ func runSync(cmd *cobra.Command, args []string) error {
 // readJobFiles reads all .yaml files from dir and returns them as cron.Jobs.
 // The filename (minus .yaml) is used as the job ID.
 // If vars is non-nil, ${VAR} references in file content are substituted.
-func readJobFiles(dir string, vars map[string]string) ([]cron.Job, error) {
+// It also returns per-job notification configs keyed by job ID.
+func readJobFiles(dir string, vars map[string]string) ([]cron.Job, map[string]notify.Config, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var jobs []cron.Job
+	notifyConfigs := make(map[string]notify.Config)
 	for _, f := range files {
 		id := strings.TrimSuffix(filepath.Base(f), ".yaml")
 		if err := cron.ValidateID(id); err != nil {
-			return nil, fmt.Errorf("invalid job file %s: %w", filepath.Base(f), err)
+			return nil, nil, fmt.Errorf("invalid job file %s: %w", filepath.Base(f), err)
 		}
 
 		data, err := os.ReadFile(f)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", filepath.Base(f), err)
+			return nil, nil, fmt.Errorf("reading %s: %w", filepath.Base(f), err)
 		}
 
 		content := string(data)
 		if vars != nil {
 			content, err = envsubst.Substitute(content, vars)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", filepath.Base(f), err)
+				return nil, nil, fmt.Errorf("%s: %w", filepath.Base(f), err)
 			}
 		}
 
 		var jf jobFile
 		if err := yaml.Unmarshal([]byte(content), &jf); err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", filepath.Base(f), err)
+			return nil, nil, fmt.Errorf("parsing %s: %w", filepath.Base(f), err)
 		}
 
 		if jf.Name == "" {
-			return nil, fmt.Errorf("%s: name is required", filepath.Base(f))
+			return nil, nil, fmt.Errorf("%s: name is required", filepath.Base(f))
 		}
 		if jf.Schedule == "" {
-			return nil, fmt.Errorf("%s: schedule is required", filepath.Base(f))
+			return nil, nil, fmt.Errorf("%s: schedule is required", filepath.Base(f))
 		}
 		if jf.Command == "" {
-			return nil, fmt.Errorf("%s: command is required", filepath.Base(f))
+			return nil, nil, fmt.Errorf("%s: command is required", filepath.Base(f))
 		}
 
 		cronExpr := cron.HumanToCron(jf.Schedule)
 		if err := cron.ValidateCron(cronExpr); err != nil {
-			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), jf.Schedule, err)
+			return nil, nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), jf.Schedule, err)
 		}
 
 		jobs = append(jobs, yamlToJob(id, cronExpr, jf))
+
+		if len(jf.OnFailure) > 0 || len(jf.OnSuccess) > 0 {
+			notifyConfigs[id] = notify.Config{
+				OnFailure: jf.OnFailure,
+				OnSuccess: jf.OnSuccess,
+			}
+		}
 	}
 
-	return jobs, nil
+	return jobs, notifyConfigs, nil
 }
 
 func yamlToJob(id, schedule string, jf jobFile) cron.Job {
@@ -219,6 +244,38 @@ func jobNeedsUpdate(existing, incoming cron.Job) bool {
 		existing.Tag != incoming.Tag ||
 		existing.TagColor != incoming.TagColor ||
 		existing.Project != incoming.Project
+}
+
+// syncNotifyConfigs writes per-job notification config files.
+// Per-job settings override global defaults.
+func syncNotifyConfigs(jobs []cron.Job, perJob map[string]notify.Config, global config.NotificationConfig) error {
+	globalNotify := notify.Config{
+		OnFailure: configActionsToNotify(global.OnFailure),
+		OnSuccess: configActionsToNotify(global.OnSuccess),
+	}
+
+	for _, j := range jobs {
+		cfg, ok := perJob[j.ID]
+		if !ok {
+			cfg = globalNotify
+		}
+		if err := notify.WriteJobConfig(j.ID, j.Schedule, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func configActionsToNotify(actions []config.NotificationAction) []notify.Action {
+	result := make([]notify.Action, len(actions))
+	for i, a := range actions {
+		result[i] = notify.Action{
+			Type: a.Type,
+			URL:  a.URL,
+			Run:  a.Run,
+		}
+	}
+	return result
 }
 
 // resolveBackend creates the appropriate backend for the sync target.

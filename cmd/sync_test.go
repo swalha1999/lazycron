@@ -28,7 +28,7 @@ schedule: "0 0 * * 0"
 command: logrotate /etc/logrotate.conf
 `)
 
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestReadJobFiles_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, "bad-job.yaml", `not: valid: yaml: [`)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
@@ -81,7 +81,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for uppercase filename")
 	}
@@ -94,7 +94,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for missing name")
 	}
@@ -102,7 +102,7 @@ command: echo hi
 
 func TestReadJobFiles_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -120,7 +120,7 @@ command: echo off
 enabled: false
 `)
 
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -148,7 +148,7 @@ command: pg_dump -h ${DB_HOST} ${DB_NAME}
 		"DB_NAME": "appdb",
 	}
 
-	jobs, err := readJobFiles(dir, vars)
+	jobs, _, err := readJobFiles(dir, vars)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -172,7 +172,7 @@ command: pg_dump -h ${DB_HOST} ${DB_NAME}
 
 	vars := map[string]string{"DB_HOST": "localhost"}
 
-	_, err := readJobFiles(dir, vars)
+	_, _, err := readJobFiles(dir, vars)
 	if err == nil {
 		t.Fatal("expected error for undefined variable")
 	}
@@ -188,7 +188,7 @@ command: echo ${NOT_SUBSTITUTED}
 `)
 
 	// nil vars means no substitution — ${...} is preserved as-is.
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -302,6 +302,68 @@ func TestJobNeedsUpdate_ScheduleChange(t *testing.T) {
 	b := cron.Job{Name: "A", Schedule: "0 3 * * *", Command: "echo", Enabled: true}
 	if !jobNeedsUpdate(a, b) {
 		t.Error("different schedule should need update")
+	}
+}
+
+// --- notification config in job files ---
+
+func TestReadJobFiles_WithNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "db-backup.yaml", `
+name: Database Backup
+schedule: "0 3 * * *"
+command: pg_dump mydb
+on_failure:
+  - type: webhook
+    url: "https://hooks.slack.com/test"
+  - type: command
+    run: "notify-send 'lazycron' '{{.JobName}} failed'"
+on_success:
+  - type: desktop
+`)
+
+	jobs, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+
+	cfg, ok := notifyCfgs["db-backup"]
+	if !ok {
+		t.Fatal("expected notification config for db-backup")
+	}
+	if len(cfg.OnFailure) != 2 {
+		t.Fatalf("expected 2 on_failure actions, got %d", len(cfg.OnFailure))
+	}
+	if cfg.OnFailure[0].Type != "webhook" || cfg.OnFailure[0].URL != "https://hooks.slack.com/test" {
+		t.Errorf("on_failure[0] = %+v", cfg.OnFailure[0])
+	}
+	if cfg.OnFailure[1].Type != "command" {
+		t.Errorf("on_failure[1].type = %q", cfg.OnFailure[1].Type)
+	}
+	if len(cfg.OnSuccess) != 1 || cfg.OnSuccess[0].Type != "desktop" {
+		t.Errorf("on_success = %+v", cfg.OnSuccess)
+	}
+}
+
+func TestReadJobFiles_WithoutNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "simple-job.yaml", `
+name: Simple Job
+schedule: "* * * * *"
+command: echo hello
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if len(notifyCfgs) != 0 {
+		t.Errorf("expected no notification configs, got %d", len(notifyCfgs))
 	}
 }
 

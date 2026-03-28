@@ -44,7 +44,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no jobs directory found at %s", jobsDir)
 	}
 
-	incoming, err := readJobFiles(jobsDir, nil)
+	incoming, _, err := readJobFiles(jobsDir, nil)
 	if err != nil {
 		return err
 	}
