@@ -85,7 +85,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	remoteScriptsDir := lcDir + "/scripts"
 
 	// Ensure scripts directory exists on remote.
-	if _, err := b.client.Run("mkdir -p " + remoteScriptsDir); err != nil {
+	if _, err := b.client.Run("mkdir -p " + shellQuote(remoteScriptsDir)); err != nil {
 		return fmt.Errorf("create scripts dir: %w", err)
 	}
 
@@ -224,7 +224,7 @@ func (b *RemoteBackend) EnsureRecordScript() error {
 
 	// Create directories
 	_, err = b.client.Run(fmt.Sprintf("mkdir -p %s/bin %s/history %s/scripts",
-		lcDir, lcDir, lcDir))
+		shellQuote(lcDir), shellQuote(lcDir), shellQuote(lcDir)))
 	if err != nil {
 		return fmt.Errorf("create dirs: %w", err)
 	}
