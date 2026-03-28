@@ -28,7 +28,7 @@ schedule: "0 0 * * 0"
 command: logrotate /etc/logrotate.conf
 `)
 
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestReadJobFiles_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, "bad-job.yaml", `not: valid: yaml: [`)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
@@ -81,7 +81,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for uppercase filename")
 	}
@@ -94,7 +94,7 @@ schedule: "* * * * *"
 command: echo hi
 `)
 
-	_, err := readJobFiles(dir, nil)
+	_, _, err := readJobFiles(dir, nil)
 	if err == nil {
 		t.Fatal("expected error for missing name")
 	}
@@ -102,7 +102,7 @@ command: echo hi
 
 func TestReadJobFiles_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -120,7 +120,7 @@ command: echo off
 enabled: false
 `)
 
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -148,7 +148,7 @@ command: pg_dump -h ${DB_HOST} ${DB_NAME}
 		"DB_NAME": "appdb",
 	}
 
-	jobs, err := readJobFiles(dir, vars)
+	jobs, _, err := readJobFiles(dir, vars)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -172,7 +172,7 @@ command: pg_dump -h ${DB_HOST} ${DB_NAME}
 
 	vars := map[string]string{"DB_HOST": "localhost"}
 
-	_, err := readJobFiles(dir, vars)
+	_, _, err := readJobFiles(dir, vars)
 	if err == nil {
 		t.Fatal("expected error for undefined variable")
 	}
@@ -188,7 +188,7 @@ command: echo ${NOT_SUBSTITUTED}
 `)
 
 	// nil vars means no substitution — ${...} is preserved as-is.
-	jobs, err := readJobFiles(dir, nil)
+	jobs, _, err := readJobFiles(dir, nil)
 	if err != nil {
 		t.Fatalf("readJobFiles: %v", err)
 	}
@@ -302,6 +302,150 @@ func TestJobNeedsUpdate_ScheduleChange(t *testing.T) {
 	b := cron.Job{Name: "A", Schedule: "0 3 * * *", Command: "echo", Enabled: true}
 	if !jobNeedsUpdate(a, b) {
 		t.Error("different schedule should need update")
+	}
+}
+
+// --- notification config in job files ---
+
+func TestReadJobFiles_WithNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "db-backup.yaml", `
+name: Database Backup
+schedule: "0 3 * * *"
+command: pg_dump mydb
+on_failure:
+  - type: webhook
+    url: "https://hooks.slack.com/test"
+  - type: command
+    run: "notify-send 'lazycron' '{{.JobName}} failed'"
+on_success:
+  - type: desktop
+`)
+
+	jobs, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+
+	jnc, ok := notifyCfgs["db-backup"]
+	if !ok {
+		t.Fatal("expected notification config for db-backup")
+	}
+	if !jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be true")
+	}
+	if !jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be true")
+	}
+	if len(jnc.Config.OnFailure) != 2 {
+		t.Fatalf("expected 2 on_failure actions, got %d", len(jnc.Config.OnFailure))
+	}
+	if jnc.Config.OnFailure[0].Type != "webhook" || jnc.Config.OnFailure[0].URL != "https://hooks.slack.com/test" {
+		t.Errorf("on_failure[0] = %+v", jnc.Config.OnFailure[0])
+	}
+	if jnc.Config.OnFailure[1].Type != "command" {
+		t.Errorf("on_failure[1].type = %q", jnc.Config.OnFailure[1].Type)
+	}
+	if len(jnc.Config.OnSuccess) != 1 || jnc.Config.OnSuccess[0].Type != "desktop" {
+		t.Errorf("on_success = %+v", jnc.Config.OnSuccess)
+	}
+}
+
+func TestReadJobFiles_WithoutNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	writeYAML(t, dir, "simple-job.yaml", `
+name: Simple Job
+schedule: "* * * * *"
+command: echo hello
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+	if len(notifyCfgs) != 0 {
+		t.Errorf("expected no notification configs, got %d", len(notifyCfgs))
+	}
+}
+
+func TestReadJobFiles_PartialNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	// Job that only specifies on_failure (not on_success).
+	writeYAML(t, dir, "partial-job.yaml", `
+name: Partial Job
+schedule: "0 3 * * *"
+command: echo test
+on_failure:
+  - type: webhook
+    url: "https://example.com/fail"
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+
+	jnc, ok := notifyCfgs["partial-job"]
+	if !ok {
+		t.Fatal("expected notification config for partial-job")
+	}
+
+	// Only on_failure was set, so OnFailureExplicit should be true.
+	if !jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be true")
+	}
+	// on_success was not set, so OnSuccessExplicit should be false.
+	if jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be false")
+	}
+
+	if len(jnc.Config.OnFailure) != 1 {
+		t.Errorf("expected 1 on_failure action, got %d", len(jnc.Config.OnFailure))
+	}
+	if len(jnc.Config.OnSuccess) != 0 {
+		t.Errorf("expected 0 on_success actions, got %d", len(jnc.Config.OnSuccess))
+	}
+}
+
+func TestReadJobFiles_EmptyNotificationOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	// Job that explicitly sets on_success to empty array (to disable global default).
+	writeYAML(t, dir, "disable-job.yaml", `
+name: Disable Job
+schedule: "0 3 * * *"
+command: echo test
+on_success: []
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+
+	jnc, ok := notifyCfgs["disable-job"]
+	if !ok {
+		t.Fatal("expected notification config for disable-job")
+	}
+
+	// on_success was explicitly set (to empty), so OnSuccessExplicit should be true.
+	if !jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be true (even though array is empty)")
+	}
+	// on_failure was not set.
+	if jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be false")
+	}
+
+	// The explicit empty array should be respected.
+	if len(jnc.Config.OnSuccess) != 0 {
+		t.Errorf("expected 0 on_success actions, got %d", len(jnc.Config.OnSuccess))
 	}
 }
 

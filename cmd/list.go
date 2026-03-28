@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/cron"
+	"github.com/swalha1999/lazycron/notify"
 )
 
 var listCmd = &cobra.Command{
@@ -44,6 +45,10 @@ func runList(cmd *cobra.Command, args []string) error {
 		if !job.Enabled {
 			status = "disabled"
 		}
+		name := job.Name
+		if notify.HasJobConfig(job.ID) {
+			name += " \U0001F514"
+		}
 		cmdStr := job.Command
 		if len(cmdStr) > 60 {
 			cmdStr = cmdStr[:57] + "..."
@@ -52,7 +57,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		if project == "" {
 			project = "-"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", status, job.Name, project, job.Schedule, cmdStr)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", status, name, project, job.Schedule, cmdStr)
 	}
 
 	return w.Flush()

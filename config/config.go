@@ -17,9 +17,23 @@ type ServerConfig struct {
 	UseAgent bool   `yaml:"use_agent,omitempty"`
 }
 
+// NotificationAction represents a single notification action in config.
+type NotificationAction struct {
+	Type string `yaml:"type"`            // "webhook", "command", "desktop"
+	URL  string `yaml:"url,omitempty"`   // for webhook type
+	Run  string `yaml:"run,omitempty"`   // for command type
+}
+
+// NotificationConfig holds global default notification settings.
+type NotificationConfig struct {
+	OnFailure []NotificationAction `yaml:"on_failure,omitempty"`
+	OnSuccess []NotificationAction `yaml:"on_success,omitempty"`
+}
+
 // Config is the top-level configuration structure.
 type Config struct {
-	Servers []ServerConfig `yaml:"servers"`
+	Servers       []ServerConfig  `yaml:"servers"`
+	Notifications NotificationConfig `yaml:"notifications,omitempty"`
 }
 
 // configPath returns the path to ~/.lazycron/config.yml.
