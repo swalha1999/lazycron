@@ -3,7 +3,6 @@ package envsubst
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -39,25 +38,26 @@ func TestSubstitute_NoVars(t *testing.T) {
 func TestSubstitute_UndefinedVar(t *testing.T) {
 	vars := map[string]string{"DB_HOST": "localhost"}
 	input := "pg_dump -h ${DB_HOST} ${DB_NAME}"
-	_, err := Substitute(input, vars)
-	if err == nil {
-		t.Fatal("expected error for undefined variable")
+	got, err := Substitute(input, vars)
+	if err != nil {
+		t.Fatalf("Substitute: %v", err)
 	}
-	if !strings.Contains(err.Error(), "DB_NAME") {
-		t.Errorf("error should mention DB_NAME: %v", err)
+	// Undefined variables should be left unchanged
+	want := "pg_dump -h localhost ${DB_NAME}"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
 func TestSubstitute_MultipleUndefined(t *testing.T) {
 	input := "${A} ${B} ${C}"
-	_, err := Substitute(input, map[string]string{})
-	if err == nil {
-		t.Fatal("expected error for undefined variables")
+	got, err := Substitute(input, map[string]string{})
+	if err != nil {
+		t.Fatalf("Substitute: %v", err)
 	}
-	for _, name := range []string{"A", "B", "C"} {
-		if !strings.Contains(err.Error(), name) {
-			t.Errorf("error should mention %s: %v", name, err)
-		}
+	// Undefined variables should be left unchanged
+	if got != input {
+		t.Errorf("got %q, want %q", got, input)
 	}
 }
 
