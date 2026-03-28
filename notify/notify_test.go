@@ -96,6 +96,71 @@ func TestWriteJobConfig_RemovesFileWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestWriteJobConfig_TSVEscaping(t *testing.T) {
+	dir := t.TempDir()
+	origDir := NotifyDir
+	NotifyDir = func() string { return dir }
+	defer func() { NotifyDir = origDir }()
+
+	// Test with special characters that need escaping in TSV format.
+	cfg := Config{
+		OnFailure: []Action{
+			{Type: "webhook", URL: "https://example.com/hook?tab=\there&newline=\nvalue"},
+			{Type: "command", Run: "echo 'Line1\nLine2\tTab'"},
+		},
+		OnSuccess: []Action{
+			{Type: "desktop", Run: "Message with\ttab and\nnewline and\\backslash"},
+		},
+	}
+
+	if err := WriteJobConfig("escape-test", "0 0 * * *", cfg); err != nil {
+		t.Fatalf("WriteJobConfig: %v", err)
+	}
+
+	// Read the file and verify escaping was applied.
+	data, err := os.ReadFile(filepath.Join(dir, "escape-test.conf"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+
+	content := string(data)
+	// Should contain escaped versions, not raw special characters.
+	if !strings.Contains(content, "\\t") {
+		t.Error("expected escaped tab (\\t) in config file")
+	}
+	if !strings.Contains(content, "\\n") {
+		t.Error("expected escaped newline (\\n) in config file")
+	}
+	if !strings.Contains(content, "\\\\") {
+		t.Error("expected escaped backslash (\\\\) in config file")
+	}
+	// Should not contain raw tab or newline characters that would break TSV parsing.
+	if strings.Contains(content, "\t\t") {
+		t.Error("found unescaped consecutive tabs in config file")
+	}
+}
+
+func TestEscapeTSV(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"simple", "simple"},
+		{"with\ttab", "with\\ttab"},
+		{"with\nnewline", "with\\nnewline"},
+		{"with\rcarriage", "with\\rcarriage"},
+		{"with\\backslash", "with\\\\backslash"},
+		{"complex\t\n\r\\mix", "complex\\t\\n\\r\\\\mix"},
+	}
+
+	for _, tt := range tests {
+		got := escapeTSV(tt.input)
+		if got != tt.expected {
+			t.Errorf("escapeTSV(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
 func TestHasJobConfig(t *testing.T) {
 	dir := t.TempDir()
 	origDir := NotifyDir

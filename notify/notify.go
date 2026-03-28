@@ -102,12 +102,21 @@ func WriteJobConfig(jobID, schedule string, cfg Config) error {
 func writeActionLine(b *strings.Builder, event string, a Action) {
 	switch a.Type {
 	case "webhook":
-		fmt.Fprintf(b, "%s\twebhook\t%s\n", event, a.URL)
+		fmt.Fprintf(b, "%s\twebhook\t%s\n", event, escapeTSV(a.URL))
 	case "command":
-		fmt.Fprintf(b, "%s\tcommand\t%s\n", event, a.Run)
+		fmt.Fprintf(b, "%s\tcommand\t%s\n", event, escapeTSV(a.Run))
 	case "desktop":
-		fmt.Fprintf(b, "%s\tdesktop\t%s\n", event, a.Run)
+		fmt.Fprintf(b, "%s\tdesktop\t%s\n", event, escapeTSV(a.Run))
 	}
+}
+
+// escapeTSV escapes tabs, newlines, carriage returns, and backslashes for TSV format.
+func escapeTSV(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\t", "\\t")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	return s
 }
 
 // RemoveJobConfig removes a job's notification config file.
@@ -117,17 +126,6 @@ func RemoveJobConfig(jobID string) error {
 		return nil
 	}
 	return err
-}
-
-// SyncConfigs writes notification config files for jobs that have them,
-// and removes orphaned config files for jobs that no longer exist.
-func SyncConfigs(jobConfigs map[string]struct{ Schedule string; Cfg Config }) error {
-	for jobID, jc := range jobConfigs {
-		if err := WriteJobConfig(jobID, jc.Schedule, jc.Cfg); err != nil {
-			return fmt.Errorf("write notify config for %s: %w", jobID, err)
-		}
-	}
-	return nil
 }
 
 // Send dispatches notifications for a completed job from Go code.

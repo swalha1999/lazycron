@@ -331,21 +331,27 @@ on_success:
 		t.Fatalf("expected 1 job, got %d", len(jobs))
 	}
 
-	cfg, ok := notifyCfgs["db-backup"]
+	jnc, ok := notifyCfgs["db-backup"]
 	if !ok {
 		t.Fatal("expected notification config for db-backup")
 	}
-	if len(cfg.OnFailure) != 2 {
-		t.Fatalf("expected 2 on_failure actions, got %d", len(cfg.OnFailure))
+	if !jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be true")
 	}
-	if cfg.OnFailure[0].Type != "webhook" || cfg.OnFailure[0].URL != "https://hooks.slack.com/test" {
-		t.Errorf("on_failure[0] = %+v", cfg.OnFailure[0])
+	if !jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be true")
 	}
-	if cfg.OnFailure[1].Type != "command" {
-		t.Errorf("on_failure[1].type = %q", cfg.OnFailure[1].Type)
+	if len(jnc.Config.OnFailure) != 2 {
+		t.Fatalf("expected 2 on_failure actions, got %d", len(jnc.Config.OnFailure))
 	}
-	if len(cfg.OnSuccess) != 1 || cfg.OnSuccess[0].Type != "desktop" {
-		t.Errorf("on_success = %+v", cfg.OnSuccess)
+	if jnc.Config.OnFailure[0].Type != "webhook" || jnc.Config.OnFailure[0].URL != "https://hooks.slack.com/test" {
+		t.Errorf("on_failure[0] = %+v", jnc.Config.OnFailure[0])
+	}
+	if jnc.Config.OnFailure[1].Type != "command" {
+		t.Errorf("on_failure[1].type = %q", jnc.Config.OnFailure[1].Type)
+	}
+	if len(jnc.Config.OnSuccess) != 1 || jnc.Config.OnSuccess[0].Type != "desktop" {
+		t.Errorf("on_success = %+v", jnc.Config.OnSuccess)
 	}
 }
 
@@ -364,6 +370,82 @@ command: echo hello
 	}
 	if len(notifyCfgs) != 0 {
 		t.Errorf("expected no notification configs, got %d", len(notifyCfgs))
+	}
+}
+
+func TestReadJobFiles_PartialNotifications(t *testing.T) {
+	dir := t.TempDir()
+
+	// Job that only specifies on_failure (not on_success).
+	writeYAML(t, dir, "partial-job.yaml", `
+name: Partial Job
+schedule: "0 3 * * *"
+command: echo test
+on_failure:
+  - type: webhook
+    url: "https://example.com/fail"
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+
+	jnc, ok := notifyCfgs["partial-job"]
+	if !ok {
+		t.Fatal("expected notification config for partial-job")
+	}
+
+	// Only on_failure was set, so OnFailureExplicit should be true.
+	if !jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be true")
+	}
+	// on_success was not set, so OnSuccessExplicit should be false.
+	if jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be false")
+	}
+
+	if len(jnc.Config.OnFailure) != 1 {
+		t.Errorf("expected 1 on_failure action, got %d", len(jnc.Config.OnFailure))
+	}
+	if len(jnc.Config.OnSuccess) != 0 {
+		t.Errorf("expected 0 on_success actions, got %d", len(jnc.Config.OnSuccess))
+	}
+}
+
+func TestReadJobFiles_EmptyNotificationOverride(t *testing.T) {
+	dir := t.TempDir()
+
+	// Job that explicitly sets on_success to empty array (to disable global default).
+	writeYAML(t, dir, "disable-job.yaml", `
+name: Disable Job
+schedule: "0 3 * * *"
+command: echo test
+on_success: []
+`)
+
+	_, notifyCfgs, err := readJobFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("readJobFiles: %v", err)
+	}
+
+	jnc, ok := notifyCfgs["disable-job"]
+	if !ok {
+		t.Fatal("expected notification config for disable-job")
+	}
+
+	// on_success was explicitly set (to empty), so OnSuccessExplicit should be true.
+	if !jnc.OnSuccessExplicit {
+		t.Error("expected OnSuccessExplicit to be true (even though array is empty)")
+	}
+	// on_failure was not set.
+	if jnc.OnFailureExplicit {
+		t.Error("expected OnFailureExplicit to be false")
+	}
+
+	// The explicit empty array should be respected.
+	if len(jnc.Config.OnSuccess) != 0 {
+		t.Errorf("expected 0 on_success actions, got %d", len(jnc.Config.OnSuccess))
 	}
 }
 

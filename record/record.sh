@@ -58,9 +58,11 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
 } > "$DIR/${STAMP}_${JOB_ID}.json"
 
 # Send notifications (if configured for this job).
+# Pass history file path instead of full output to avoid ARG_MAX limits.
 NOTIFY_BIN="$HOME/.lazycron/bin/notify"
+HISTORY_FILE="$DIR/${STAMP}_${JOB_ID}.json"
 if [ -x "$NOTIFY_BIN" ]; then
-  "$NOTIFY_BIN" "$JOB_ID" "$JOB" "$EXIT" "$OUTPUT" >/dev/null 2>&1 || true
+  "$NOTIFY_BIN" "$JOB_ID" "$JOB" "$EXIT" "$HISTORY_FILE" >/dev/null 2>&1 || true
 fi
 
 # One-shot jobs: disable the crontab entry after execution

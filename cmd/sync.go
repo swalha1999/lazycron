@@ -39,16 +39,24 @@ func init() {
 
 // jobFile is the YAML structure for a job definition file.
 type jobFile struct {
-	Name      string           `yaml:"name"`
-	Schedule  string           `yaml:"schedule"`
-	Command   string           `yaml:"command"`
-	Project   string           `yaml:"project,omitempty"`
-	Tag       string           `yaml:"tag,omitempty"`
-	TagColor  string           `yaml:"tag_color,omitempty"`
-	Enabled   *bool            `yaml:"enabled,omitempty"`
-	Once      bool             `yaml:"once,omitempty"`
-	OnFailure []notify.Action  `yaml:"on_failure,omitempty"`
-	OnSuccess []notify.Action  `yaml:"on_success,omitempty"`
+	Name      string            `yaml:"name"`
+	Schedule  string            `yaml:"schedule"`
+	Command   string            `yaml:"command"`
+	Project   string            `yaml:"project,omitempty"`
+	Tag       string             `yaml:"tag,omitempty"`
+	TagColor  string            `yaml:"tag_color,omitempty"`
+	Enabled   *bool             `yaml:"enabled,omitempty"`
+	Once      bool              `yaml:"once,omitempty"`
+	OnFailure *[]notify.Action  `yaml:"on_failure,omitempty"`
+	OnSuccess *[]notify.Action  `yaml:"on_success,omitempty"`
+}
+
+// jobNotifyConfig represents a per-job notification config with flags
+// indicating which fields were explicitly set in the YAML.
+type jobNotifyConfig struct {
+	Config              notify.Config
+	OnFailureExplicit   bool
+	OnSuccessExplicit   bool
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -124,14 +132,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 // The filename (minus .yaml) is used as the job ID.
 // If vars is non-nil, ${VAR} references in file content are substituted.
 // It also returns per-job notification configs keyed by job ID.
-func readJobFiles(dir string, vars map[string]string) ([]cron.Job, map[string]notify.Config, error) {
+func readJobFiles(dir string, vars map[string]string) ([]cron.Job, map[string]jobNotifyConfig, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var jobs []cron.Job
-	notifyConfigs := make(map[string]notify.Config)
+	notifyConfigs := make(map[string]jobNotifyConfig)
 	for _, f := range files {
 		id := strings.TrimSuffix(filepath.Base(f), ".yaml")
 		if err := cron.ValidateID(id); err != nil {
@@ -173,11 +181,18 @@ func readJobFiles(dir string, vars map[string]string) ([]cron.Job, map[string]no
 
 		jobs = append(jobs, yamlToJob(id, cronExpr, jf))
 
-		if len(jf.OnFailure) > 0 || len(jf.OnSuccess) > 0 {
-			notifyConfigs[id] = notify.Config{
-				OnFailure: jf.OnFailure,
-				OnSuccess: jf.OnSuccess,
+		// Store per-job notification config if any field is explicitly set.
+		if jf.OnFailure != nil || jf.OnSuccess != nil {
+			jnc := jobNotifyConfig{}
+			if jf.OnFailure != nil {
+				jnc.Config.OnFailure = *jf.OnFailure
+				jnc.OnFailureExplicit = true
 			}
+			if jf.OnSuccess != nil {
+				jnc.Config.OnSuccess = *jf.OnSuccess
+				jnc.OnSuccessExplicit = true
+			}
+			notifyConfigs[id] = jnc
 		}
 	}
 
@@ -247,18 +262,31 @@ func jobNeedsUpdate(existing, incoming cron.Job) bool {
 }
 
 // syncNotifyConfigs writes per-job notification config files.
-// Per-job settings override global defaults.
-func syncNotifyConfigs(jobs []cron.Job, perJob map[string]notify.Config, global config.NotificationConfig) error {
+// Per-job settings are merged with global defaults field-by-field.
+// If a job explicitly sets on_failure or on_success, that field overrides
+// the global default for that field only. This allows jobs to override
+// individual notification types while preserving others from the global config.
+func syncNotifyConfigs(jobs []cron.Job, perJob map[string]jobNotifyConfig, global config.NotificationConfig) error {
 	globalNotify := notify.Config{
 		OnFailure: configActionsToNotify(global.OnFailure),
 		OnSuccess: configActionsToNotify(global.OnSuccess),
 	}
 
 	for _, j := range jobs {
-		cfg, ok := perJob[j.ID]
-		if !ok {
-			cfg = globalNotify
+		// Start with global defaults.
+		cfg := globalNotify
+
+		// Merge per-job config with global defaults field-by-field.
+		if jobCfg, ok := perJob[j.ID]; ok {
+			// Override only the fields that were explicitly set in the job YAML.
+			if jobCfg.OnFailureExplicit {
+				cfg.OnFailure = jobCfg.Config.OnFailure
+			}
+			if jobCfg.OnSuccessExplicit {
+				cfg.OnSuccess = jobCfg.Config.OnSuccess
+			}
 		}
+
 		if err := notify.WriteJobConfig(j.ID, j.Schedule, cfg); err != nil {
 			return err
 		}
