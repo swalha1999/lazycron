@@ -12,22 +12,17 @@ import (
 var varPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // Substitute replaces all ${VAR} references in content using the provided
-// variable map. Returns an error if any referenced variable is not defined.
+// variable map. Variables not found in the map are left unchanged (allowing
+// bash variables and other runtime variables to pass through).
 func Substitute(content string, vars map[string]string) (string, error) {
-	var missing []string
-
 	result := varPattern.ReplaceAllStringFunc(content, func(match string) string {
 		name := varPattern.FindStringSubmatch(match)[1]
 		if val, ok := vars[name]; ok {
 			return val
 		}
-		missing = append(missing, name)
+		// Leave undefined variables unchanged (e.g., bash variables)
 		return match
 	})
-
-	if len(missing) > 0 {
-		return "", fmt.Errorf("undefined variables: %s", strings.Join(missing, ", "))
-	}
 
 	return result, nil
 }
