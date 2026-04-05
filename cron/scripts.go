@@ -35,7 +35,7 @@ func WriteScript(jobID, command string) error {
 // ScriptPreamble is the profile-sourcing block prepended to every script.
 const ScriptPreamble = "# Source user profile for PATH and environment variables.\n" +
 	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
-	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null\n" +
+	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null || true\n" +
 	"done\n" +
 	"unset __lc_rc\n"
 
