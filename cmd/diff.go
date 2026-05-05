@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
 )
 
@@ -19,38 +20,49 @@ var diffCmd = &cobra.Command{
 
 var (
 	diffServer   string
-	diffDir      string
+	diffProject  string
 	diffQuiet    bool
 	diffExitCode bool
 )
 
 func init() {
 	diffCmd.Flags().StringVarP(&diffServer, "server", "s", "", "target server name from config")
-	diffCmd.Flags().StringVar(&diffDir, "dir", "", "path to .lazycron directory (default: ./.lazycron)")
+	diffCmd.Flags().StringVar(&diffProject, "project", "", "project name (overrides .lazycron/config.yaml)")
 	diffCmd.Flags().BoolVarP(&diffQuiet, "quiet", "q", false, "only show changes, hide unchanged jobs")
 	diffCmd.Flags().BoolVar(&diffExitCode, "exit-code", false, "exit with code 1 if there are changes")
 	rootCmd.AddCommand(diffCmd)
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
-	dir := diffDir
-	if dir == "" {
-		dir = ".lazycron"
-	}
-	jobsDir := filepath.Join(dir, "jobs")
-
-	info, err := os.Stat(jobsDir)
-	if err != nil || !info.IsDir() {
-		return fmt.Errorf("no jobs directory found at %s", jobsDir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
 	}
 
-	incoming, err := readJobFiles(jobsDir, nil)
+	jobsDir := filepath.Join(cwd, ".sandcastle", "jobs")
+	if info, err := os.Stat(jobsDir); err != nil || !info.IsDir() {
+		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s", jobsDir)
+	}
+
+	pcfg, err := config.LoadProjectConfig(filepath.Join(cwd, ".lazycron"))
+	if err != nil {
+		return err
+	}
+	projectName := config.ResolveProjectName(diffProject, pcfg, cwd)
+
+	incoming, err := readSandcastleJobs(jobsDir, projectName)
 	if err != nil {
 		return err
 	}
 	if len(incoming) == 0 {
-		fmt.Printf("No job files found in %s\n", jobsDir)
+		fmt.Printf("No .ts files found in %s\n", jobsDir)
 		return nil
+	}
+
+	// Apply the same project-cd wrap that sync would, so the comparison is fair.
+	projectDir := remoteProjectPath(diffServer, projectName, cwd)
+	for i := range incoming {
+		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
 	}
 
 	b, err := resolveBackend(diffServer)
@@ -98,7 +110,7 @@ type diffEntry struct {
 	Changes []fieldChange
 }
 
-// computeDiff compares existing crontab jobs with incoming YAML jobs.
+// computeDiff compares existing crontab jobs with incoming TS-derived jobs.
 func computeDiff(existing, incoming []cron.Job) []diffEntry {
 	existingByID := make(map[string]cron.Job, len(existing))
 	for _, j := range existing {

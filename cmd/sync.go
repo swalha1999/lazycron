@@ -4,77 +4,78 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
-	"github.com/swalha1999/lazycron/envsubst"
 	"github.com/swalha1999/lazycron/record"
 	sshclient "github.com/swalha1999/lazycron/ssh"
-	"gopkg.in/yaml.v3"
+	"github.com/swalha1999/lazycron/template"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync job definitions from .lazycron/jobs/ to the crontab",
-	Long:  "Reads YAML job files from .lazycron/jobs/ in the current directory and creates or updates matching cron jobs.",
-	RunE:  runSync,
+	Short: "Sync sandcastle agent jobs to crontab and (optionally) a remote machine",
+	Long: "Reads .sandcastle/jobs/*.ts in the current directory, derives cron entries " +
+		"from each file's `export const cron`/`export const name` metadata, and installs " +
+		"them on the local crontab or — with --server — on a remote machine. When --server " +
+		"is set, also tars and ships .lazycron/ and .sandcastle/ to the remote, builds the " +
+		"sandcastle Docker image there, and rewrites each job's command to run inside the " +
+		"project's remote directory.",
+	RunE: runSync,
 }
 
 var (
-	syncServer string
-	syncDir    string
-	syncVars   []string
+	syncServer       string
+	syncProject      string
+	syncNoEnv        bool
+	syncNoFiles      bool
+	syncNoBuild      bool
+	syncSkipDepsChk  bool
 )
 
 func init() {
 	syncCmd.Flags().StringVarP(&syncServer, "server", "s", "", "target server name from config")
-	syncCmd.Flags().StringVar(&syncDir, "dir", "", "path to .lazycron directory (default: ./.lazycron)")
-	syncCmd.Flags().StringArrayVar(&syncVars, "var", nil, "variable substitution in KEY=VALUE format (can be repeated)")
+	syncCmd.Flags().StringVar(&syncProject, "project", "", "project name (overrides .lazycron/config.yaml; defaults to cwd basename)")
+	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env or .sandcastle/.env to the remote")
+	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ or .sandcastle/ files (crontab only)")
+	syncCmd.Flags().BoolVar(&syncNoBuild, "no-build", false, "do NOT run `npx sandcastle build-image` after transferring files")
+	syncCmd.Flags().BoolVar(&syncSkipDepsChk, "skip-deps-check", false, "skip the docker/node/npx presence check on the target")
 	rootCmd.AddCommand(syncCmd)
 }
 
-// jobFile is the YAML structure for a job definition file.
-type jobFile struct {
-	Name     string `yaml:"name"`
-	Schedule string `yaml:"schedule"`
-	Command  string `yaml:"command"`
-	Project  string `yaml:"project,omitempty"`
-	Tag      string `yaml:"tag,omitempty"`
-	TagColor string `yaml:"tag_color,omitempty"`
-	Enabled  *bool  `yaml:"enabled,omitempty"`
-	Once     bool   `yaml:"once,omitempty"`
-}
-
 func runSync(cmd *cobra.Command, args []string) error {
-	// Resolve jobs directory.
-	dir := syncDir
-	if dir == "" {
-		dir = ".lazycron"
-	}
-	jobsDir := filepath.Join(dir, "jobs")
-
-	info, err := os.Stat(jobsDir)
-	if err != nil || !info.IsDir() {
-		return fmt.Errorf("no jobs directory found at %s", jobsDir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
 	}
 
-	// Build variable map for substitution.
-	envFile := filepath.Join(dir, ".env")
-	vars, err := envsubst.BuildVarMap(syncVars, envFile)
+	// Resolve project layout.
+	lazycronDir := filepath.Join(cwd, ".lazycron")
+	sandcastleDir := filepath.Join(cwd, ".sandcastle")
+	jobsDir := filepath.Join(sandcastleDir, "jobs")
+
+	if _, err := os.Stat(jobsDir); err != nil {
+		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron init --with-agents` first", jobsDir)
+	}
+
+	// Resolve project name (--project > config.yaml > cwd basename).
+	pcfg, err := config.LoadProjectConfig(lazycronDir)
 	if err != nil {
 		return err
 	}
+	projectName := config.ResolveProjectName(syncProject, pcfg, cwd)
 
-	// Read YAML job files.
-	incoming, err := readJobFiles(jobsDir, vars)
+	// Read TS jobs.
+	incoming, err := readSandcastleJobs(jobsDir, projectName)
 	if err != nil {
 		return err
 	}
 	if len(incoming) == 0 {
-		fmt.Printf("No job files found in %s\n", jobsDir)
+		fmt.Printf("No .ts files found in %s\n", jobsDir)
 		return nil
 	}
 
@@ -84,6 +85,61 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer b.Close()
+
+	// Deps check on the target (where cron will fire).
+	if !syncSkipDepsChk {
+		missing, err := b.CheckAgentDeps()
+		if err != nil {
+			return fmt.Errorf("check agent deps: %w", err)
+		}
+		if len(missing) > 0 {
+			target := "this machine"
+			if syncServer != "" {
+				target = syncServer
+			}
+			return fmt.Errorf(
+				"sandcastle agents need {docker, node, npx} on %s but the following are missing: %s. "+
+					"Install Docker (https://docker.com) and Node 20+ (https://nodejs.org). "+
+					"Use --skip-deps-check to override.",
+				target, strings.Join(missing, ", "),
+			)
+		}
+	}
+
+	// Transfer files (only if remote and --no-files not set).
+	if syncServer != "" && !syncNoFiles {
+		excludesLazycron := []string{}
+		excludesSandcastle := []string{"./node_modules", "./logs"}
+		if syncNoEnv {
+			excludesLazycron = append(excludesLazycron, "./.env")
+			excludesSandcastle = append(excludesSandcastle, "./.env")
+		}
+
+		if _, err := os.Stat(lazycronDir); err == nil {
+			fmt.Printf("Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", syncServer, projectName)
+			if err := b.CopyProjectFiles(lazycronDir, projectName+"/.lazycron", excludesLazycron); err != nil {
+				return fmt.Errorf("copy .lazycron/: %w", err)
+			}
+		}
+		fmt.Printf("Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", syncServer, projectName)
+		if err := b.CopyProjectFiles(sandcastleDir, projectName+"/.sandcastle", excludesSandcastle); err != nil {
+			return fmt.Errorf("copy .sandcastle/: %w", err)
+		}
+	}
+
+	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
+	if !syncNoBuild {
+		fmt.Println("Building sandcastle image...")
+		if err := b.RunInProject(projectName, "npx sandcastle build-image", os.Stdout, os.Stderr); err != nil {
+			return fmt.Errorf("build sandcastle image: %w", err)
+		}
+	}
+
+	// Inject `cd <project-dir>` into each command (lands inside the wrapped script body).
+	projectDir := remoteProjectPath(syncServer, projectName, cwd)
+	for i := range incoming {
+		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
+	}
 
 	// Read existing jobs.
 	existing, err := b.ReadJobs()
@@ -104,84 +160,72 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// readJobFiles reads all .yaml files from dir and returns them as cron.Jobs.
-// The filename (minus .yaml) is used as the job ID.
-// If vars is non-nil, ${VAR} references in file content are substituted.
-func readJobFiles(dir string, vars map[string]string) ([]cron.Job, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+// readSandcastleJobs walks .sandcastle/jobs/*.ts, parses metadata from each
+// file, and returns one cron.Job per file. Files that fail to parse are
+// reported with their filenames and stop the sync (better than silently
+// shipping a partial set).
+func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
+	files, err := filepath.Glob(filepath.Join(jobsDir, "*.ts"))
 	if err != nil {
 		return nil, err
 	}
+	sort.Strings(files)
 
 	var jobs []cron.Job
 	for _, f := range files {
-		id := strings.TrimSuffix(filepath.Base(f), ".yaml")
+		id := strings.TrimSuffix(filepath.Base(f), ".ts")
 		if err := cron.ValidateID(id); err != nil {
-			return nil, fmt.Errorf("invalid job file %s: %w", filepath.Base(f), err)
+			return nil, fmt.Errorf("invalid sandcastle job filename %s: %w", filepath.Base(f), err)
 		}
 
 		data, err := os.ReadFile(f)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", filepath.Base(f), err)
+			return nil, fmt.Errorf("read %s: %w", filepath.Base(f), err)
+		}
+		meta, err := template.ParseSandcastleMeta(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", filepath.Base(f), err)
 		}
 
-		content := string(data)
-		if vars != nil {
-			content, err = envsubst.Substitute(content, vars)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", filepath.Base(f), err)
-			}
-		}
-
-		var jf jobFile
-		if err := yaml.Unmarshal([]byte(content), &jf); err != nil {
-			return nil, fmt.Errorf("parsing %s: %w", filepath.Base(f), err)
-		}
-
-		if jf.Name == "" {
-			return nil, fmt.Errorf("%s: name is required", filepath.Base(f))
-		}
-		if jf.Schedule == "" {
-			return nil, fmt.Errorf("%s: schedule is required", filepath.Base(f))
-		}
-		if jf.Command == "" {
-			return nil, fmt.Errorf("%s: command is required", filepath.Base(f))
-		}
-
-		cronExpr := cron.HumanToCron(jf.Schedule)
+		cronExpr := cron.HumanToCron(meta.Cron)
 		if err := cron.ValidateCron(cronExpr); err != nil {
-			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), jf.Schedule, err)
+			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), meta.Cron, err)
 		}
 
-		jobs = append(jobs, yamlToJob(id, cronExpr, jf))
+		jobs = append(jobs, cron.Job{
+			ID:       id,
+			Name:     meta.Name,
+			Schedule: cronExpr,
+			Command:  fmt.Sprintf("npx tsx .sandcastle/jobs/%s.ts", id),
+			Enabled:  true,
+			Wrapped:  true,
+			Tag:      meta.Tag,
+			TagColor: meta.TagColor,
+			Project:  projectName,
+		})
 	}
-
 	return jobs, nil
 }
 
-func yamlToJob(id, schedule string, jf jobFile) cron.Job {
-	enabled := true
-	if jf.Enabled != nil {
-		enabled = *jf.Enabled
+// remoteProjectPath returns the directory the cron command should `cd` into
+// before invoking the agent. Local mode uses the current working directory;
+// remote mode uses ~/.lazycron/projects/<name>/.
+func remoteProjectPath(server, projectName, cwd string) string {
+	if server == "" {
+		return cwd
 	}
-	return cron.Job{
-		ID:       id,
-		Name:     jf.Name,
-		Schedule: schedule,
-		Command:  jf.Command,
-		Enabled:  enabled,
-		Wrapped:  true,
-		Tag:      jf.Tag,
-		TagColor: jf.TagColor,
-		OneShot:  jf.Once,
-		Project:  jf.Project,
-	}
+	return "~/.lazycron/projects/" + projectName
+}
+
+// shellQuoteSingle wraps s in single quotes, escaping any embedded singles.
+// Local copy here so cmd doesn't depend on ssh-internal helpers.
+func shellQuoteSingle(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // mergeJobs merges incoming jobs into existing jobs by ID.
 // Jobs in existing that are not in incoming are preserved unchanged.
 func mergeJobs(existing, incoming []cron.Job) (merged []cron.Job, added, updated, unchanged int) {
-	// Index existing jobs by ID.
 	idxByID := make(map[string]int, len(existing))
 	for i, j := range existing {
 		if j.ID != "" {

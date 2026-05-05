@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -27,6 +28,13 @@ func (m *mockBackend) GetTimezone() (string, int, error)                        
 func (m *mockBackend) GetRunningJobs() ([]monitor.RunningJob, error)             { return nil, nil }
 func (m *mockBackend) KillJob(pid int) error                                     { return nil }
 func (m *mockBackend) Close() error                                              { m.closed = true; return nil }
+func (m *mockBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
+	return nil
+}
+func (m *mockBackend) CheckAgentDeps() ([]string, error) { return nil, nil }
+func (m *mockBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
+	return nil
+}
 
 // newTestManager creates a Manager with a mock local backend (avoids system crontab).
 func newTestManager() *Manager {

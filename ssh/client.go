@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -236,6 +238,84 @@ func (c *Client) Upload(content, path string, mode os.FileMode) error {
 
 	session.Stdin = strings.NewReader(content)
 	return session.Run(cmd)
+}
+
+// UploadDirectory tars localDir locally, streams the tarball over the SSH
+// connection's stdin, and untars into remoteDir. excludes are tar --exclude
+// patterns relative to localDir's root (e.g. "./.env"). The remote directory
+// is created if missing.
+//
+// Implementation note: we use stdin piping rather than scp/sftp to match the
+// rest of this client's transport pattern, and to avoid a binary dependency
+// on rsync. tar's --exclude form is portable across BSD and GNU tar.
+func (c *Client) UploadDirectory(localDir, remoteDir string, excludes []string) error {
+	if _, err := c.Run("mkdir -p " + shellQuoteSingle(remoteDir)); err != nil {
+		return fmt.Errorf("create remote dir: %w", err)
+	}
+
+	args := []string{"-czf", "-", "-C", localDir}
+	for _, e := range excludes {
+		args = append(args, "--exclude="+e)
+	}
+	args = append(args, ".")
+	tarCmd := exec.Command("tar", args...)
+	stdout, err := tarCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("local tar stdout pipe: %w", err)
+	}
+	var localErr bytes.Buffer
+	tarCmd.Stderr = &localErr
+	if err := tarCmd.Start(); err != nil {
+		return fmt.Errorf("start local tar: %w", err)
+	}
+
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		if err := c.Connect(); err != nil {
+			tarCmd.Process.Kill()
+			return err
+		}
+		c.mu.Lock()
+		conn = c.conn
+		c.mu.Unlock()
+	}
+
+	session, err := conn.NewSession()
+	if err != nil {
+		tarCmd.Process.Kill()
+		return fmt.Errorf("ssh session: %w", err)
+	}
+	defer session.Close()
+
+	session.Stdin = stdout
+	var remoteErr bytes.Buffer
+	session.Stderr = &remoteErr
+	session.Stdout = io.Discard
+
+	runErr := session.Run("tar -xzf - -C " + shellQuoteSingle(remoteDir))
+	tarWaitErr := tarCmd.Wait()
+
+	if tarWaitErr != nil {
+		return fmt.Errorf("local tar: %w (stderr: %s)", tarWaitErr, strings.TrimSpace(localErr.String()))
+	}
+	if runErr != nil {
+		return fmt.Errorf("remote untar: %w (stderr: %s)", runErr, strings.TrimSpace(remoteErr.String()))
+	}
+	return nil
+}
+
+// HasCommand returns true if `command -v <name>` exits zero on the remote.
+// Used to verify presence of binaries like docker/node/npx before sync.
+func (c *Client) HasCommand(name string) bool {
+	_, err := c.Run("command -v " + shellQuoteSingle(name) + " >/dev/null 2>&1")
+	return err == nil
+}
+
+// shellQuoteSingle wraps s in single quotes, escaping any embedded singles.
+func shellQuoteSingle(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // ReadFile reads a file from the remote server.

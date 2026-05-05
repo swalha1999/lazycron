@@ -96,41 +96,40 @@ lazycron templates apply "Claude Code Review"  # apply interactively
 
 You can also [create your own templates](docs/templates.md).
 
-## Sync — Jobs as Code
+## Sync — Sandcastle Agents as Code
 
-Define cron jobs as YAML files in your repo and sync them to any crontab. Version-controlled, reviewable, deployable.
+Schedule sandboxed AI agents from your repo. Lazycron pairs with [sandcastle](https://github.com/mattpocock/sandcastle) to run Claude Code in Docker containers with per-run git worktrees, then ships everything to your target machine and installs cron entries.
 
 ### Setup
 
-Create a `.lazycron/jobs/` directory in your project and add YAML files — the filename becomes the job ID:
-
-```yaml
-# .lazycron/jobs/db-backup.yaml
-name: Database Backup
-schedule: "0 3 * * *"
-command: pg_dump mydb | gzip > /backups/db_$(date +%F).sql.gz
-project: backend
-tag: DB
-tag_color: "#a6e3a1"
+```bash
+lazycron init --with-agents
 ```
 
-```yaml
-# .lazycron/jobs/log-rotate.yaml
-name: Log Rotation
-schedule: "0 0 * * 0"
-command: find /var/log/myapp -name '*.log' -mtime +7 -delete
-project: backend
+This scaffolds `.lazycron/config.yaml` and runs `npx sandcastle init` to set up `.sandcastle/` (Dockerfile, env, lib helpers).
+
+Apply an agent template:
+
+```bash
+lazycron templates apply fix-agent
+# Created .sandcastle/jobs/fix-agent.ts
 ```
+
+Each `.sandcastle/jobs/*.ts` file is self-describing — it declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions.
 
 ### Sync
 
 ```bash
-lazycron sync                        # sync to local crontab
-lazycron sync -s CronWorker          # sync to a remote server
-lazycron sync --dir /path/to/.lazycron  # custom directory
+lazycron sync                        # local crontab
+lazycron sync -s CronWorker          # remote server
+lazycron sync --no-env               # skip .env transfer
+lazycron sync --no-build             # skip docker build
+lazycron sync --skip-deps-check      # skip docker/node/npx check
 ```
 
-Sync is a **safe merge** — it only adds or updates jobs defined in the YAML files. Existing jobs created through the TUI are never deleted.
+`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npx sandcastle build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent.
+
+Sync is a **safe merge** — it only adds or updates jobs derived from `.sandcastle/jobs/*.ts`. Existing jobs created through the TUI are never deleted.
 
 Running sync again with no changes is idempotent:
 
@@ -139,38 +138,47 @@ $ lazycron sync
 Synced: 0 added, 0 updated, 2 unchanged
 ```
 
-### YAML Fields
+### TS Job Format
 
-| Field      | Required | Description                                |
-|------------|----------|--------------------------------------------|
-| `name`     | yes      | Display name for the job                   |
-| `schedule` | yes      | Cron expression or human-readable schedule |
-| `command`  | yes      | Shell command to run                       |
-| `project`  | no       | Project group for organizing jobs          |
-| `tag`      | no       | Short label displayed next to the name     |
-| `tag_color`| no       | Hex color for the tag (e.g. `"#a6e3a1"`)  |
-| `enabled`  | no       | `true` (default) or `false`                |
-| `once`     | no       | `true` for one-shot jobs                   |
+Each `.sandcastle/jobs/*.ts` file declares two metadata exports as **double-quoted string literals**:
 
-### Job IDs
+```typescript
+export const cron = "0 9 * * 1-5";
+export const name = "Fix Agent";
+export const tag = "BP";          // optional
+export const tagColor = "#f38ba8"; // optional
 
-The filename (minus `.yaml`) is the job ID. IDs must be lowercase, using only `a-z`, `0-9`, `-`, and `_`. Examples: `db-backup`, `salati_cleanup`, `log-rotate-weekly`.
+// rest of the file: imports, sandcastle.run, post-run hooks
+```
 
-Jobs created through the TUI get auto-generated hex IDs. Both formats coexist in the same crontab.
+Lazycron does **not** execute user TS at sync time — it only reads metadata. See [docs/agents.md](docs/agents.md) for the full agent lifecycle and [docs/sync.md](docs/sync.md) for the sync reference.
 
-See [docs/sync.md](docs/sync.md) for the full sync reference.
+### Project Layout
+
+```
+my-repo/
+├── .lazycron/config.yaml            # project name (and future per-project config)
+└── .sandcastle/
+    ├── Dockerfile, .env, .env.example
+    ├── lib/ensureRepo.ts            # bundled helper for clone + fetch
+    └── jobs/
+        ├── fix-agent.ts
+        └── code-quality-agent.ts
+```
 
 ## CLI
 
 ```bash
 lazycron                    # launch TUI (default)
+lazycron init               # scaffold .lazycron/ in current dir
+lazycron init --with-agents # also scaffold .sandcastle/ via npx sandcastle init
 lazycron list               # list all cron jobs
 lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
 lazycron run "backup"       # run a job by name or ID
-lazycron sync               # sync jobs from .lazycron/jobs/
-lazycron sync -s MyServer   # sync to a remote server
+lazycron sync               # sync .sandcastle/jobs/*.ts to local crontab
+lazycron sync -s MyServer   # sync to a remote server (ships files + builds image)
 lazycron templates list     # browse templates
-lazycron templates apply "Backup Database"  # apply a template
+lazycron templates apply "fix-agent"        # scaffold a sandcastle agent template
 lazycron --version          # show version
 ```
 

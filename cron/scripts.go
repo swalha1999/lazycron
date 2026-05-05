@@ -108,6 +108,55 @@ func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
+// StripProjectCd removes a leading `cd <path> && ` prefix from a command,
+// returning the stripped command and the extracted project path. If the
+// command does not begin with such a prefix, the original command is
+// returned with an empty projectPath.
+//
+// The recognised forms are produced by `lazycron sync` when injecting the
+// project working directory:
+//   - cd /home/user/.lazycron/projects/foo && rest...
+//   - cd ~/.lazycron/projects/foo && rest...
+//   - cd '/path with spaces' && rest...
+func StripProjectCd(command string) (stripped, projectPath string) {
+	if !strings.HasPrefix(command, "cd ") {
+		return command, ""
+	}
+	rest := command[len("cd "):]
+
+	var path string
+	switch {
+	case strings.HasPrefix(rest, "'"):
+		end := strings.Index(rest[1:], "'")
+		if end == -1 {
+			return command, ""
+		}
+		path = rest[1 : 1+end]
+		rest = rest[1+end+1:]
+	case strings.HasPrefix(rest, `"`):
+		end := strings.Index(rest[1:], `"`)
+		if end == -1 {
+			return command, ""
+		}
+		path = rest[1 : 1+end]
+		rest = rest[1+end+1:]
+	default:
+		sp := strings.Index(rest, " ")
+		if sp == -1 {
+			return command, ""
+		}
+		path = rest[:sp]
+		rest = rest[sp:]
+	}
+
+	rest = strings.TrimLeft(rest, " ")
+	if !strings.HasPrefix(rest, "&&") {
+		return command, ""
+	}
+	rest = strings.TrimLeft(rest[2:], " ")
+	return rest, path
+}
+
 // scriptRefMarker is the path component that identifies a lazycron script reference.
 var scriptRefMarker = filepath.Join(".lazycron", "scripts")
 

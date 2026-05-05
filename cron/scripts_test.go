@@ -171,6 +171,84 @@ func TestResolveScript_FileMissing(t *testing.T) {
 	}
 }
 
+// --- StripProjectCd ---
+
+func TestStripProjectCd(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantCmd     string
+		wantProject string
+	}{
+		{
+			name:        "tilde path",
+			input:       "cd ~/.lazycron/projects/foo && npx tsx .sandcastle/jobs/x.ts",
+			wantCmd:     "npx tsx .sandcastle/jobs/x.ts",
+			wantProject: "~/.lazycron/projects/foo",
+		},
+		{
+			name:        "absolute path",
+			input:       "cd /home/user/.lazycron/projects/foo && echo hi",
+			wantCmd:     "echo hi",
+			wantProject: "/home/user/.lazycron/projects/foo",
+		},
+		{
+			name:        "single-quoted path with spaces",
+			input:       "cd '/home/me/path with spaces' && do-thing",
+			wantCmd:     "do-thing",
+			wantProject: "/home/me/path with spaces",
+		},
+		{
+			name:        "double-quoted path",
+			input:       `cd "/var/lib/foo" && echo hi`,
+			wantCmd:     "echo hi",
+			wantProject: "/var/lib/foo",
+		},
+		{
+			name:        "no cd prefix at all",
+			input:       "echo hi",
+			wantCmd:     "echo hi",
+			wantProject: "",
+		},
+		{
+			name:        "cd without && returns original",
+			input:       "cd /tmp",
+			wantCmd:     "cd /tmp",
+			wantProject: "",
+		},
+		{
+			name:        "cd then semicolon (not &&) returns original",
+			input:       "cd /tmp; echo hi",
+			wantCmd:     "cd /tmp; echo hi",
+			wantProject: "",
+		},
+		{
+			name:        "extra whitespace around &&",
+			input:       "cd /foo   &&   echo bar",
+			wantCmd:     "echo bar",
+			wantProject: "/foo",
+		},
+		{
+			name:        "unterminated single quote returns original",
+			input:       "cd '/foo && bar",
+			wantCmd:     "cd '/foo && bar",
+			wantProject: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotCmd, gotProject := StripProjectCd(tc.input)
+			if gotCmd != tc.wantCmd {
+				t.Errorf("cmd = %q, want %q", gotCmd, tc.wantCmd)
+			}
+			if gotProject != tc.wantProject {
+				t.Errorf("project = %q, want %q", gotProject, tc.wantProject)
+			}
+		})
+	}
+}
+
 // --- ScriptPath ---
 
 func TestScriptPath(t *testing.T) {
