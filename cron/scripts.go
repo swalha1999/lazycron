@@ -39,14 +39,23 @@ func WriteScript(jobID, command string) error {
 // syntax (e.g. compdef directives in completion files) — triggers a parse
 // error that kills the script silently, before the actual command runs.
 // Bash without --posix tolerates the same parse errors and continues.
-// Order matters: login-shell rc files first (where Homebrew's shellenv and
-// most PATH setup typically lives — `eval "$(brew shellenv)"` in ~/.zprofile
-// is the official Apple Silicon install path), then interactive rc files
-// which usually only extend PATH. Without .zprofile, cron jobs that depend
-// on Homebrew binaries (node, etc.) fail with "command not found" even
-// though manual runs from a terminal work — because the terminal already
-// inherits PATH from the user's login shell.
-const ScriptPreamble = "# Source user profile for PATH and environment variables.\n" +
+// Cron starts with a stripped-down PATH. Three things rebuild the PATH a
+// user expects from their interactive shell:
+//
+//  1. macOS path_helper reads /etc/paths and /etc/paths.d/ — this is what
+//     puts /usr/local/bin (Docker Desktop, etc.) on PATH. Login shells run
+//     it via /etc/zprofile; cron does not. Guarded so Linux skips it.
+//  2. Login-shell rc files (.zprofile, .bash_profile) — where the official
+//     Apple Silicon Homebrew install puts `eval "$(brew shellenv)"`.
+//  3. Interactive rc files (.bashrc, .zshrc) — usually just extend PATH
+//     and define env vars / aliases.
+//
+// Without (1) cron jobs fail to find Docker; without (2) they fail to find
+// Homebrew binaries (node, python). Failures are silent — the user only
+// sees `command not found` even though manual runs from the TUI work,
+// because the TUI inherits PATH from the user's login shell.
+const ScriptPreamble = "# Rebuild the PATH a login shell would see (cron starts with a minimal PATH).\n" +
+	"[ -x /usr/libexec/path_helper ] && eval \"$(/usr/libexec/path_helper -s)\"\n" +
 	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bash_profile\" \"$HOME/.zprofile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
 	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null || true\n" +
 	"done\n" +
