@@ -16,9 +16,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   && rm -rf /var/lib/apt/lists/*
 
 # Rename the base image's "node" user (UID 1000) to "agent".
-# This keeps UID 1000 so that --userns=keep-id (Podman) and
-# --user 1000:1000 (Docker) map to the correct home directory owner.
 RUN usermod -d /home/agent -m -l agent node
+
+# Sandcastle's docker sandbox runs containers with `--user ${hostUid}:${hostGid}`,
+# which on macOS is the host's UID (typically 501) — NOT 1000. The container
+# therefore runs as a UID that doesn't own /home/agent, and writes to
+# .gitconfig / .npm / etc. fail with "Permission denied". Make HOME world-
+# writable so any host UID can use /home/agent as its home directory.
+RUN chmod -R 0777 /home/agent
+
 USER agent
 
 # Install Claude Code CLI
@@ -26,6 +32,12 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Add Claude to PATH
 ENV PATH="/home/agent/.local/bin:$PATH"
+
+# Re-apply 0777 so files added by the install scripts above remain writable
+# from the runtime UID.
+USER root
+RUN chmod -R 0777 /home/agent
+USER agent
 
 WORKDIR /home/agent
 
