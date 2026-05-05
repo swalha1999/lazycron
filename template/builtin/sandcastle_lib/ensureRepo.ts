@@ -40,6 +40,47 @@ export function requireEnv(...names: string[]): void {
   }
 }
 
+/**
+ * agentSandboxConfig — DockerOptions to pass into `docker(...)` so Claude
+ * Code inside the container can authenticate the same way it does on the
+ * host. Covers all three Claude auth mechanisms:
+ *
+ *   1. ANTHROPIC_API_KEY env var (API key)
+ *   2. CLAUDE_CODE_OAUTH_TOKEN env var (OAuth subscription token)
+ *   3. ~/.claude/.credentials.json file (set by `claude /login` on host)
+ *
+ * Whichever the user has, gets propagated. The host's ~/.claude is bind-
+ * mounted read-only so the agent inherits the host's login without being
+ * able to alter it. GH_TOKEN is also passed through for `gh` calls inside
+ * the sandbox.
+ */
+export function agentSandboxConfig(): {
+  env: Record<string, string>;
+  mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[];
+} {
+  const env: Record<string, string> = {};
+  for (const key of [
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "GH_TOKEN",
+  ]) {
+    const v = process.env[key];
+    if (v) env[key] = v;
+  }
+
+  const mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[] = [];
+  const claudeDir = path.join(homedir(), ".claude");
+  if (existsSync(claudeDir)) {
+    mounts.push({
+      hostPath: claudeDir,
+      sandboxPath: "/home/agent/.claude",
+      readonly: true,
+    });
+  }
+
+  return { env, mounts };
+}
+
 /** Clones the repo on first call, then fetches + resets to defaultBranch. */
 export function ensureRepo(opts: EnsureRepoOpts): string {
   if (!opts.url) {

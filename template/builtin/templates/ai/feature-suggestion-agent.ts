@@ -6,7 +6,7 @@ export const tagColor = "#f38ba8";
 
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { ensureRepo, requireEnv } from "../lib/ensureRepo";
+import { ensureRepo, requireEnv, agentSandboxConfig } from "../lib/ensureRepo";
 import { execSync } from "node:child_process";
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
@@ -28,11 +28,7 @@ if (open >= 5) {
 
 await run({
   agent: claudeCode("claude-opus-4-7"),
-  sandbox: docker({
-    env: {
-      GH_TOKEN: process.env.GH_TOKEN ?? "",
-    },
-  }),
+  sandbox: docker(agentSandboxConfig()),
   branchStrategy: { type: "merge-to-head" },
   prompt: `You are a feature suggestion agent focused on HIGH-IMPACT, USER-FACING improvements. Your job:
 1. Run \`gh issue list -l enhancement --state open\` AND \`gh issue list -l enhancement --state closed\` — read ALL existing suggestions so you never duplicate.

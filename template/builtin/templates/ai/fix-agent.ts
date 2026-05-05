@@ -6,7 +6,7 @@ export const tagColor = "#f38ba8";
 
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { ensureRepo, requireEnv } from "../lib/ensureRepo";
+import { ensureRepo, requireEnv, agentSandboxConfig } from "../lib/ensureRepo";
 import { execSync } from "node:child_process";
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
@@ -40,7 +40,7 @@ const branch = `fix/issue-${issue}-${Date.now()}`;
 
 const result = await run({
   agent: claudeCode("claude-opus-4-7"),
-  sandbox: docker(),
+  sandbox: docker(agentSandboxConfig()),
   branchStrategy: { type: "branch", branch },
   prompt: `You are a fix agent. Your job:
 1. Read issue #${issue} using \`gh issue view ${issue}\`.

@@ -6,7 +6,7 @@ export const tagColor = "#f38ba8";
 
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { ensureRepo, requireEnv } from "../lib/ensureRepo";
+import { ensureRepo, requireEnv, agentSandboxConfig } from "../lib/ensureRepo";
 import { execSync } from "node:child_process";
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
@@ -31,11 +31,7 @@ if (openIssues >= 3) {
 // sandcastle docker() env: option) so the container has it.
 await run({
   agent: claudeCode("claude-opus-4-7"),
-  sandbox: docker({
-    env: {
-      GH_TOKEN: process.env.GH_TOKEN ?? "",
-    },
-  }),
+  sandbox: docker(agentSandboxConfig()),
   branchStrategy: { type: "merge-to-head" },
   prompt: `You are a security review agent. Your job:
 1. Run \`gh issue list -l security --state open\` — read existing findings so you never duplicate.
