@@ -1,2 +1,7 @@
 /lazycron
 dist/
+
+# Per-project scaffolds — created when a developer runs `lazycron init`
+# inside this source repo to dogfood. Not part of lazycron's own source.
+.lazycron/
+.sandcastle/
