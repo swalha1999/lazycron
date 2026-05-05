@@ -269,15 +269,7 @@ func mergeJobs(existing, incoming []cron.Job) (merged []cron.Job, added, updated
 }
 
 func jobNeedsUpdate(existing, incoming cron.Job) bool {
-	return existing.Name != incoming.Name ||
-		existing.Schedule != incoming.Schedule ||
-		existing.Command != incoming.Command ||
-		existing.Enabled != incoming.Enabled ||
-		existing.Wrapped != incoming.Wrapped ||
-		existing.OneShot != incoming.OneShot ||
-		existing.Tag != incoming.Tag ||
-		existing.TagColor != incoming.TagColor ||
-		existing.Project != incoming.Project
+	return cron.JobsDiffer(existing, incoming)
 }
 
 // resolveBackend creates the appropriate backend for the sync target.
