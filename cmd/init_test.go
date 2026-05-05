@@ -24,7 +24,7 @@ func chdirTemp(t *testing.T) string {
 }
 
 // stubInit replaces scaffoldSandcastleConfig + writeEnsureRepoLib for tests, restoring on cleanup.
-func stubInit(t *testing.T, scaffold func(string) error, write func(string) error) {
+func stubInit(t *testing.T, scaffold func(string, string) error, write func(string) error) {
 	t.Helper()
 	origScaffold := scaffoldSandcastleConfig
 	origWrite := writeEnsureRepoLib
@@ -142,10 +142,13 @@ func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
 	// unresolved form but os.Getwd inside runInit returns the resolved one.
 	resolvedDir, _ := filepath.EvalSymlinks(dir)
 	stubInit(t,
-		func(cwd string) error {
+		func(cwd, projectName string) error {
 			scaffoldCalls++
 			if cwd != resolvedDir && cwd != dir {
 				t.Errorf("scaffold called with cwd %q, want %q (or %q)", cwd, resolvedDir, dir)
+			}
+			if projectName != "agents-test" {
+				t.Errorf("scaffold called with projectName %q, want %q", projectName, "agents-test")
 			}
 			return os.MkdirAll(filepath.Join(cwd, ".sandcastle"), 0o755)
 		},

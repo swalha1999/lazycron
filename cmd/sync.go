@@ -74,6 +74,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	projectName := config.ResolveProjectName(syncProject, pcfg, cwd)
 
+	// Ensure .sandcastle/.env has PROJECT_NAME. The agent reads this to align
+	// its cache dir (~/.lazycron-cache/repos/<name>) and sandcastle Docker image
+	// tag with the lazycron project — missing it lands on a hard-coded default
+	// and silently runs the wrong cached repo / image.
+	if err := ensureSandcastleEnvProjectName(sandcastleDir, projectName); err != nil {
+		return fmt.Errorf("update .sandcastle/.env: %w", err)
+	}
+
 	// Read TS jobs.
 	incoming, err := readSandcastleJobs(jobsDir, projectName)
 	if err != nil {
@@ -220,6 +228,47 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 		})
 	}
 	return jobs, nil
+}
+
+// ensureSandcastleEnvProjectName makes sure .sandcastle/.env contains a
+// PROJECT_NAME entry pointing at projectName. Existing values are left
+// untouched; a missing key (or missing file) is added. Idempotent.
+func ensureSandcastleEnvProjectName(sandcastleDir, projectName string) error {
+	if projectName == "" {
+		return nil
+	}
+	envPath := filepath.Join(sandcastleDir, ".env")
+	data, err := os.ReadFile(envPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "PROJECT_NAME=") {
+			return nil
+		}
+	}
+
+	if err := os.MkdirAll(sandcastleDir, 0o755); err != nil {
+		return err
+	}
+
+	prefix := ""
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		prefix = "\n"
+	}
+	addition := prefix + "PROJECT_NAME=" + projectName + "\n"
+	f, err := os.OpenFile(envPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(addition); err != nil {
+		return err
+	}
+	fmt.Printf("Added PROJECT_NAME=%s to %s\n", projectName, filepath.Join(".sandcastle", ".env"))
+	return nil
 }
 
 // remoteProjectPath returns the directory the cron command should `cd` into
