@@ -77,15 +77,10 @@ func newFormForDuplicate(job cron.Job, lister DirLister) formModel {
 	}
 	f.completer.lister = lister
 
-	// Extract workdir from command
-	cmd := job.Command
-	workDir := ""
-	if strings.HasPrefix(cmd, "cd ") {
-		if idx := strings.Index(cmd, " && "); idx != -1 {
-			workDir = strings.TrimPrefix(cmd[:idx], "cd ")
-			cmd = strings.TrimSpace(cmd[idx+4:])
-		}
-	}
+	// Extract workdir from command. StripProjectCd unquotes single/double-quoted
+	// paths — without it the input would keep the surrounding quotes and ShellQuote
+	// would re-wrap them on save, growing escapes on every edit.
+	cmd, workDir := cron.StripProjectCd(job.Command)
 
 	// No ID — a new one will be generated on save
 	f.inputs[fieldName].SetValue(job.Name + " (copy)")
@@ -115,15 +110,7 @@ func newFormForEdit(job cron.Job, index int, lister DirLister) formModel {
 	}
 	f.completer.lister = lister
 
-	// Extract workdir from command
-	cmd := job.Command
-	workDir := ""
-	if strings.HasPrefix(cmd, "cd ") {
-		if idx := strings.Index(cmd, " && "); idx != -1 {
-			workDir = strings.TrimPrefix(cmd[:idx], "cd ")
-			cmd = strings.TrimSpace(cmd[idx+4:])
-		}
-	}
+	cmd, workDir := cron.StripProjectCd(job.Command)
 
 	f.id = job.ID
 	f.inputs[fieldName].SetValue(job.Name)

@@ -2,10 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/swalha1999/lazycron/cron"
 )
 
 func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -197,14 +197,10 @@ func (m Model) handleTemplatePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			values := tp.buildValues()
 			resolvedCmd, cronExpr := tp.selectedTmpl.Apply(values)
 
-			// Extract work dir from "cd <path> && <command>" pattern
-			workDir := ""
-			if strings.HasPrefix(resolvedCmd, "cd ") {
-				if idx := strings.Index(resolvedCmd, " && "); idx != -1 {
-					workDir = strings.TrimPrefix(resolvedCmd[:idx], "cd ")
-					resolvedCmd = strings.TrimSpace(resolvedCmd[idx+4:])
-				}
-			}
+			// StripProjectCd unquotes single/double-quoted paths so the form
+			// shows the raw path; ShellQuote re-wraps it on save.
+			var workDir string
+			resolvedCmd, workDir = cron.StripProjectCd(resolvedCmd)
 
 			// Pre-fill the job form with template data
 			m.mode = modeForm
