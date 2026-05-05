@@ -59,7 +59,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	jobsDir := filepath.Join(sandcastleDir, "jobs")
 
 	if _, err := os.Stat(jobsDir); err != nil {
-		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron init --with-agents` first", jobsDir)
+		if _, scErr := os.Stat(sandcastleDir); scErr != nil {
+			return fmt.Errorf("no .sandcastle/ directory found at %s — run `lazycron init --with-agents` first", sandcastleDir)
+		}
+		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron templates list` to browse agents and `lazycron templates apply <name>` to scaffold one", jobsDir)
 	}
 
 	// Resolve project name (--project > config.yaml > cwd basename).

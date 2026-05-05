@@ -39,9 +39,13 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get cwd: %w", err)
 	}
 
-	jobsDir := filepath.Join(cwd, ".sandcastle", "jobs")
+	sandcastleDir := filepath.Join(cwd, ".sandcastle")
+	jobsDir := filepath.Join(sandcastleDir, "jobs")
 	if info, err := os.Stat(jobsDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s", jobsDir)
+		if _, scErr := os.Stat(sandcastleDir); scErr != nil {
+			return fmt.Errorf("no .sandcastle/ directory found at %s — run `lazycron init --with-agents` first", sandcastleDir)
+		}
+		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron templates apply <name>` to scaffold an agent", jobsDir)
 	}
 
 	pcfg, err := config.LoadProjectConfig(filepath.Join(cwd, ".lazycron"))

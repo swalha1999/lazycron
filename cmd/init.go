@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/config"
+	"github.com/swalha1999/lazycron/template"
 	"github.com/swalha1999/lazycron/template/builtin"
 )
 
@@ -97,6 +98,50 @@ func scaffoldSandcastle(cwd string) error {
 	if err := appendGitignore(cwd, ".sandcastle/.env"); err != nil {
 		return fmt.Errorf("update .gitignore: %w", err)
 	}
+
+	if err := applyAllSandcastleTemplates(cwd); err != nil {
+		return fmt.Errorf("apply sandcastle templates: %w", err)
+	}
+	return nil
+}
+
+// applyAllSandcastleTemplates copies every bundled sandcastle agent template
+// (.ts files under template/builtin/templates/) into .sandcastle/jobs/.
+// Existing files are left untouched so re-running with --force does not
+// clobber user edits.
+func applyAllSandcastleTemplates(cwd string) error {
+	jobsDir := filepath.Join(cwd, ".sandcastle", "jobs")
+	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
+		return err
+	}
+
+	templates, err := template.LoadBuiltin()
+	if err != nil {
+		return err
+	}
+
+	created := 0
+	for _, t := range templates {
+		if t.Type != template.TypeSandcastle {
+			continue
+		}
+		dest := filepath.Join(jobsDir, t.Filename+".ts")
+		if _, err := os.Stat(dest); err == nil {
+			continue
+		}
+		data, err := builtin.FS.ReadFile(t.SandcastleSource)
+		if err != nil {
+			return fmt.Errorf("read embedded template %s: %w", t.Filename, err)
+		}
+		if err := os.WriteFile(dest, data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
+		}
+		fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "jobs", t.Filename+".ts"))
+		created++
+	}
+	if created > 0 {
+		fmt.Printf("Applied %d sandcastle agent template(s) to .sandcastle/jobs/\n", created)
+	}
 	return nil
 }
 
@@ -105,7 +150,11 @@ func realNpxInit(cwd string) error {
 	// via --with-agents or the interactive prompt. The scoped @ai-hero/sandcastle
 	// package is the actual CLI — the unscoped `sandcastle` on npm is an
 	// unrelated JS sandbox library and silently exits 0 on `init`.
-	c := exec.Command("npx", "-y", "@ai-hero/sandcastle", "init")
+	//
+	// `--template blank --agent claude-code` skips the agent and template
+	// pickers; lazycron scaffolds its own .sandcastle/jobs/*.ts on top, so the
+	// blank base layout is what we want.
+	c := exec.Command("npx", "-y", "@ai-hero/sandcastle", "init", "--template", "blank", "--agent", "claude-code")
 	c.Dir = cwd
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -176,8 +225,8 @@ func printNextSteps(withAgents bool) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if withAgents {
-		fmt.Println("  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY and any agent-specific vars)")
-		fmt.Println("  2. lazycron templates apply <agent-name>")
+		fmt.Println("  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN, …)")
+		fmt.Println("  2. Review/trim .sandcastle/jobs/*.ts — delete agents you don't want scheduled")
 		fmt.Println("  3. lazycron sync             # local")
 		fmt.Println("     lazycron sync --server X  # remote, ships .sandcastle/ + builds image")
 	} else {
