@@ -29,13 +29,13 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a lazycron project (.lazycron/ + optional .sandcastle/)",
 	Long: "Scaffolds a .lazycron/config.yaml in the current directory. " +
-		"With --with-agents, also runs `npx sandcastle init` to set up agent " +
+		"With --with-agents, also runs `npx @ai-hero/sandcastle init` to set up agent " +
 		"sandboxing as a sibling .sandcastle/ directory.",
 	RunE: runInit,
 }
 
 func init() {
-	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ via `npx sandcastle init`")
+	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ via `npx @ai-hero/sandcastle init`")
 	initCmd.Flags().StringVar(&initName, "name", "", "project name (defaults to current directory's basename)")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite an existing .lazycron/")
 	rootCmd.AddCommand(initCmd)
@@ -86,7 +86,7 @@ func scaffoldSandcastle(cwd string) error {
 		return errors.New("npx is required for --with-agents but was not found in PATH; install Node 20+ and Docker, then re-run with --with-agents")
 	}
 	if err := execNpxInit(cwd); err != nil {
-		return fmt.Errorf("`npx sandcastle init` failed: %w", err)
+		return fmt.Errorf("`npx @ai-hero/sandcastle init` failed: %w", err)
 	}
 
 	if err := writeEnsureRepoLib(cwd); err != nil {
@@ -101,7 +101,11 @@ func scaffoldSandcastle(cwd string) error {
 }
 
 func realNpxInit(cwd string) error {
-	c := exec.Command("npx", "sandcastle", "init")
+	// -y skips the npx "Ok to proceed?" confirmation; the user already opted in
+	// via --with-agents or the interactive prompt. The scoped @ai-hero/sandcastle
+	// package is the actual CLI — the unscoped `sandcastle` on npm is an
+	// unrelated JS sandbox library and silently exits 0 on `init`.
+	c := exec.Command("npx", "-y", "@ai-hero/sandcastle", "init")
 	c.Dir = cwd
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr

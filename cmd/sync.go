@@ -42,7 +42,7 @@ func init() {
 	syncCmd.Flags().StringVar(&syncProject, "project", "", "project name (overrides .lazycron/config.yaml; defaults to cwd basename)")
 	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env or .sandcastle/.env to the remote")
 	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ or .sandcastle/ files (crontab only)")
-	syncCmd.Flags().BoolVar(&syncNoBuild, "no-build", false, "do NOT run `npx sandcastle build-image` after transferring files")
+	syncCmd.Flags().BoolVar(&syncNoBuild, "no-build", false, "do NOT run `npx @ai-hero/sandcastle build-image` after transferring files")
 	syncCmd.Flags().BoolVar(&syncSkipDepsChk, "skip-deps-check", false, "skip the docker/node/npx presence check on the target")
 	rootCmd.AddCommand(syncCmd)
 }
@@ -130,7 +130,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
 	if !syncNoBuild {
 		fmt.Println("Building sandcastle image...")
-		if err := b.RunInProject(projectName, "npx sandcastle build-image", os.Stdout, os.Stderr); err != nil {
+		if err := b.RunInProject(projectName, "npx -y @ai-hero/sandcastle build-image", os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("build sandcastle image: %w", err)
 		}
 	}

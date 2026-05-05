@@ -106,7 +106,7 @@ Schedule sandboxed AI agents from your repo. Lazycron pairs with [sandcastle](ht
 lazycron init --with-agents
 ```
 
-This scaffolds `.lazycron/config.yaml` and runs `npx sandcastle init` to set up `.sandcastle/` (Dockerfile, env, lib helpers).
+This scaffolds `.lazycron/config.yaml` and runs `npx @ai-hero/sandcastle init` to set up `.sandcastle/` (Dockerfile, env, lib helpers).
 
 Apply an agent template:
 
@@ -127,7 +127,7 @@ lazycron sync --no-build             # skip docker build
 lazycron sync --skip-deps-check      # skip docker/node/npx check
 ```
 
-`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npx sandcastle build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent.
+`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npx @ai-hero/sandcastle build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent.
 
 Sync is a **safe merge** — it only adds or updates jobs derived from `.sandcastle/jobs/*.ts`. Existing jobs created through the TUI are never deleted.
 
@@ -171,7 +171,7 @@ my-repo/
 ```bash
 lazycron                    # launch TUI (default)
 lazycron init               # scaffold .lazycron/ in current dir
-lazycron init --with-agents # also scaffold .sandcastle/ via npx sandcastle init
+lazycron init --with-agents # also scaffold .sandcastle/ via npx @ai-hero/sandcastle init
 lazycron list               # list all cron jobs
 lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
 lazycron run "backup"       # run a job by name or ID

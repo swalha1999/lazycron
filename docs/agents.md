@@ -20,7 +20,7 @@ lazycron init --with-agents
         ▼
 1. Deps check (docker, node, npx)
 2. Tar + ship .lazycron/ and .sandcastle/ to remote (or skip if local)
-3. npx sandcastle build-image
+3. npx @ai-hero/sandcastle build-image
 4. Install crontab entry: `cd <project-dir> && npx tsx .sandcastle/jobs/<name>.ts`
         │
         │  cron fires
@@ -36,7 +36,7 @@ lazycron init --with-agents
 Both the local machine running `lazycron sync` and the target machine where cron fires need:
 
 - **Docker** — runs the agent sandbox
-- **Node 20+** — runs `npx sandcastle ...` and the agent TS file
+- **Node 20+** — runs `npx @ai-hero/sandcastle ...` and the agent TS file
 - **`gh` CLI** + a GitHub token (in `.sandcastle/.env` as `GH_TOKEN`) for any agent that calls `gh issue create` or `gh pr create`
 - **Git** — for the repo cache and per-run worktrees
 
@@ -110,7 +110,7 @@ my-repo/
 ├── .lazycron/
 │   └── config.yaml          # name: my-repo
 ├── .sandcastle/
-│   ├── Dockerfile           # built by `npx sandcastle build-image`
+│   ├── Dockerfile           # built by `npx @ai-hero/sandcastle build-image`
 │   ├── .env                 # ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN, …
 │   ├── .env.example
 │   ├── lib/
