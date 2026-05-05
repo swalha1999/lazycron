@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -20,8 +19,9 @@ var (
 	initWithAgents bool
 	initName       string
 	initForce      bool
-	// execNpxInit is a swappable seam so tests can stub the npx call.
-	execNpxInit = realNpxInit
+	// scaffoldSandcastleConfig is a swappable seam so tests can stub the
+	// .sandcastle/ scaffold step.
+	scaffoldSandcastleConfig = realScaffoldSandcastleConfig
 	// writeEnsureRepoLib is the file-write step, swapped out in tests.
 	writeEnsureRepoLib = realWriteEnsureRepoLib
 )
@@ -30,13 +30,13 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a lazycron project (.lazycron/ + optional .sandcastle/)",
 	Long: "Scaffolds a .lazycron/config.yaml in the current directory. " +
-		"With --with-agents, also runs `npx @ai-hero/sandcastle init` to set up agent " +
-		"sandboxing as a sibling .sandcastle/ directory.",
+		"With --with-agents, also scaffolds a sibling .sandcastle/ directory " +
+		"with a Claude Code + Docker + GitHub Issues setup ready for `lazycron sync`.",
 	RunE: runInit,
 }
 
 func init() {
-	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ via `npx @ai-hero/sandcastle init`")
+	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ (Claude Code, Docker, GitHub Issues)")
 	initCmd.Flags().StringVar(&initName, "name", "", "project name (defaults to current directory's basename)")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite an existing .lazycron/")
 	rootCmd.AddCommand(initCmd)
@@ -82,12 +82,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// scaffoldSandcastle writes the full .sandcastle/ tree directly — no
+// `npx sandcastle init` invocation. This avoids sandcastle's interactive
+// prompts (sandbox provider, backlog manager, label, build-image) and
+// guarantees the same defaults every time: Claude Code agent, Docker
+// sandbox, GitHub Issues backlog. The Dockerfile, .env.example, and
+// in-folder .gitignore are pinned copies of @ai-hero/sandcastle@0.5.7's
+// blank-template output for that combination.
 func scaffoldSandcastle(cwd string) error {
-	if _, err := exec.LookPath("npx"); err != nil {
-		return errors.New("npx is required for --with-agents but was not found in PATH; install Node 20+ and Docker, then re-run with --with-agents")
-	}
-	if err := execNpxInit(cwd); err != nil {
-		return fmt.Errorf("`npx @ai-hero/sandcastle init` failed: %w", err)
+	if err := scaffoldSandcastleConfig(cwd); err != nil {
+		return fmt.Errorf("scaffold .sandcastle/: %w", err)
 	}
 
 	if err := writeEnsureRepoLib(cwd); err != nil {
@@ -101,6 +105,40 @@ func scaffoldSandcastle(cwd string) error {
 
 	if err := applyAllSandcastleTemplates(cwd); err != nil {
 		return fmt.Errorf("apply sandcastle templates: %w", err)
+	}
+	return nil
+}
+
+// realScaffoldSandcastleConfig writes the embedded Dockerfile, .env.example,
+// and .gitignore into .sandcastle/. Existing files are not overwritten so
+// re-running with --force preserves user edits.
+func realScaffoldSandcastleConfig(cwd string) error {
+	sandcastleDir := filepath.Join(cwd, ".sandcastle")
+	if err := os.MkdirAll(sandcastleDir, 0o755); err != nil {
+		return err
+	}
+
+	files := []struct {
+		embed string
+		dest  string
+	}{
+		{"sandcastle_init/Dockerfile", "Dockerfile"},
+		{"sandcastle_init/env.example", ".env.example"},
+		{"sandcastle_init/gitignore", ".gitignore"},
+	}
+	for _, f := range files {
+		dest := filepath.Join(sandcastleDir, f.dest)
+		if _, err := os.Stat(dest); err == nil {
+			continue
+		}
+		data, err := builtin.SandcastleInitFS.ReadFile(f.embed)
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", f.embed, err)
+		}
+		if err := os.WriteFile(dest, data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", dest, err)
+		}
+		fmt.Printf("Created %s\n", filepath.Join(".sandcastle", f.dest))
 	}
 	return nil
 }
@@ -143,23 +181,6 @@ func applyAllSandcastleTemplates(cwd string) error {
 		fmt.Printf("Applied %d sandcastle agent template(s) to .sandcastle/jobs/\n", created)
 	}
 	return nil
-}
-
-func realNpxInit(cwd string) error {
-	// -y skips the npx "Ok to proceed?" confirmation; the user already opted in
-	// via --with-agents or the interactive prompt. The scoped @ai-hero/sandcastle
-	// package is the actual CLI — the unscoped `sandcastle` on npm is an
-	// unrelated JS sandbox library and silently exits 0 on `init`.
-	//
-	// `--template blank --agent claude-code` skips the agent and template
-	// pickers; lazycron scaffolds its own .sandcastle/jobs/*.ts on top, so the
-	// blank base layout is what we want.
-	c := exec.Command("npx", "-y", "@ai-hero/sandcastle", "init", "--template", "blank", "--agent", "claude-code")
-	c.Dir = cwd
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	return c.Run()
 }
 
 func realWriteEnsureRepoLib(cwd string) error {
@@ -225,9 +246,9 @@ func printNextSteps(withAgents bool) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if withAgents {
-		fmt.Println("  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN, …)")
+		fmt.Println("  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN)")
 		fmt.Println("  2. Review/trim .sandcastle/jobs/*.ts — delete agents you don't want scheduled")
-		fmt.Println("  3. lazycron sync             # local")
+		fmt.Println("  3. lazycron sync             # local (builds Docker image, installs cron)")
 		fmt.Println("     lazycron sync --server X  # remote, ships .sandcastle/ + builds image")
 	} else {
 		fmt.Println("  1. lazycron init --with-agents   # to add sandcastle agents later")

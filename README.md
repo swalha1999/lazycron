@@ -106,7 +106,7 @@ Schedule sandboxed AI agents from your repo. Lazycron pairs with [sandcastle](ht
 lazycron init --with-agents
 ```
 
-This scaffolds `.lazycron/config.yaml` and runs `npx @ai-hero/sandcastle init` to set up `.sandcastle/` (Dockerfile, env, lib helpers).
+This scaffolds `.lazycron/config.yaml` and a sibling `.sandcastle/` (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, plus all bundled agent templates under `jobs/`). Defaults: Claude Code agent, Docker sandbox, GitHub Issues backlog. No prompts, no `npx sandcastle init` call.
 
 Apply an agent template:
 
@@ -171,7 +171,7 @@ my-repo/
 ```bash
 lazycron                    # launch TUI (default)
 lazycron init               # scaffold .lazycron/ in current dir
-lazycron init --with-agents # also scaffold .sandcastle/ via npx @ai-hero/sandcastle init
+lazycron init --with-agents # also scaffold .sandcastle/ (Claude Code + Docker + bundled agent templates)
 lazycron list               # list all cron jobs
 lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
 lazycron run "backup"       # run a job by name or ID

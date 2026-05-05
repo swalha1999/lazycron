@@ -10,7 +10,7 @@ Lazycron `sync` reads sandcastle agent files from `.sandcastle/jobs/*.ts`, ships
 lazycron init --with-agents
 ```
 
-This creates `.lazycron/config.yaml` (project metadata) and runs `npx @ai-hero/sandcastle init` to scaffold `.sandcastle/` (Dockerfile, env, lib helpers).
+This creates `.lazycron/config.yaml` (project metadata) and scaffolds `.sandcastle/` (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, and all bundled agent templates under `jobs/`). Defaults to a Claude Code + Docker + GitHub Issues setup — no interactive prompts.
 
 2. Apply an agent template:
 

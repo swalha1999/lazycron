@@ -133,7 +133,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
 	if !syncNoBuild {
 		fmt.Println("Building sandcastle image...")
-		if err := b.RunInProject(projectName, "npx -y @ai-hero/sandcastle docker build-image", os.Stdout, os.Stderr); err != nil {
+		if err := b.RunInProject(projectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("build sandcastle image: %w", err)
 		}
 	}

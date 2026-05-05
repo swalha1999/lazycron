@@ -23,15 +23,15 @@ func chdirTemp(t *testing.T) string {
 	return dir
 }
 
-// stubInit replaces execNpxInit + writeEnsureRepoLib for tests, restoring on cleanup.
-func stubInit(t *testing.T, npx func(string) error, write func(string) error) {
+// stubInit replaces scaffoldSandcastleConfig + writeEnsureRepoLib for tests, restoring on cleanup.
+func stubInit(t *testing.T, scaffold func(string) error, write func(string) error) {
 	t.Helper()
-	origNpx := execNpxInit
+	origScaffold := scaffoldSandcastleConfig
 	origWrite := writeEnsureRepoLib
-	execNpxInit = npx
+	scaffoldSandcastleConfig = scaffold
 	writeEnsureRepoLib = write
 	t.Cleanup(func() {
-		execNpxInit = origNpx
+		scaffoldSandcastleConfig = origScaffold
 		writeEnsureRepoLib = origWrite
 	})
 }
@@ -136,16 +136,16 @@ func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
 	initWithAgents = true
 	initName = "agents-test"
 
-	npxCalls := 0
+	scaffoldCalls := 0
 	writeCalls := 0
 	// Resolve symlinks since macOS /var -> /private/var; t.TempDir uses the
 	// unresolved form but os.Getwd inside runInit returns the resolved one.
 	resolvedDir, _ := filepath.EvalSymlinks(dir)
 	stubInit(t,
 		func(cwd string) error {
-			npxCalls++
+			scaffoldCalls++
 			if cwd != resolvedDir && cwd != dir {
-				t.Errorf("npx called with cwd %q, want %q (or %q)", cwd, resolvedDir, dir)
+				t.Errorf("scaffold called with cwd %q, want %q (or %q)", cwd, resolvedDir, dir)
 			}
 			return os.MkdirAll(filepath.Join(cwd, ".sandcastle"), 0o755)
 		},
@@ -158,8 +158,8 @@ func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
 	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
-	if npxCalls != 1 {
-		t.Errorf("execNpxInit calls = %d, want 1", npxCalls)
+	if scaffoldCalls != 1 {
+		t.Errorf("scaffoldSandcastleConfig calls = %d, want 1", scaffoldCalls)
 	}
 	if writeCalls != 1 {
 		t.Errorf("writeEnsureRepoLib calls = %d, want 1", writeCalls)
