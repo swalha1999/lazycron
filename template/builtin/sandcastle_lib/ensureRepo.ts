@@ -42,22 +42,22 @@ export function requireEnv(...names: string[]): void {
 
 /**
  * agentSandboxConfig — DockerOptions to pass into `docker(...)` so Claude
- * Code inside the container can authenticate the same way it does on the
- * host. Covers all three Claude auth mechanisms:
+ * Code inside the container can authenticate.
  *
- *   1. ANTHROPIC_API_KEY env var (API key)
- *   2. CLAUDE_CODE_OAUTH_TOKEN env var (OAuth subscription token)
- *   3. ~/.claude/.credentials.json file (set by `claude /login` on host)
+ * Auth is via env vars only — pick whichever Claude supports for your
+ * setup and put it in .sandcastle/.env:
  *
- * Whichever the user has, gets propagated. The host's ~/.claude is bind-
- * mounted read-only so the agent inherits the host's login without being
- * able to alter it. GH_TOKEN is also passed through for `gh` calls inside
- * the sandbox.
+ *   - ANTHROPIC_API_KEY        (API key)
+ *   - CLAUDE_CODE_OAUTH_TOKEN  (subscription OAuth — issue 191)
+ *
+ * No host-file mounts: keeps the sandbox isolated, works identically on
+ * macOS (where credentials live in Keychain, not on disk) and Linux, and
+ * avoids the failure mode where mounting ~/.claude blocks Claude from
+ * writing its session log inside the container.
+ *
+ * GH_TOKEN is passed through too so `gh` calls inside the sandbox work.
  */
-export function agentSandboxConfig(): {
-  env: Record<string, string>;
-  mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[];
-} {
+export function agentSandboxConfig(): { env: Record<string, string> } {
   const env: Record<string, string> = {};
   for (const key of [
     "ANTHROPIC_API_KEY",
@@ -67,24 +67,7 @@ export function agentSandboxConfig(): {
     const v = process.env[key];
     if (v) env[key] = v;
   }
-
-  // Mount only the credentials file (not the whole ~/.claude/) so:
-  //   - Claude inside the sandbox reads the host's login.
-  //   - The sandbox keeps its own writable /home/agent/.claude/projects/,
-  //     where Claude writes session logs that sandcastle then `docker cp`s
-  //     out. Mounting the whole dir read-only blocked that write; mounting
-  //     it read-write would leak agent session logs into the user's host.
-  const mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[] = [];
-  const credsFile = path.join(homedir(), ".claude", ".credentials.json");
-  if (existsSync(credsFile)) {
-    mounts.push({
-      hostPath: credsFile,
-      sandboxPath: "/home/agent/.claude/.credentials.json",
-      readonly: true,
-    });
-  }
-
-  return { env, mounts };
+  return { env };
 }
 
 /** Clones the repo on first call, then fetches + resets to defaultBranch. */
