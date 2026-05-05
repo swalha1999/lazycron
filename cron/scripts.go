@@ -39,8 +39,15 @@ func WriteScript(jobID, command string) error {
 // syntax (e.g. compdef directives in completion files) — triggers a parse
 // error that kills the script silently, before the actual command runs.
 // Bash without --posix tolerates the same parse errors and continues.
+// Order matters: login-shell rc files first (where Homebrew's shellenv and
+// most PATH setup typically lives — `eval "$(brew shellenv)"` in ~/.zprofile
+// is the official Apple Silicon install path), then interactive rc files
+// which usually only extend PATH. Without .zprofile, cron jobs that depend
+// on Homebrew binaries (node, etc.) fail with "command not found" even
+// though manual runs from a terminal work — because the terminal already
+// inherits PATH from the user's login shell.
 const ScriptPreamble = "# Source user profile for PATH and environment variables.\n" +
-	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
+	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bash_profile\" \"$HOME/.zprofile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
 	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null || true\n" +
 	"done\n" +
 	"unset __lc_rc\n"
