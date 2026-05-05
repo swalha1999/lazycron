@@ -83,6 +83,29 @@ export const description = "ignored field";
 			want: SandcastleMeta{Cron: "0 9 * * *", Name: "Agent"},
 		},
 		{
+			name: "notify false",
+			input: `export const cron = "0 9 * * *";
+export const name = "Agent";
+export const notify = false;
+`,
+			want: SandcastleMeta{Cron: "0 9 * * *", Name: "Agent", Notify: boolPtr(false)},
+		},
+		{
+			name: "notify true",
+			input: `export const cron = "0 9 * * *";
+export const name = "Agent";
+export const notify = true;
+`,
+			want: SandcastleMeta{Cron: "0 9 * * *", Name: "Agent", Notify: boolPtr(true)},
+		},
+		{
+			name: "notify omitted leaves Notify nil",
+			input: `export const cron = "0 9 * * *";
+export const name = "Agent";
+`,
+			want: SandcastleMeta{Cron: "0 9 * * *", Name: "Agent"},
+		},
+		{
 			name: "single-quoted is not recognised",
 			input: `export const cron = '0 9 * * *';
 export const name = "Agent";
@@ -121,9 +144,27 @@ export const name = "Agent";
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tc.want {
+			if !sandcastleMetaEqual(got, tc.want) {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// sandcastleMetaEqual compares two SandcastleMeta values, including the
+// Notify *bool pointer (nil-safe value equality).
+func sandcastleMetaEqual(a, b SandcastleMeta) bool {
+	if a.Cron != b.Cron || a.Name != b.Name || a.Tag != b.Tag || a.TagColor != b.TagColor {
+		return false
+	}
+	switch {
+	case a.Notify == nil && b.Notify == nil:
+		return true
+	case a.Notify == nil || b.Notify == nil:
+		return false
+	default:
+		return *a.Notify == *b.Notify
 	}
 }

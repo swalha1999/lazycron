@@ -56,6 +56,16 @@ The work directory field includes a fuzzy-matching directory browser with drill-
 ### Execution History
 Job runs are recorded to `~/.lazycron/history/` as JSON files, capturing output, exit codes, and timestamps. History refreshes automatically and is viewable in the History panel.
 
+When a job exits non-zero, lazycron also fires a desktop notification — `osascript` on macOS, `notify-send` on Linux — so silent failures don't sit unnoticed in `~/.lazycron/history/` waiting for you to open the TUI. Notifications are best-effort: if the notifier binary is missing, recording still happens.
+
+Toggle globally with a one-line entry in `~/.lazycron/config.yml` (defaults to on):
+
+```yaml
+notify_on_failure: false
+```
+
+For per-job opt-out, press `ctrl+n` in the job form, or set `export const notify = false` in a `.sandcastle/jobs/*.ts` agent file.
+
 ## Keybindings
 
 | Key | Action |

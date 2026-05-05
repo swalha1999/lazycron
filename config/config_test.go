@@ -282,6 +282,62 @@ func TestRemoveServer_NotFound(t *testing.T) {
 	}
 }
 
+// --- NotifyOnFailure ---
+
+func TestNotifyOnFailureEnabled_DefaultTrue(t *testing.T) {
+	var c *Config
+	if !c.NotifyOnFailureEnabled() {
+		t.Error("nil Config should default to true")
+	}
+
+	cfg := &Config{}
+	if !cfg.NotifyOnFailureEnabled() {
+		t.Error("unset NotifyOnFailure should default to true")
+	}
+}
+
+func TestNotifyOnFailureEnabled_Explicit(t *testing.T) {
+	tr, fa := true, false
+	if !(&Config{NotifyOnFailure: &tr}).NotifyOnFailureEnabled() {
+		t.Error("explicit true should report enabled")
+	}
+	if (&Config{NotifyOnFailure: &fa}).NotifyOnFailureEnabled() {
+		t.Error("explicit false should report disabled")
+	}
+}
+
+func TestLoadSave_NotifyOnFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	fa := false
+	original := &Config{NotifyOnFailure: &fa}
+	if err := Save(original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.NotifyOnFailureEnabled() {
+		t.Error("expected NotifyOnFailureEnabled to be false after roundtrip")
+	}
+
+	// Explicit true also roundtrips
+	tr := true
+	if err := Save(&Config{NotifyOnFailure: &tr}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !loaded.NotifyOnFailureEnabled() {
+		t.Error("expected NotifyOnFailureEnabled to be true after roundtrip")
+	}
+}
+
 // --- Save file permissions ---
 
 func TestSave_FilePermissions(t *testing.T) {

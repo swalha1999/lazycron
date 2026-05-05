@@ -12,12 +12,18 @@ type SandcastleMeta struct {
 	Name     string
 	Tag      string
 	TagColor string
+	// Notify is the parsed `export const notify = <bool>` value. Pointer so
+	// we distinguish unset (inherit-from-global) from explicit true/false.
+	Notify *bool
 }
 
 // exportRegex matches `export const <ident> = "<string>"` at the start of a line,
 // with double-quoted string literals only. Backticks, single quotes, and any
 // computed expression are intentionally not recognised.
 var exportRegex = regexp.MustCompile(`(?m)^export\s+const\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*;?\s*$`)
+
+// boolExportRegex matches `export const <ident> = true|false` at line start.
+var boolExportRegex = regexp.MustCompile(`(?m)^export\s+const\s+(\w+)\s*=\s*(true|false)\s*;?\s*$`)
 
 // ParseSandcastleMeta extracts metadata from a sandcastle job TS file.
 // Returns an error if `cron` or `name` is missing.
@@ -33,6 +39,12 @@ func ParseSandcastleMeta(content []byte) (SandcastleMeta, error) {
 			m.Tag = unescape(match[2])
 		case "tagColor":
 			m.TagColor = unescape(match[2])
+		}
+	}
+	for _, match := range boolExportRegex.FindAllStringSubmatch(string(content), -1) {
+		if match[1] == "notify" {
+			b := match[2] == "true"
+			m.Notify = &b
 		}
 	}
 	if m.Cron == "" {

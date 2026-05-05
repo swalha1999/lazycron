@@ -778,3 +778,121 @@ func assertBool(t *testing.T, field string, got, want bool) {
 	}
 }
 
+// --- @nonotify marker ---
+
+func TestExtractNoNotify(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantName     string
+		wantNoNotify bool
+	}{
+		{"with marker", "My Job @nonotify", "My Job", true},
+		{"with marker and tag", "My Job @nonotify [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", true},
+		{"with marker and project", "My Job @nonotify {backend}", "My Job {backend}", true},
+		{"no marker", "My Job", "My Job", false},
+		{"substring should not match", "My Job @nonotifyx", "My Job @nonotifyx", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotNoNotify := extractNoNotify(tt.input)
+			if gotName != tt.wantName {
+				t.Errorf("extractNoNotify(%q) name = %q, want %q", tt.input, gotName, tt.wantName)
+			}
+			if gotNoNotify != tt.wantNoNotify {
+				t.Errorf("extractNoNotify(%q) noNotify = %v, want %v", tt.input, gotNoNotify, tt.wantNoNotify)
+			}
+		})
+	}
+}
+
+func TestParse_NoNotifyJob(t *testing.T) {
+	input := "# my-job @nonotify\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "my-job")
+	assertBool(t, "NoNotify", j.NoNotify, true)
+}
+
+func TestParse_NotifyDefaultOn(t *testing.T) {
+	input := "# my-job\n* * * * * " + wrapCmd("echo hello", "my-job")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	// No marker = NoNotify false (notify enabled)
+	assertBool(t, "NoNotify", jobs[0].NoNotify, false)
+}
+
+func TestCrontabLine_NoNotify(t *testing.T) {
+	withFakeScriptsDir(t)
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true, NoNotify: true}
+	line := j.CrontabLine()
+
+	if !strings.Contains(line, "@nonotify") {
+		t.Errorf("expected @nonotify marker in line: %q", line)
+	}
+	if !strings.Contains(line, "--no-notify") {
+		t.Errorf("expected --no-notify flag in wrapped command: %q", line)
+	}
+}
+
+func TestCrontabLine_NotifyDefault(t *testing.T) {
+	withFakeScriptsDir(t)
+	j := Job{ID: "abc12345", Name: "my-job", Schedule: "0 9 * * *", Command: "echo hi", Enabled: true, Wrapped: true}
+	line := j.CrontabLine()
+
+	if strings.Contains(line, "@nonotify") {
+		t.Errorf("did not expect @nonotify marker for default job: %q", line)
+	}
+	if strings.Contains(line, "--no-notify") {
+		t.Errorf("did not expect --no-notify flag for default job: %q", line)
+	}
+}
+
+func TestFullRoundtrip_NoNotify(t *testing.T) {
+	withFakeScriptsDir(t)
+	original := Job{
+		ID:       "55667788",
+		Name:     "silent-job",
+		Schedule: "0 3 * * *",
+		Command:  "echo hello",
+		Enabled:  true,
+		Wrapped:  true,
+		NoNotify: true,
+	}
+
+	if err := WriteScript(original.ID, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+
+	line := original.CrontabLine()
+	jobs := Parse(line)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after roundtrip, got %d", len(jobs))
+	}
+
+	got := jobs[0]
+	assertEqual(t, "ID", got.ID, original.ID)
+	assertEqual(t, "Name", got.Name, original.Name)
+	assertBool(t, "NoNotify", got.NoNotify, true)
+}
+
+func TestParse_OneShotAndNoNotify(t *testing.T) {
+	input := "# deploy @once @nonotify\n30 14 22 3 * " + wrapCmd("echo deploy", "deploy")
+	jobs := Parse(input)
+
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	j := jobs[0]
+	assertEqual(t, "Name", j.Name, "deploy")
+	assertBool(t, "OneShot", j.OneShot, true)
+	assertBool(t, "NoNotify", j.NoNotify, true)
+}
+

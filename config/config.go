@@ -20,6 +20,20 @@ type ServerConfig struct {
 // Config is the top-level configuration structure.
 type Config struct {
 	Servers []ServerConfig `yaml:"servers"`
+	// NotifyOnFailure controls whether the recorder fires an OS notification
+	// when a job exits non-zero. Pointer so we can distinguish unset (default
+	// on) from explicitly false. Use NotifyOnFailureEnabled() to read.
+	NotifyOnFailure *bool `yaml:"notify_on_failure,omitempty"`
+}
+
+// NotifyOnFailureEnabled reports whether failure notifications are enabled.
+// Defaults to true when unset — silent failure is the larger harm than
+// occasional noise.
+func (c *Config) NotifyOnFailureEnabled() bool {
+	if c == nil || c.NotifyOnFailure == nil {
+		return true
+	}
+	return *c.NotifyOnFailure
 }
 
 // configPath returns the path to ~/.lazycron/config.yml.

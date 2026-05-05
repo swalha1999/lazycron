@@ -464,6 +464,60 @@ func TestScript_TwoRunsProduceTwoFiles(t *testing.T) {
 	}
 }
 
+// --- Notification flags ---
+
+func TestScript_NoNotifyFlagPreservesRecording(t *testing.T) {
+	// --no-notify must never block recording.
+	entry, _ := runRecordScript(t, "boom", "a1100001", "fail-job", "1", "--no-notify")
+	if entry.Success == nil || *entry.Success != false {
+		t.Errorf("Success = %v, want false", entry.Success)
+	}
+	if entry.Output != "boom" {
+		t.Errorf("Output = %q, want %q", entry.Output, "boom")
+	}
+}
+
+func TestScript_OnceWithNoNotifyFlagOrderIndependent(t *testing.T) {
+	// Flags after exit code can appear in either order.
+	entry1, _ := runRecordScript(t, "x", "a1100002", "j", "0", "--once", "--no-notify")
+	if entry1.Output != "x" {
+		t.Errorf("Output = %q, want %q", entry1.Output, "x")
+	}
+	entry2, _ := runRecordScript(t, "y", "a1100003", "j", "0", "--no-notify", "--once")
+	if entry2.Output != "y" {
+		t.Errorf("Output = %q, want %q", entry2.Output, "y")
+	}
+}
+
+func TestScript_GlobalNotifyDisabledStillRecords(t *testing.T) {
+	// notify_on_failure: false in global config — recording must still happen.
+	home := t.TempDir()
+	cfgDir := filepath.Join(home, ".lazycron")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte("notify_on_failure: false\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	scriptPath := filepath.Join(t.TempDir(), "record")
+	os.WriteFile(scriptPath, ScriptContent, 0o755)
+
+	cmd := exec.Command("sh", scriptPath, "a1100004", "fail-job", "1")
+	cmd.Stdin = strings.NewReader("error")
+	cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("script failed: %v\n%s", err, output)
+	}
+
+	files, _ := filepath.Glob(filepath.Join(home, ".lazycron", "history", "*.json"))
+	if len(files) != 1 {
+		t.Fatalf("expected 1 history file, got %d", len(files))
+	}
+}
+
 // --- InstallRecord ---
 
 func TestInstallRecord_WritesScript(t *testing.T) {

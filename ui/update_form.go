@@ -73,6 +73,10 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "ctrl+n":
+		m.form.noNotify = !m.form.noNotify
+		return m, nil
+
 	case "esc":
 		m.mode = modeNormal
 		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)

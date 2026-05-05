@@ -46,6 +46,7 @@ type formModel struct {
 	tag         string // colored tag from template
 	tagColor    string // hex color for the tag
 	oneShot     bool   // one-shot mode: run once at a specific datetime
+	noNotify    bool   // true = job opts out of failure notifications
 }
 
 func newInput(i int) textinput.Model {
@@ -91,6 +92,7 @@ func newFormForDuplicate(job cron.Job, lister DirLister) formModel {
 	f.tag = job.Tag
 	f.tagColor = job.TagColor
 	f.oneShot = job.OneShot
+	f.noNotify = job.NoNotify
 
 	f.picker = newPicker()
 	if !f.oneShot {
@@ -121,6 +123,7 @@ func newFormForEdit(job cron.Job, index int, lister DirLister) formModel {
 	f.tag = job.Tag
 	f.tagColor = job.TagColor
 	f.oneShot = job.OneShot
+	f.noNotify = job.NoNotify
 
 	f.picker = newPicker()
 	if !f.oneShot {
@@ -278,6 +281,7 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		TagColor: f.tagColor,
 		OneShot:  f.oneShot,
 		Project:  strings.TrimSpace(f.inputs[fieldProject].Value()),
+		NoNotify: f.noNotify,
 	}, nil
 }
 
@@ -305,7 +309,13 @@ func renderForm(f *formModel, width int) string {
 	} else {
 		badge = mutedItemStyle.Render("recurring")
 	}
-	b.WriteString(header + "  " + badge)
+	notifyBadge := ""
+	if f.noNotify {
+		notifyBadge = "  " + lipgloss.NewStyle().Foreground(colorMuted).Render("[ ] notify on failure")
+	} else {
+		notifyBadge = "  " + lipgloss.NewStyle().Foreground(colorGreen).Render("[x] notify on failure")
+	}
+	b.WriteString(header + "  " + badge + notifyBadge)
 	b.WriteString("\n\n")
 
 	for i := 0; i < fieldCount; i++ {
@@ -365,6 +375,7 @@ func renderForm(f *formModel, width int) string {
 			helpBinding("tab", "next field") + helpSep() +
 			helpBinding("shift+tab", "prev") + helpSep() +
 			helpBinding("ctrl+o", "one-shot") + helpSep() +
+			helpBinding("ctrl+n", "notify") + helpSep() +
 			helpBinding("enter", "save") + helpSep() +
 			helpBinding("esc", "cancel"))
 	}

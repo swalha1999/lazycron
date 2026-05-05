@@ -207,6 +207,12 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), meta.Cron, err)
 		}
 
+		// notify = false in TS metadata maps to NoNotify=true; absent leaves
+		// NoNotify=false (inherit-from-global, which defaults to on).
+		noNotify := false
+		if meta.Notify != nil && !*meta.Notify {
+			noNotify = true
+		}
 		jobs = append(jobs, cron.Job{
 			ID:       id,
 			Name:     meta.Name,
@@ -217,6 +223,7 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 			Tag:      meta.Tag,
 			TagColor: meta.TagColor,
 			Project:  projectName,
+			NoNotify: noNotify,
 		})
 	}
 	return jobs, nil
@@ -277,7 +284,8 @@ func jobNeedsUpdate(existing, incoming cron.Job) bool {
 		existing.OneShot != incoming.OneShot ||
 		existing.Tag != incoming.Tag ||
 		existing.TagColor != incoming.TagColor ||
-		existing.Project != incoming.Project
+		existing.Project != incoming.Project ||
+		existing.NoNotify != incoming.NoNotify
 }
 
 // resolveBackend creates the appropriate backend for the sync target.

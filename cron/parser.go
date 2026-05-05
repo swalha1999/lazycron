@@ -19,6 +19,7 @@ type Job struct {
 	TagColor string // hex color for the tag, e.g. "#f38ba8"
 	OneShot  bool   // true if this job should run once and then self-disable
 	Project  string // optional project group for organizing jobs
+	NoNotify bool   // true if this job opts out of failure notifications (overrides global)
 }
 
 // RecordBinPath returns the path to ~/.lazycron/bin/record.
@@ -34,17 +35,21 @@ const wrapPrefix = `__lc_out=$({ `
 const wrapEndMarker = `; } 2>&1); __lc_ec=$?;`
 
 // WrapWithRecord wraps a command so its output and exit code are captured
-// and piped through the record binary for history tracking.
-func WrapWithRecord(command, jobID, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec"`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
+// and piped through the record binary for history tracking. extraFlags are
+// appended after the exit code (e.g. "--once", "--no-notify").
+func WrapWithRecord(command, jobID, jobName string, extraFlags ...string) string {
+	flags := ""
+	for _, f := range extraFlags {
+		flags += " " + f
+	}
+	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec"%s`,
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName, flags)
 }
 
 // WrapWithRecordOnce wraps a command like WrapWithRecord but appends --once
 // so the record script auto-disables the crontab entry after execution.
 func WrapWithRecordOnce(command, jobID, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec" --once`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
+	return WrapWithRecord(command, jobID, jobName, "--once")
 }
 
 // StripRecord removes the record wrapper from a raw crontab command,
@@ -94,6 +99,9 @@ func (j Job) CrontabLine() string {
 	if j.OneShot {
 		nameComment += " @once"
 	}
+	if j.NoNotify {
+		nameComment += " @nonotify"
+	}
 	if j.Tag != "" {
 		color := j.TagColor
 		if color == "" {
@@ -113,12 +121,14 @@ func (j Job) CrontabLine() string {
 	// a POSIX-mode parse abort. See cron/writer.go:RunJobNow for the same
 	// reasoning on the manual-run path.
 	scriptCmd := "bash '" + ScriptPath(j.ID) + "'"
-	var wrapped string
+	var flags []string
 	if j.OneShot {
-		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)
-	} else {
-		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
+		flags = append(flags, "--once")
 	}
+	if j.NoNotify {
+		flags = append(flags, "--no-notify")
+	}
+	wrapped := WrapWithRecord(scriptCmd, j.ID, j.Name, flags...)
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
 	} else {
@@ -148,6 +158,8 @@ func Parse(output string) []Job {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
 			var oneShot bool
 			name, oneShot = extractOnce(name)
+			var noNotify bool
+			name, noNotify = extractNoNotify(name)
 			project := ""
 			name, project = extractProject(name)
 			tag, tagColor := "", ""
@@ -169,6 +181,7 @@ func Parse(output string) []Job {
 					job.Tag = tag
 					job.TagColor = tagColor
 					job.OneShot = oneShot
+					job.NoNotify = noNotify
 					job.Project = project
 					jobs = append(jobs, job)
 					i++
@@ -196,17 +209,29 @@ func Parse(output string) []Job {
 // extractOnce checks for the @once marker in a name comment.
 // Returns the clean name (without @once) and whether it was present.
 func extractOnce(name string) (string, bool) {
-	const marker = " @once"
-	if idx := strings.Index(name, marker); idx != -1 {
-		// Ensure @once is followed by nothing, whitespace, or [
-		after := name[idx+len(marker):]
-		after = strings.TrimSpace(after)
-		if after == "" || strings.HasPrefix(after, "[") {
-			clean := strings.TrimSpace(name[:idx] + " " + after)
-			return clean, true
-		}
+	return extractMarker(name, " @once")
+}
+
+// extractNoNotify checks for the @nonotify marker in a name comment.
+// Returns the clean name (without @nonotify) and whether it was present.
+func extractNoNotify(name string) (string, bool) {
+	return extractMarker(name, " @nonotify")
+}
+
+// extractMarker removes a leading-space-delimited marker (e.g. " @once") from
+// a name. The marker must be followed by nothing, whitespace, another @marker,
+// `[` (tag) or `{` (project) so substrings like "@onceupon" aren't matched.
+func extractMarker(name, marker string) (string, bool) {
+	idx := strings.Index(name, marker)
+	if idx == -1 {
+		return name, false
 	}
-	return name, false
+	after := name[idx+len(marker):]
+	if after != "" && after[0] != ' ' && after[0] != '\t' && after[0] != '[' && after[0] != '{' && after[0] != '@' {
+		return name, false
+	}
+	clean := strings.TrimSpace(name[:idx] + " " + strings.TrimSpace(after))
+	return clean, true
 }
 
 // extractTag parses a tag suffix from a name like "Job Name [PP:#f38ba8]".
