@@ -20,7 +20,7 @@ lazycron init --with-agents
         ▼
 1. Deps check (docker, node, npx)
 2. Tar + ship .lazycron/ and .sandcastle/ to remote (or skip if local)
-3. npx @ai-hero/sandcastle build-image
+3. npx @ai-hero/sandcastle docker build-image
 4. Install crontab entry: `cd <project-dir> && npx tsx .sandcastle/jobs/<name>.ts`
         │
         │  cron fires
@@ -110,7 +110,7 @@ my-repo/
 ├── .lazycron/
 │   └── config.yaml          # name: my-repo
 ├── .sandcastle/
-│   ├── Dockerfile           # built by `npx @ai-hero/sandcastle build-image`
+│   ├── Dockerfile           # built by `npx @ai-hero/sandcastle docker build-image`
 │   ├── .env                 # ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN, …
 │   ├── .env.example
 │   ├── lib/
