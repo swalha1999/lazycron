@@ -34,9 +34,11 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/agent/.local/bin:$PATH"
 
 # Re-apply 0777 so files added by the install scripts above remain writable
-# from the runtime UID.
+# from the runtime UID. Also pre-create /home/agent/.claude/ so the
+# .credentials.json file mount from the host doesn't accidentally land on
+# a missing parent (Docker would create an empty parent file otherwise).
 USER root
-RUN chmod -R 0777 /home/agent
+RUN mkdir -p /home/agent/.claude/projects && chmod -R 0777 /home/agent
 USER agent
 
 WORKDIR /home/agent

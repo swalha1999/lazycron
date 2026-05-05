@@ -68,12 +68,18 @@ export function agentSandboxConfig(): {
     if (v) env[key] = v;
   }
 
+  // Mount only the credentials file (not the whole ~/.claude/) so:
+  //   - Claude inside the sandbox reads the host's login.
+  //   - The sandbox keeps its own writable /home/agent/.claude/projects/,
+  //     where Claude writes session logs that sandcastle then `docker cp`s
+  //     out. Mounting the whole dir read-only blocked that write; mounting
+  //     it read-write would leak agent session logs into the user's host.
   const mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[] = [];
-  const claudeDir = path.join(homedir(), ".claude");
-  if (existsSync(claudeDir)) {
+  const credsFile = path.join(homedir(), ".claude", ".credentials.json");
+  if (existsSync(credsFile)) {
     mounts.push({
-      hostPath: claudeDir,
-      sandboxPath: "/home/agent/.claude",
+      hostPath: credsFile,
+      sandboxPath: "/home/agent/.claude/.credentials.json",
       readonly: true,
     });
   }
