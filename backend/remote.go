@@ -3,6 +3,7 @@ package backend
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -222,15 +223,61 @@ func (b *RemoteBackend) EnsureRecordScript() error {
 		return err
 	}
 
-	// Create directories
-	_, err = b.client.Run(fmt.Sprintf("mkdir -p %s/bin %s/history %s/scripts",
-		shellQuote(lcDir), shellQuote(lcDir), shellQuote(lcDir)))
+	// Create directories — including projects/ for sandcastle agent layout.
+	_, err = b.client.Run(fmt.Sprintf("mkdir -p %s/bin %s/history %s/scripts %s/projects",
+		shellQuote(lcDir), shellQuote(lcDir), shellQuote(lcDir), shellQuote(lcDir)))
 	if err != nil {
 		return fmt.Errorf("create dirs: %w", err)
 	}
 
 	// Upload record script
 	return b.client.Upload(string(record.ScriptContent), lcDir+"/bin/record", 0o755)
+}
+
+// CopyProjectFiles tars localDir and uploads it under
+// ~/.lazycron/projects/<remoteSubpath> on the remote.
+func (b *RemoteBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return err
+	}
+	remoteDir := lcDir + "/projects/" + remoteSubpath
+	return b.client.UploadDirectory(localDir, remoteDir, excludes)
+}
+
+// CheckAgentDeps reports which of docker/node/npx are absent on the remote.
+func (b *RemoteBackend) CheckAgentDeps() ([]string, error) {
+	if err := b.client.Connect(); err != nil {
+		return nil, err
+	}
+	var missing []string
+	for _, name := range []string{"docker", "node", "npx"} {
+		if !b.client.HasCommand(name) {
+			missing = append(missing, name)
+		}
+	}
+	return missing, nil
+}
+
+// RunInProject runs command from ~/.lazycron/projects/<projectName> on the
+// remote. Output is captured then written to the supplied writers.
+func (b *RemoteBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return err
+	}
+	projectDir := lcDir + "/projects/" + projectName
+	wrapped := fmt.Sprintf("cd %s && %s", shellQuote(projectDir), command)
+	out, err := b.client.Run(wrapped)
+	// b.client.Run returns combined output; route to stdout regardless of err
+	// so the caller sees what happened. err carries the exit signal.
+	if stdout != nil && out != "" {
+		_, _ = stdout.Write([]byte(out))
+		if !strings.HasSuffix(out, "\n") {
+			_, _ = stdout.Write([]byte("\n"))
+		}
+	}
+	return err
 }
 
 // DirLister returns a RemoteDirLister for path completion on this server.

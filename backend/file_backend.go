@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,3 +116,23 @@ func (b *FileBackend) KillJob(pid int) error {
 }
 
 func (b *FileBackend) Close() error { return nil }
+
+// CopyProjectFiles is a no-op on the file backend (used for tests/dry-run).
+func (b *FileBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
+	return nil
+}
+
+// CheckAgentDeps reports nothing missing — keeps tests using FileBackend
+// from being coupled to the host's installed binaries.
+func (b *FileBackend) CheckAgentDeps() ([]string, error) {
+	return nil, nil
+}
+
+// RunInProject runs the command directly with no project-dir wrap.
+// Suitable for unit tests; not used in production paths.
+func (b *FileBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}

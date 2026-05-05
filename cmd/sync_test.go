@@ -3,197 +3,114 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/swalha1999/lazycron/cron"
 )
 
-// --- readJobFiles ---
+// --- readSandcastleJobs ---
 
-func TestReadJobFiles_Valid(t *testing.T) {
+func TestReadSandcastleJobs_Valid(t *testing.T) {
 	dir := t.TempDir()
-
-	writeYAML(t, dir, "db-backup.yaml", `
-name: Database Backup
-schedule: "0 3 * * *"
-command: pg_dump mydb
-project: backend
-tag: DB
-tag_color: "#a6e3a1"
+	writeTS(t, dir, "fix-agent.ts", `export const cron = "0 9 * * 1-5";
+export const name = "Fix Agent";
+export const tag = "BP";
+export const tagColor = "#f38ba8";
+// rest of agent...
 `)
 
-	writeYAML(t, dir, "log-rotate.yaml", `
-name: Log Rotation
-schedule: "0 0 * * 0"
-command: logrotate /etc/logrotate.conf
-`)
-
-	jobs, err := readJobFiles(dir, nil)
+	jobs, err := readSandcastleJobs(dir, "myproject")
 	if err != nil {
-		t.Fatalf("readJobFiles: %v", err)
+		t.Fatalf("readSandcastleJobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("got %d jobs, want 1", len(jobs))
+	}
+	j := jobs[0]
+	if j.ID != "fix-agent" {
+		t.Errorf("ID = %q, want fix-agent", j.ID)
+	}
+	if j.Name != "Fix Agent" {
+		t.Errorf("Name = %q", j.Name)
+	}
+	if j.Schedule != "0 9 * * 1-5" {
+		t.Errorf("Schedule = %q", j.Schedule)
+	}
+	if j.Command != "npx tsx .sandcastle/jobs/fix-agent.ts" {
+		t.Errorf("Command = %q", j.Command)
+	}
+	if j.Project != "myproject" {
+		t.Errorf("Project = %q", j.Project)
+	}
+	if j.Tag != "BP" || j.TagColor != "#f38ba8" {
+		t.Errorf("Tag/Color = %q/%q", j.Tag, j.TagColor)
+	}
+}
+
+func TestReadSandcastleJobs_MultipleSorted(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "zebra.ts", `export const cron = "0 1 * * *";
+export const name = "Z";`)
+	writeTS(t, dir, "apple.ts", `export const cron = "0 2 * * *";
+export const name = "A";`)
+
+	jobs, err := readSandcastleJobs(dir, "p")
+	if err != nil {
+		t.Fatalf("readSandcastleJobs: %v", err)
 	}
 	if len(jobs) != 2 {
-		t.Fatalf("expected 2 jobs, got %d", len(jobs))
+		t.Fatalf("want 2 jobs, got %d", len(jobs))
 	}
-
-	// Find db-backup job (file order may vary)
-	var dbJob cron.Job
-	for _, j := range jobs {
-		if j.ID == "db-backup" {
-			dbJob = j
-		}
-	}
-	if dbJob.ID == "" {
-		t.Fatal("db-backup job not found")
-	}
-	if dbJob.Name != "Database Backup" {
-		t.Errorf("name = %q, want %q", dbJob.Name, "Database Backup")
-	}
-	if dbJob.Schedule != "0 3 * * *" {
-		t.Errorf("schedule = %q, want %q", dbJob.Schedule, "0 3 * * *")
-	}
-	if dbJob.Project != "backend" {
-		t.Errorf("project = %q, want %q", dbJob.Project, "backend")
-	}
-	if dbJob.Tag != "DB" {
-		t.Errorf("tag = %q, want %q", dbJob.Tag, "DB")
-	}
-	if !dbJob.Enabled {
-		t.Error("expected enabled=true by default")
+	if jobs[0].ID != "apple" || jobs[1].ID != "zebra" {
+		t.Errorf("expected sorted order; got %s, %s", jobs[0].ID, jobs[1].ID)
 	}
 }
 
-func TestReadJobFiles_InvalidYAML(t *testing.T) {
+func TestReadSandcastleJobs_MissingMetadataFails(t *testing.T) {
 	dir := t.TempDir()
-	writeYAML(t, dir, "bad-job.yaml", `not: valid: yaml: [`)
+	writeTS(t, dir, "bad.ts", `// no exports here, just code
+console.log("hello");`)
 
-	_, err := readJobFiles(dir, nil)
+	_, err := readSandcastleJobs(dir, "p")
 	if err == nil {
-		t.Fatal("expected error for invalid YAML")
+		t.Fatal("expected error for missing metadata, got nil")
+	}
+	if !strings.Contains(err.Error(), "bad.ts") {
+		t.Errorf("error should reference filename, got: %v", err)
 	}
 }
 
-func TestReadJobFiles_InvalidID(t *testing.T) {
+func TestReadSandcastleJobs_InvalidCronFails(t *testing.T) {
 	dir := t.TempDir()
-	writeYAML(t, dir, "DB-BACKUP.yaml", `
-name: Bad ID
-schedule: "* * * * *"
-command: echo hi
-`)
+	writeTS(t, dir, "broken-cron.ts", `export const cron = "not a cron expression";
+export const name = "Broken";`)
 
-	_, err := readJobFiles(dir, nil)
+	_, err := readSandcastleJobs(dir, "p")
 	if err == nil {
-		t.Fatal("expected error for uppercase filename")
+		t.Fatal("expected error for invalid cron, got nil")
 	}
 }
 
-func TestReadJobFiles_MissingName(t *testing.T) {
+func TestReadSandcastleJobs_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	writeYAML(t, dir, "no-name.yaml", `
-schedule: "* * * * *"
-command: echo hi
-`)
-
-	_, err := readJobFiles(dir, nil)
-	if err == nil {
-		t.Fatal("expected error for missing name")
-	}
-}
-
-func TestReadJobFiles_EmptyDir(t *testing.T) {
-	dir := t.TempDir()
-	jobs, err := readJobFiles(dir, nil)
+	jobs, err := readSandcastleJobs(dir, "p")
 	if err != nil {
-		t.Fatalf("readJobFiles: %v", err)
+		t.Fatalf("readSandcastleJobs: %v", err)
 	}
 	if len(jobs) != 0 {
-		t.Fatalf("expected 0 jobs, got %d", len(jobs))
+		t.Errorf("expected 0 jobs, got %d", len(jobs))
 	}
 }
 
-func TestReadJobFiles_ExplicitDisabled(t *testing.T) {
-	dir := t.TempDir()
-	writeYAML(t, dir, "disabled-job.yaml", `
-name: Disabled Job
-schedule: "* * * * *"
-command: echo off
-enabled: false
-`)
+// --- remoteProjectPath ---
 
-	jobs, err := readJobFiles(dir, nil)
-	if err != nil {
-		t.Fatalf("readJobFiles: %v", err)
+func TestRemoteProjectPath(t *testing.T) {
+	if got := remoteProjectPath("", "ignored", "/cwd/here"); got != "/cwd/here" {
+		t.Errorf("local mode: got %q, want /cwd/here", got)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(jobs))
-	}
-	if jobs[0].Enabled {
-		t.Error("expected enabled=false")
-	}
-}
-
-// --- readJobFiles with env vars ---
-
-func TestReadJobFiles_EnvSubstitution(t *testing.T) {
-	dir := t.TempDir()
-
-	writeYAML(t, dir, "db-backup.yaml", `
-name: Database Backup
-schedule: "0 3 * * *"
-command: pg_dump -h ${DB_HOST} ${DB_NAME}
-`)
-
-	vars := map[string]string{
-		"DB_HOST": "prod-db.example.com",
-		"DB_NAME": "appdb",
-	}
-
-	jobs, err := readJobFiles(dir, vars)
-	if err != nil {
-		t.Fatalf("readJobFiles: %v", err)
-	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(jobs))
-	}
-	want := "pg_dump -h prod-db.example.com appdb"
-	if jobs[0].Command != want {
-		t.Errorf("command = %q, want %q", jobs[0].Command, want)
-	}
-}
-
-func TestReadJobFiles_UndefinedVarError(t *testing.T) {
-	dir := t.TempDir()
-
-	writeYAML(t, dir, "db-backup.yaml", `
-name: Database Backup
-schedule: "0 3 * * *"
-command: pg_dump -h ${DB_HOST} ${DB_NAME}
-`)
-
-	vars := map[string]string{"DB_HOST": "localhost"}
-
-	_, err := readJobFiles(dir, vars)
-	if err == nil {
-		t.Fatal("expected error for undefined variable")
-	}
-}
-
-func TestReadJobFiles_NilVarsSkipsSubstitution(t *testing.T) {
-	dir := t.TempDir()
-
-	writeYAML(t, dir, "job.yaml", `
-name: Test Job
-schedule: "* * * * *"
-command: echo ${NOT_SUBSTITUTED}
-`)
-
-	// nil vars means no substitution — ${...} is preserved as-is.
-	jobs, err := readJobFiles(dir, nil)
-	if err != nil {
-		t.Fatalf("readJobFiles: %v", err)
-	}
-	if jobs[0].Command != "echo ${NOT_SUBSTITUTED}" {
-		t.Errorf("command = %q, expected literal ${NOT_SUBSTITUTED}", jobs[0].Command)
+	if got := remoteProjectPath("vm1", "myproj", "/anything"); got != "~/.lazycron/projects/myproj" {
+		t.Errorf("remote mode: got %q", got)
 	}
 }
 
@@ -262,7 +179,6 @@ func TestMergeJobs_ExistingPreserved(t *testing.T) {
 	if len(merged) != 2 {
 		t.Fatalf("merged len = %d, want 2", len(merged))
 	}
-	// TUI job should still be there
 	if merged[0].ID != "abc12345" {
 		t.Errorf("existing job not preserved: %q", merged[0].ID)
 	}
@@ -307,7 +223,7 @@ func TestJobNeedsUpdate_ScheduleChange(t *testing.T) {
 
 // --- helpers ---
 
-func writeYAML(t *testing.T, dir, filename, content string) {
+func writeTS(t *testing.T, dir, filename, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
 		t.Fatal(err)

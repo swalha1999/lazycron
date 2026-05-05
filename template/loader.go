@@ -3,6 +3,7 @@ package template
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/swalha1999/lazycron/template/builtin"
 )
@@ -38,18 +39,31 @@ func loadFromEmbedDir(base string, entries []os.DirEntry) ([]Template, error) {
 			templates = append(templates, nested...)
 			continue
 		}
-		if filepath.Ext(entry.Name()) != ".yaml" && filepath.Ext(entry.Name()) != ".yml" {
-			continue
+		ext := filepath.Ext(entry.Name())
+		switch ext {
+		case ".yaml", ".yml":
+			data, err := builtin.FS.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			t, err := Parse(data)
+			if err != nil {
+				continue
+			}
+			templates = append(templates, *t)
+		case ".ts":
+			data, err := builtin.FS.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			filename := strings.TrimSuffix(entry.Name(), ".ts")
+			t, err := ParseSandcastleTS(data, filename)
+			if err != nil {
+				continue
+			}
+			t.SandcastleSource = path
+			templates = append(templates, *t)
 		}
-		data, err := builtin.FS.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		t, err := Parse(data)
-		if err != nil {
-			continue
-		}
-		templates = append(templates, *t)
 	}
 	return templates, nil
 }

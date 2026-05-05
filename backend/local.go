@@ -2,7 +2,9 @@ package backend
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -93,3 +95,29 @@ func (b *LocalBackend) KillJob(pid int) error {
 }
 
 func (b *LocalBackend) Close() error { return nil }
+
+// CopyProjectFiles is a no-op locally — the project already lives where the
+// user invoked lazycron from.
+func (b *LocalBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
+	return nil
+}
+
+// CheckAgentDeps reports which of docker/node/npx are missing on $PATH.
+func (b *LocalBackend) CheckAgentDeps() ([]string, error) {
+	var missing []string
+	for _, name := range []string{"docker", "node", "npx"} {
+		if _, err := exec.LookPath(name); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	return missing, nil
+}
+
+// RunInProject runs command from the current working directory and streams
+// output. projectName is unused locally — included only for interface symmetry.
+func (b *LocalBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}

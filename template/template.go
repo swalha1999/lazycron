@@ -58,6 +58,17 @@ type Variable struct {
 	Default string `yaml:"default"`
 }
 
+// TemplateType distinguishes how a template is applied.
+//   - TypeYAML: legacy/non-agent templates that write directly to crontab.
+//   - TypeSandcastle: agent templates (TS files) scaffolded into
+//     .sandcastle/jobs/ and installed by `lazycron sync`.
+type TemplateType string
+
+const (
+	TypeYAML       TemplateType = "yaml"
+	TypeSandcastle TemplateType = "sandcastle"
+)
+
 // Template represents a reusable cron job recipe.
 type Template struct {
 	Name        string     `yaml:"name"`
@@ -68,6 +79,18 @@ type Template struct {
 	Variables   []Variable `yaml:"variables,omitempty"`
 	Tag         string     `yaml:"tag,omitempty"`
 	TagColor    string     `yaml:"tag_color,omitempty"` // hex color, e.g. "#f38ba8"
+
+	// Type indicates how `templates apply` should install this template.
+	// Set by the loader from the source file extension; not user-authored.
+	Type TemplateType `yaml:"-"`
+
+	// SandcastleSource is the embedded path of the .ts file (for Type ==
+	// TypeSandcastle). Used by `templates apply` to read and copy the file.
+	SandcastleSource string `yaml:"-"`
+
+	// Filename is the basename (without extension) used for the scaffolded
+	// .ts file. Defaults to a slug of Name for sandcastle templates.
+	Filename string `yaml:"-"`
 }
 
 // Parse parses a YAML template definition.
@@ -85,7 +108,43 @@ func Parse(data []byte) (*Template, error) {
 	if t.Schedule == "" {
 		return nil, fmt.Errorf("template missing required field: schedule")
 	}
+	t.Type = TypeYAML
 	return &t, nil
+}
+
+// ParseSandcastleTS builds a Template from a .ts file's metadata exports.
+// Description is populated from a leading `// description: ...` comment if
+// present. The Type is always TypeSandcastle.
+func ParseSandcastleTS(data []byte, filename string) (*Template, error) {
+	meta, err := ParseSandcastleMeta(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse sandcastle template %s: %w", filename, err)
+	}
+	t := &Template{
+		Name:        meta.Name,
+		Category:    CategoryAI,
+		Description: extractTSDescription(data),
+		Schedule:    meta.Cron,
+		Command:     "npx tsx .sandcastle/jobs/" + filename + ".ts",
+		Tag:         meta.Tag,
+		TagColor:    meta.TagColor,
+		Type:        TypeSandcastle,
+		Filename:    filename,
+	}
+	return t, nil
+}
+
+// extractTSDescription pulls a one-line description from a `// description: ...`
+// comment, if present in the first ~20 lines. Returns empty string otherwise.
+func extractTSDescription(data []byte) string {
+	lines := strings.SplitN(string(data), "\n", 21)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "// description:") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "// description:"))
+		}
+	}
+	return ""
 }
 
 // Apply substitutes variable values into the template's command and schedule,

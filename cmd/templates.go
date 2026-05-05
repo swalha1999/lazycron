@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/template"
+	"github.com/swalha1999/lazycron/template/builtin"
 )
 
 var templatesCmd = &cobra.Command{
@@ -82,10 +84,6 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 func runTemplatesApply(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	if err := cron.CheckCrontabAvailable(); err != nil {
-		return err
-	}
-
 	templates, err := template.LoadAll()
 	if err != nil {
 		return fmt.Errorf("failed to load templates: %w", err)
@@ -103,11 +101,63 @@ func runTemplatesApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("template %q not found", name)
 	}
 
+	if tmpl.Type == template.TypeSandcastle {
+		return applySandcastleTemplate(tmpl)
+	}
+	return applyYAMLTemplate(tmpl)
+}
+
+// applySandcastleTemplate copies the embedded .ts file into
+// .sandcastle/jobs/<filename>.ts in the current directory. No variable
+// prompts; the .ts file reads what it needs from .sandcastle/.env at runtime.
+// Refuses if .sandcastle/ does not exist (the user hasn't run init yet).
+func applySandcastleTemplate(tmpl *template.Template) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get cwd: %w", err)
+	}
+	sandcastleDir := filepath.Join(cwd, ".sandcastle")
+	if _, err := os.Stat(sandcastleDir); err != nil {
+		return fmt.Errorf("no .sandcastle/ directory found in %s — run `lazycron init --with-agents` first", cwd)
+	}
+
+	jobsDir := filepath.Join(sandcastleDir, "jobs")
+	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", jobsDir, err)
+	}
+
+	data, err := builtin.FS.ReadFile(tmpl.SandcastleSource)
+	if err != nil {
+		return fmt.Errorf("read embedded template: %w", err)
+	}
+
+	dest := filepath.Join(jobsDir, tmpl.Filename+".ts")
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("%s already exists; remove it first if you want to re-apply", dest)
+	}
+
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+
+	fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts"))
+	fmt.Printf("Schedule: %s   Name: %s\n", tmpl.Schedule, tmpl.Name)
+	fmt.Println()
+	fmt.Println("Run `lazycron sync` to install the cron job.")
+	return nil
+}
+
+// applyYAMLTemplate is the original behaviour: prompt for variables, render,
+// and append directly to the crontab.
+func applyYAMLTemplate(tmpl *template.Template) error {
+	if err := cron.CheckCrontabAvailable(); err != nil {
+		return err
+	}
+
 	fmt.Printf("Applying template: %s\n", tmpl.Name)
 	fmt.Printf("Description: %s\n", tmpl.Description)
 	fmt.Println()
 
-	// Prompt for variable values
 	reader := bufio.NewReader(os.Stdin)
 	values := make(map[string]string)
 
@@ -128,7 +178,6 @@ func runTemplatesApply(cmd *cobra.Command, args []string) error {
 	resolvedCmd, resolvedSchedule := tmpl.Apply(values)
 	cronExpr := cron.HumanToCron(resolvedSchedule)
 
-	// Use template name as job name, prompt for override
 	fmt.Printf("Job name [%s]: ", tmpl.Name)
 	jobName, _ := reader.ReadString('\n')
 	jobName = strings.TrimSpace(jobName)
