@@ -75,7 +75,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if withAgents {
-		if err := scaffoldSandcastle(cwd); err != nil {
+		if err := scaffoldSandcastle(cwd, name); err != nil {
 			return err
 		}
 	}
@@ -91,8 +91,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 // sandbox, GitHub Issues backlog. The Dockerfile, .env.example, and
 // in-folder .gitignore are pinned copies of @ai-hero/sandcastle@0.5.7's
 // blank-template output for that combination.
-func scaffoldSandcastle(cwd string) error {
-	if err := scaffoldSandcastleConfig(cwd); err != nil {
+func scaffoldSandcastle(cwd, projectName string) error {
+	if err := scaffoldSandcastleConfig(cwd, projectName); err != nil {
 		return fmt.Errorf("scaffold .sandcastle/: %w", err)
 	}
 
@@ -114,7 +114,7 @@ func scaffoldSandcastle(cwd string) error {
 // realScaffoldSandcastleConfig writes the embedded Dockerfile, .env.example,
 // and .gitignore into .sandcastle/. Existing files are not overwritten so
 // re-running with --force preserves user edits.
-func realScaffoldSandcastleConfig(cwd string) error {
+func realScaffoldSandcastleConfig(cwd, projectName string) error {
 	sandcastleDir := filepath.Join(cwd, ".sandcastle")
 	if err := os.MkdirAll(sandcastleDir, 0o755); err != nil {
 		return err
@@ -136,7 +136,9 @@ func realScaffoldSandcastleConfig(cwd string) error {
 		// surfaces "set REPO_URL in .sandcastle/.env" instead of "no such
 		// file" the first time the user runs an agent. Skipped if .env
 		// already exists. If we found a git remote, pre-fill REPO_URL.
-		{"sandcastle_init/env.example", ".env", fillRepoURL(repoURL)},
+		// PROJECT_NAME is also pre-filled so the agent's cache dir and the
+		// sandcastle Docker image tag stay aligned with the lazycron project.
+		{"sandcastle_init/env.example", ".env", composeEnvTransforms(fillRepoURL(repoURL), fillProjectName(projectName))},
 		{"sandcastle_init/gitignore", ".gitignore", nil},
 		{"sandcastle_init/package.json", "package.json", nil},
 	}
@@ -185,6 +187,36 @@ func fillRepoURL(url string) func([]byte) []byte {
 		// Only replace when the line is empty (REPO_URL=\n), so we don't
 		// accidentally clobber a value the user already set in env.example.
 		return bytes.Replace(data, []byte("REPO_URL=\n"), []byte("REPO_URL="+url+"\n"), 1)
+	}
+}
+
+// fillProjectName returns a transform that replaces the `PROJECT_NAME=` line
+// in .env contents with `PROJECT_NAME=<name>`. No-op if name is empty.
+func fillProjectName(name string) func([]byte) []byte {
+	if name == "" {
+		return nil
+	}
+	return func(data []byte) []byte {
+		return bytes.Replace(data, []byte("PROJECT_NAME=\n"), []byte("PROJECT_NAME="+name+"\n"), 1)
+	}
+}
+
+// composeEnvTransforms chains a sequence of optional transforms (any may be nil).
+func composeEnvTransforms(fns ...func([]byte) []byte) func([]byte) []byte {
+	var active []func([]byte) []byte
+	for _, fn := range fns {
+		if fn != nil {
+			active = append(active, fn)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	return func(data []byte) []byte {
+		for _, fn := range active {
+			data = fn(data)
+		}
+		return data
 	}
 }
 
