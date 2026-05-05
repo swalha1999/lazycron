@@ -29,12 +29,13 @@ var syncCmd = &cobra.Command{
 }
 
 var (
-	syncServer       string
-	syncProject      string
-	syncNoEnv        bool
-	syncNoFiles      bool
-	syncNoBuild      bool
-	syncSkipDepsChk  bool
+	syncServer      string
+	syncProject     string
+	syncNoEnv       bool
+	syncNoFiles     bool
+	syncNoBuild     bool
+	syncNoInstall   bool
+	syncSkipDepsChk bool
 )
 
 func init() {
@@ -43,6 +44,7 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env or .sandcastle/.env to the remote")
 	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ or .sandcastle/ files (crontab only)")
 	syncCmd.Flags().BoolVar(&syncNoBuild, "no-build", false, "do NOT run `npx @ai-hero/sandcastle docker build-image` after transferring files")
+	syncCmd.Flags().BoolVar(&syncNoInstall, "no-install", false, "do NOT run `npm install --prefix .sandcastle` before building the image")
 	syncCmd.Flags().BoolVar(&syncSkipDepsChk, "skip-deps-check", false, "skip the docker/node/npx presence check on the target")
 	rootCmd.AddCommand(syncCmd)
 }
@@ -130,6 +132,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Install .sandcastle/ npm deps (sandcastle + tsx). Cron commands invoke
+	// .sandcastle/node_modules/.bin/tsx directly, so this must complete
+	// before any cron firing.
+	if !syncNoInstall {
+		fmt.Println("Installing .sandcastle/ dependencies (npm install)...")
+		if err := b.RunInProject(projectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", os.Stdout, os.Stderr); err != nil {
+			return fmt.Errorf("npm install in .sandcastle/: %w", err)
+		}
+	}
+
 	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
 	if !syncNoBuild {
 		fmt.Println("Building sandcastle image...")
@@ -199,7 +211,7 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 			ID:       id,
 			Name:     meta.Name,
 			Schedule: cronExpr,
-			Command:  fmt.Sprintf("npx tsx .sandcastle/jobs/%s.ts", id),
+			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx .sandcastle/jobs/%s.ts", id),
 			Enabled:  true,
 			Wrapped:  true,
 			Tag:      meta.Tag,

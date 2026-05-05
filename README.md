@@ -127,7 +127,7 @@ lazycron sync --no-build             # skip docker build
 lazycron sync --skip-deps-check      # skip docker/node/npx check
 ```
 
-`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npx @ai-hero/sandcastle docker build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent.
+`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npm install --prefix .sandcastle` to install pinned `@ai-hero/sandcastle` + `tsx`, then `npx @ai-hero/sandcastle docker build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent via the locally-installed `tsx`.
 
 Sync is a **safe merge** — it only adds or updates jobs derived from `.sandcastle/jobs/*.ts`. Existing jobs created through the TUI are never deleted.
 

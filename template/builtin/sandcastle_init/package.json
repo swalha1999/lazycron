@@ -1,0 +1,11 @@
+{
+  "name": "lazycron-sandcastle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lazycron-managed sandcastle agent runtime. Scaffolded by `lazycron init --with-agents` and installed by `lazycron sync`. Edit the dependency versions to upgrade sandcastle or tsx.",
+  "type": "module",
+  "dependencies": {
+    "@ai-hero/sandcastle": "0.5.7",
+    "tsx": "^4.19.0"
+  }
+}

@@ -125,6 +125,7 @@ func realScaffoldSandcastleConfig(cwd string) error {
 		{"sandcastle_init/Dockerfile", "Dockerfile"},
 		{"sandcastle_init/env.example", ".env.example"},
 		{"sandcastle_init/gitignore", ".gitignore"},
+		{"sandcastle_init/package.json", "package.json"},
 	}
 	for _, f := range files {
 		dest := filepath.Join(sandcastleDir, f.dest)

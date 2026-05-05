@@ -35,12 +35,13 @@ lazycron sync -s CronWorker          # remote server
 In order, every sync run does:
 
 1. **Resolve project name** from `--project` flag, then `.lazycron/config.yaml`, then the cwd basename.
-2. **Read TS jobs** from `.sandcastle/jobs/*.ts`. Each file's metadata (`export const cron`, `name`, optional `tag` and `tagColor`) becomes a cron entry. The command is auto-generated as `npx tsx .sandcastle/jobs/<name>.ts`.
+2. **Read TS jobs** from `.sandcastle/jobs/*.ts`. Each file's metadata (`export const cron`, `name`, optional `tag` and `tagColor`) becomes a cron entry. The command is auto-generated as `.sandcastle/node_modules/.bin/tsx .sandcastle/jobs/<name>.ts`.
 3. **Deps check** the target machine — refuses to continue if `docker`, `node`, or `npx` is missing. Override with `--skip-deps-check`.
 4. **Transfer files** (remote sync only): tar `.lazycron/` and `.sandcastle/` over SSH stdin into `~/.lazycron/projects/<name>/` on the remote. `.env` files are included by default; `--no-env` opts out.
-5. **Build the sandcastle image** (`npx @ai-hero/sandcastle docker build-image`) on the target. Cheap on rerun (Docker layer cache). `--no-build` opts out.
-6. **Inject `cd`**: each job's command is wrapped as `cd <project-dir> && npx tsx ...` so it runs inside the synced project directory. Local syncs `cd` into `cwd`; remote syncs `cd ~/.lazycron/projects/<name>/`.
-7. **Merge crontab**: existing entries with matching IDs are updated; non-agent entries (created via TUI or hand-written) are left untouched.
+5. **Install npm deps** (`npm install --prefix .sandcastle`) on the target so `.sandcastle/node_modules/` contains the pinned `@ai-hero/sandcastle` and `tsx`. `--no-install` opts out.
+6. **Build the sandcastle image** (`npx @ai-hero/sandcastle docker build-image`) on the target. Cheap on rerun (Docker layer cache). `--no-build` opts out.
+7. **Inject `cd`**: each job's command is wrapped as `cd <project-dir> && .sandcastle/node_modules/.bin/tsx ...` so it runs inside the synced project directory. Local syncs `cd` into `cwd`; remote syncs `cd ~/.lazycron/projects/<name>/`.
+8. **Merge crontab**: existing entries with matching IDs are updated; non-agent entries (created via TUI or hand-written) are left untouched.
 
 ## Sync Targets
 

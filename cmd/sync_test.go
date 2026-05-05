@@ -37,7 +37,7 @@ export const tagColor = "#f38ba8";
 	if j.Schedule != "0 9 * * 1-5" {
 		t.Errorf("Schedule = %q", j.Schedule)
 	}
-	if j.Command != "npx tsx .sandcastle/jobs/fix-agent.ts" {
+	if j.Command != ".sandcastle/node_modules/.bin/tsx .sandcastle/jobs/fix-agent.ts" {
 		t.Errorf("Command = %q", j.Command)
 	}
 	if j.Project != "myproject" {
