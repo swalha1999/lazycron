@@ -11,7 +11,7 @@ import { execSync } from "node:child_process";
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
 
-requireEnv("REPO_URL", "ANTHROPIC_API_KEY", "GH_TOKEN");
+requireEnv("REPO_URL", "GH_TOKEN");
 
 const repoDir = ensureRepo({
   url: process.env.REPO_URL!,
