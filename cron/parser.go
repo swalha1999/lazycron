@@ -106,7 +106,13 @@ func (j Job) CrontabLine() string {
 	}
 	fmt.Fprintf(&b, "# %s\n", nameComment)
 
-	scriptCmd := "sh '" + ScriptPath(j.ID) + "'"
+	// bash, not sh: on macOS /bin/sh is bash in POSIX mode, where a parse
+	// error in a sourced rc file (e.g. zsh-only syntax in ~/.zshrc) is fatal
+	// and aborts the script before the user's command runs. Cron runs this
+	// line directly, so the preamble's `2>/dev/null || true` cannot rescue
+	// a POSIX-mode parse abort. See cron/writer.go:RunJobNow for the same
+	// reasoning on the manual-run path.
+	scriptCmd := "bash '" + ScriptPath(j.ID) + "'"
 	var wrapped string
 	if j.OneShot {
 		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)

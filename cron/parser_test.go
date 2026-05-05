@@ -117,7 +117,7 @@ func TestCrontabLine_Enabled(t *testing.T) {
 		t.Errorf("expected schedule + wrapped command: %q", line)
 	}
 	// Should reference quoted script path using ID, not name
-	expectedScriptRef := "sh '" + dir + "/abc12345.sh'"
+	expectedScriptRef := "bash '" + dir + "/abc12345.sh'"
 	if !strings.Contains(line, expectedScriptRef) {
 		t.Errorf("expected script ref %q in line: %q", expectedScriptRef, line)
 	}

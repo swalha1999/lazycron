@@ -126,11 +126,15 @@ func TestIsScriptRef(t *testing.T) {
 		command string
 		want    bool
 	}{
-		{"sh /Users/me/.lazycron/scripts/abc12345.sh", true},
-		{"sh /home/ubuntu/.lazycron/scripts/abc12345.sh", true},
+		{"bash /Users/me/.lazycron/scripts/abc12345.sh", true},
+		{"bash /home/ubuntu/.lazycron/scripts/abc12345.sh", true},
+		{"sh /Users/me/.lazycron/scripts/abc12345.sh", true}, // legacy
+		{"sh /home/ubuntu/.lazycron/scripts/abc12345.sh", true}, // legacy
 		{"echo hello", false},
+		{"bash /tmp/other-script.sh", false},
 		{"sh /tmp/other-script.sh", false},
 		{"sh", false},
+		{"bash", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
@@ -148,10 +152,21 @@ func TestResolveScript_Success(t *testing.T) {
 	dir := withFakeScriptsDir(t)
 	WriteScript("abc12345", "echo resolved")
 
-	ref := "sh " + dir + "/abc12345.sh"
+	ref := "bash " + dir + "/abc12345.sh"
 	got := resolveScript(ref)
 	if got != "echo resolved" {
 		t.Errorf("resolveScript(%q) = %q, want %q", ref, got, "echo resolved")
+	}
+}
+
+func TestResolveScript_LegacyShPrefix(t *testing.T) {
+	dir := withFakeScriptsDir(t)
+	WriteScript("abc12345", "echo legacy")
+
+	ref := "sh " + dir + "/abc12345.sh"
+	got := resolveScript(ref)
+	if got != "echo legacy" {
+		t.Errorf("resolveScript(%q) = %q, want %q", ref, got, "echo legacy")
 	}
 }
 

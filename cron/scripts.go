@@ -170,10 +170,21 @@ func StripProjectCd(command string) (stripped, projectPath string) {
 // scriptRefMarker is the path component that identifies a lazycron script reference.
 var scriptRefMarker = filepath.Join(".lazycron", "scripts")
 
+// scriptRefPrefixes are the invocation prefixes lazycron has used over time.
+// Current writes use "bash "; older crontabs may still contain "sh ".
+var scriptRefPrefixes = []string{"bash ", "sh "}
+
 // IsScriptRef reports whether a command is a reference to a lazycron script.
 func IsScriptRef(command string) bool {
-	return strings.HasPrefix(command, "sh ") &&
-		strings.Contains(command, scriptRefMarker)
+	if !strings.Contains(command, scriptRefMarker) {
+		return false
+	}
+	for _, p := range scriptRefPrefixes {
+		if strings.HasPrefix(command, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveScript reads the actual command from a script file reference.
@@ -182,7 +193,13 @@ func resolveScript(command string) string {
 	if !IsScriptRef(command) {
 		return command
 	}
-	path := strings.TrimPrefix(command, "sh ")
+	var path string
+	for _, p := range scriptRefPrefixes {
+		if strings.HasPrefix(command, p) {
+			path = strings.TrimPrefix(command, p)
+			break
+		}
+	}
 	path = strings.Trim(path, "'\"")
 	content, err := ReadScriptCommand(path)
 	if err != nil {
