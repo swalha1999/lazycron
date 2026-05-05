@@ -124,6 +124,11 @@ func realScaffoldSandcastleConfig(cwd string) error {
 	}{
 		{"sandcastle_init/Dockerfile", "Dockerfile"},
 		{"sandcastle_init/env.example", ".env.example"},
+		// Seed .env from .env.example so the template's requireEnv check
+		// surfaces "set REPO_URL in .sandcastle/.env" instead of "no such
+		// file" the first time the user runs an agent. Skipped if .env
+		// already exists.
+		{"sandcastle_init/env.example", ".env"},
 		{"sandcastle_init/gitignore", ".gitignore"},
 		{"sandcastle_init/package.json", "package.json"},
 	}

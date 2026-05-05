@@ -23,8 +23,29 @@ export interface EnsureRepoOpts {
   defaultBranch?: string;
 }
 
+/**
+ * requireEnv — fail fast with a friendly message if any of the named env
+ * vars is missing or empty. Each agent template calls this at the top so
+ * cron-fired runs surface "set X in .sandcastle/.env" instead of confusing
+ * downstream errors like `git clone undefined`.
+ */
+export function requireEnv(...names: string[]): void {
+  const missing = names.filter((n) => !process.env[n]);
+  if (missing.length > 0) {
+    console.error(
+      `[lazycron] Missing required env var${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.\n` +
+        `Set them in .sandcastle/.env (see .sandcastle/.env.example).`
+    );
+    process.exit(1);
+  }
+}
+
 /** Clones the repo on first call, then fetches + resets to defaultBranch. */
 export function ensureRepo(opts: EnsureRepoOpts): string {
+  if (!opts.url) {
+    throw new Error("ensureRepo: opts.url is required (set REPO_URL in .sandcastle/.env)");
+  }
+
   const branch = opts.defaultBranch ?? "main";
   const cacheDir = path.join(homedir(), ".lazycron-cache", "repos", opts.name);
 

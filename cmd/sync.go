@@ -211,7 +211,7 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 			ID:       id,
 			Name:     meta.Name,
 			Schedule: cronExpr,
-			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx .sandcastle/jobs/%s.ts", id),
+			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/%s.ts", id),
 			Enabled:  true,
 			Wrapped:  true,
 			Tag:      meta.Tag,

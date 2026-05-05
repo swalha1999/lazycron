@@ -6,10 +6,12 @@ export const tagColor = "#f38ba8";
 
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { ensureRepo } from "../lib/ensureRepo";
+import { ensureRepo, requireEnv } from "../lib/ensureRepo";
 import { execSync } from "node:child_process";
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
+
+requireEnv("REPO_URL", "ANTHROPIC_API_KEY", "GH_TOKEN");
 
 const repoDir = ensureRepo({
   url: process.env.REPO_URL!,
