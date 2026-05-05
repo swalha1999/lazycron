@@ -287,7 +287,7 @@ func TestRunJobNow_CreatesScriptIfMissing(t *testing.T) {
 	RunJobNow("abc12345", "cd /tmp && ls -la")
 
 	// Should run via quoted script path
-	expectedPath := "sh '" + dir + "/abc12345.sh'"
+	expectedPath := "bash '" + dir + "/abc12345.sh'"
 	if gotCommand != expectedPath {
 		t.Errorf("command = %q, want %q", gotCommand, expectedPath)
 	}

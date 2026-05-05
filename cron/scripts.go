@@ -33,22 +33,32 @@ func WriteScript(jobID, command string) error {
 }
 
 // ScriptPreamble is the profile-sourcing block prepended to every script.
+//
+// We run scripts with bash (not /bin/sh) because on macOS /bin/sh is bash
+// in POSIX-strict mode, and sourcing .zshrc — which routinely has zsh-only
+// syntax (e.g. compdef directives in completion files) — triggers a parse
+// error that kills the script silently, before the actual command runs.
+// Bash without --posix tolerates the same parse errors and continues.
 const ScriptPreamble = "# Source user profile for PATH and environment variables.\n" +
 	"for __lc_rc in \"$HOME/.profile\" \"$HOME/.bashrc\" \"$HOME/.zshrc\"; do\n" +
-	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null\n" +
+	"  [ -f \"$__lc_rc\" ] && . \"$__lc_rc\" 2>/dev/null || true\n" +
 	"done\n" +
 	"unset __lc_rc\n"
 
 // BuildScriptContent returns a complete script with shebang, preamble, and command.
 func BuildScriptContent(command string) string {
-	return "#!/bin/sh\n" + ScriptPreamble + command + "\n"
+	return "#!/usr/bin/env bash\n" + ScriptPreamble + command + "\n"
 }
 
 // StripShebang removes the shebang line and preamble from script content,
-// returning just the command.
+// returning just the command. Tolerates both legacy `#!/bin/sh` scripts
+// and the current `#!/usr/bin/env bash`.
 func StripShebang(content string) string {
-	if strings.HasPrefix(content, "#!/bin/sh\n") {
-		content = content[len("#!/bin/sh\n"):]
+	for _, sh := range []string{"#!/usr/bin/env bash\n", "#!/bin/bash\n", "#!/bin/sh\n"} {
+		if strings.HasPrefix(content, sh) {
+			content = content[len(sh):]
+			break
+		}
 	}
 	content = strings.TrimPrefix(content, ScriptPreamble)
 	return strings.TrimRight(content, "\n")

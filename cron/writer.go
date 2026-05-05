@@ -91,5 +91,9 @@ func RunJobNow(id, command string) (string, error) {
 		}
 	}
 
-	return runShell("sh '" + path + "'")
+	// bash, not sh: macOS /bin/sh is bash in POSIX-strict mode, where a parse
+	// error during `. ~/.zshrc` (zsh-only completion syntax) kills the script
+	// silently before the user's command runs — leaving the TUI/history with
+	// only "exit status 1" and no output to surface.
+	return runShell("bash '" + path + "'")
 }
