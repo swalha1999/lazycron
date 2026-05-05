@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -118,19 +120,25 @@ func realScaffoldSandcastleConfig(cwd string) error {
 		return err
 	}
 
+	// Auto-detect REPO_URL from the git remote so the user doesn't have to
+	// fill it in by hand on first run. Empty string if cwd isn't a git repo
+	// or has no origin — .env still gets the empty `REPO_URL=` line.
+	repoURL := detectRepoURL(cwd)
+
 	files := []struct {
-		embed string
-		dest  string
+		embed     string
+		dest      string
+		transform func([]byte) []byte
 	}{
-		{"sandcastle_init/Dockerfile", "Dockerfile"},
-		{"sandcastle_init/env.example", ".env.example"},
+		{"sandcastle_init/Dockerfile", "Dockerfile", nil},
+		{"sandcastle_init/env.example", ".env.example", nil},
 		// Seed .env from .env.example so the template's requireEnv check
 		// surfaces "set REPO_URL in .sandcastle/.env" instead of "no such
 		// file" the first time the user runs an agent. Skipped if .env
-		// already exists.
-		{"sandcastle_init/env.example", ".env"},
-		{"sandcastle_init/gitignore", ".gitignore"},
-		{"sandcastle_init/package.json", "package.json"},
+		// already exists. If we found a git remote, pre-fill REPO_URL.
+		{"sandcastle_init/env.example", ".env", fillRepoURL(repoURL)},
+		{"sandcastle_init/gitignore", ".gitignore", nil},
+		{"sandcastle_init/package.json", "package.json", nil},
 	}
 	for _, f := range files {
 		dest := filepath.Join(sandcastleDir, f.dest)
@@ -141,12 +149,43 @@ func realScaffoldSandcastleConfig(cwd string) error {
 		if err != nil {
 			return fmt.Errorf("read embedded %s: %w", f.embed, err)
 		}
+		if f.transform != nil {
+			data = f.transform(data)
+		}
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
 		fmt.Printf("Created %s\n", filepath.Join(".sandcastle", f.dest))
 	}
+	if repoURL != "" {
+		fmt.Printf("Detected REPO_URL=%s from git remote (pre-filled in .sandcastle/.env)\n", repoURL)
+	}
 	return nil
+}
+
+// detectRepoURL returns the URL of the git remote `origin` for cwd, or
+// empty string if cwd isn't a git working tree, has no origin, or git
+// isn't installed. We never fail the init on this — it's a convenience.
+func detectRepoURL(cwd string) string {
+	c := exec.Command("git", "-C", cwd, "remote", "get-url", "origin")
+	out, err := c.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// fillRepoURL returns a transform that replaces the `REPO_URL=` line in
+// .env contents with `REPO_URL=<url>`. No-op if url is empty.
+func fillRepoURL(url string) func([]byte) []byte {
+	if url == "" {
+		return nil
+	}
+	return func(data []byte) []byte {
+		// Only replace when the line is empty (REPO_URL=\n), so we don't
+		// accidentally clobber a value the user already set in env.example.
+		return bytes.Replace(data, []byte("REPO_URL=\n"), []byte("REPO_URL="+url+"\n"), 1)
+	}
 }
 
 // applyAllSandcastleTemplates copies every bundled sandcastle agent template
