@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/template"
 	"github.com/swalha1999/lazycron/template/builtin"
 )
@@ -20,7 +19,6 @@ import (
 var (
 	initWithAgents bool
 	initName       string
-	initForce      bool
 	// scaffoldSandcastleConfig is a swappable seam so tests can stub the
 	// .sandcastle/ scaffold step.
 	scaffoldSandcastleConfig = realScaffoldSandcastleConfig
@@ -30,17 +28,16 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a lazycron project (.lazycron/ + optional .sandcastle/)",
-	Long: "Scaffolds a .lazycron/config.yaml in the current directory. " +
-		"With --with-agents, also scaffolds a sibling .sandcastle/ directory " +
+	Short: "Initialize a lazycron project (.sandcastle/ scaffold + .gitignore)",
+	Long: "Adds .sandcastle to .gitignore in the current directory. " +
+		"With --with-agents, also scaffolds a .sandcastle/ directory " +
 		"with a Claude Code + Docker + GitHub Issues setup ready for `lazycron sync`.",
 	RunE: runInit,
 }
 
 func init() {
 	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ (Claude Code, Docker, GitHub Issues)")
-	initCmd.Flags().StringVar(&initName, "name", "", "project name (defaults to current directory's basename)")
-	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite an existing .lazycron/")
+	initCmd.Flags().StringVar(&initName, "name", "", "project name baked into .sandcastle/.env (defaults to current directory's basename)")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -50,22 +47,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get cwd: %w", err)
 	}
 
-	lazycronDir := filepath.Join(cwd, ".lazycron")
-	if _, err := os.Stat(lazycronDir); err == nil && !initForce {
-		return fmt.Errorf(".lazycron/ already exists in %s — pass --force to overwrite", cwd)
-	}
-
 	name := initName
 	if name == "" {
 		name = filepath.Base(cwd)
 	}
 
-	if err := config.SaveProjectConfig(lazycronDir, &config.ProjectConfig{Name: name}); err != nil {
-		return fmt.Errorf("write project config: %w", err)
-	}
-	fmt.Printf("Created %s\n", filepath.Join(".lazycron", "config.yaml"))
-
-	if err := appendGitignore(cwd, ".lazycron/.env"); err != nil {
+	if err := appendGitignore(cwd, ".sandcastle"); err != nil {
 		return fmt.Errorf("update .gitignore: %w", err)
 	}
 
@@ -100,10 +87,6 @@ func scaffoldSandcastle(cwd, projectName string) error {
 		return fmt.Errorf("write ensureRepo.ts: %w", err)
 	}
 	fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "lib", "ensureRepo.ts"))
-
-	if err := appendGitignore(cwd, ".sandcastle/.env"); err != nil {
-		return fmt.Errorf("update .gitignore: %w", err)
-	}
 
 	if err := applyAllSandcastleTemplates(cwd); err != nil {
 		return fmt.Errorf("apply sandcastle templates: %w", err)
