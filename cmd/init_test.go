@@ -38,14 +38,14 @@ func stubInit(t *testing.T, scaffold func(string, string) error, write func(stri
 
 func resetInitFlags(t *testing.T) {
 	t.Helper()
-	prevAgents, prevName, prevForce := initWithAgents, initName, initForce
-	initWithAgents, initName, initForce = false, "", false
+	prevAgents, prevName := initWithAgents, initName
+	initWithAgents, initName = false, ""
 	t.Cleanup(func() {
-		initWithAgents, initName, initForce = prevAgents, prevName, prevForce
+		initWithAgents, initName = prevAgents, prevName
 	})
 }
 
-func TestRunInit_BasicScaffold(t *testing.T) {
+func TestRunInit_AddsSandcastleToGitignore(t *testing.T) {
 	dir := chdirTemp(t)
 	resetInitFlags(t)
 	initName = "my-proj"
@@ -54,79 +54,33 @@ func TestRunInit_BasicScaffold(t *testing.T) {
 		t.Fatalf("runInit: %v", err)
 	}
 
-	cfgPath := filepath.Join(dir, ".lazycron", "config.yaml")
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		t.Fatalf("read config.yaml: %v", err)
-	}
-	if !strings.Contains(string(data), "name: my-proj") {
-		t.Errorf("expected `name: my-proj` in config, got: %s", string(data))
-	}
-
 	gi, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gi), ".lazycron/.env") {
-		t.Errorf("expected .gitignore to include .lazycron/.env, got: %s", string(gi))
+	if !strings.Contains(string(gi), ".sandcastle") {
+		t.Errorf("expected .gitignore to include .sandcastle, got: %s", string(gi))
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, ".lazycron")); !os.IsNotExist(err) {
+		t.Errorf("expected no .lazycron/ to be created, got err=%v", err)
 	}
 }
 
-func TestRunInit_NameDefaultsToBasename(t *testing.T) {
-	// Use a Go-friendly basename so it's not yaml-quoted as a number.
-	parent := t.TempDir()
-	dir := filepath.Join(parent, "myproject")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	prev, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+func TestRunInit_IsIdempotent(t *testing.T) {
+	dir := chdirTemp(t)
 	resetInitFlags(t)
 
 	if err := runInit(nil, nil); err != nil {
-		t.Fatalf("runInit: %v", err)
+		t.Fatalf("first runInit: %v", err)
 	}
-
-	data, _ := os.ReadFile(filepath.Join(dir, ".lazycron", "config.yaml"))
-	if !strings.Contains(string(data), "name: myproject") {
-		t.Errorf("expected `name: myproject` in config, got: %s", string(data))
-	}
-}
-
-func TestRunInit_RefuseExisting(t *testing.T) {
-	dir := chdirTemp(t)
-	resetInitFlags(t)
-	if err := os.MkdirAll(filepath.Join(dir, ".lazycron"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	err := runInit(nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("expected 'already exists' error, got %v", err)
-	}
-}
-
-func TestRunInit_ForceOverwrites(t *testing.T) {
-	dir := chdirTemp(t)
-	resetInitFlags(t)
-	initForce = true
-	initName = "second"
-
-	// Pre-create with a different name.
-	if err := os.MkdirAll(filepath.Join(dir, ".lazycron"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	_ = os.WriteFile(filepath.Join(dir, ".lazycron", "config.yaml"), []byte("name: first\n"), 0o644)
-
 	if err := runInit(nil, nil); err != nil {
-		t.Fatalf("runInit: %v", err)
+		t.Fatalf("second runInit: %v", err)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".lazycron", "config.yaml"))
-	if !strings.Contains(string(data), "name: second") {
-		t.Errorf("expected name: second after --force, got: %s", string(data))
+
+	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if got := strings.Count(string(data), ".sandcastle"); got != 1 {
+		t.Errorf("expected .sandcastle to appear exactly once in .gitignore, got %d times", got)
 	}
 }
 
@@ -138,8 +92,6 @@ func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
 
 	scaffoldCalls := 0
 	writeCalls := 0
-	// Resolve symlinks since macOS /var -> /private/var; t.TempDir uses the
-	// unresolved form but os.Getwd inside runInit returns the resolved one.
 	resolvedDir, _ := filepath.EvalSymlinks(dir)
 	stubInit(t,
 		func(cwd, projectName string) error {
@@ -169,36 +121,35 @@ func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
 	}
 
 	gi, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if !strings.Contains(string(gi), ".sandcastle/.env") {
-		t.Errorf("expected .gitignore to include .sandcastle/.env, got: %s", string(gi))
+	if !strings.Contains(string(gi), ".sandcastle") {
+		t.Errorf("expected .gitignore to include .sandcastle, got: %s", string(gi))
 	}
 }
 
 func TestAppendGitignore_Idempotent(t *testing.T) {
 	dir := chdirTemp(t)
 
-	if err := appendGitignore(dir, ".lazycron/.env"); err != nil {
+	if err := appendGitignore(dir, ".sandcastle"); err != nil {
 		t.Fatal(err)
 	}
-	if err := appendGitignore(dir, ".lazycron/.env"); err != nil {
+	if err := appendGitignore(dir, ".sandcastle"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if got := strings.Count(string(data), ".lazycron/.env"); got != 1 {
-		t.Errorf("expected .lazycron/.env to appear exactly once, got %d times", got)
+	if got := strings.Count(string(data), ".sandcastle"); got != 1 {
+		t.Errorf("expected .sandcastle to appear exactly once, got %d times", got)
 	}
 }
 
 func TestAppendGitignore_AddsNewlineWhenNeeded(t *testing.T) {
 	dir := chdirTemp(t)
-	// File without trailing newline.
 	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules"), 0o644)
 
-	if err := appendGitignore(dir, ".lazycron/.env"); err != nil {
+	if err := appendGitignore(dir, ".sandcastle"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	want := "node_modules\n.lazycron/.env\n"
+	want := "node_modules\n.sandcastle\n"
 	if string(data) != want {
 		t.Errorf("got %q, want %q", string(data), want)
 	}

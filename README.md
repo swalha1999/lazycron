@@ -106,7 +106,7 @@ Schedule sandboxed AI agents from your repo. Lazycron pairs with [sandcastle](ht
 lazycron init --with-agents
 ```
 
-This scaffolds `.lazycron/config.yaml` and a sibling `.sandcastle/` (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, plus all bundled agent templates under `jobs/`). Defaults: Claude Code agent, Docker sandbox, GitHub Issues backlog. No prompts, no `npx sandcastle init` call.
+This adds `.sandcastle` to `.gitignore` and scaffolds a `.sandcastle/` directory (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, plus all bundled agent templates under `jobs/`). Defaults: Claude Code agent, Docker sandbox, GitHub Issues backlog. No prompts, no `npx sandcastle init` call.
 
 Apply an agent template:
 
@@ -127,7 +127,7 @@ lazycron sync --no-build             # skip docker build
 lazycron sync --skip-deps-check      # skip docker/node/npx check
 ```
 
-`lazycron sync` checks docker/node/npx on the target, tars `.lazycron/` and `.sandcastle/` over SSH, runs `npm install --prefix .sandcastle` to install pinned `@ai-hero/sandcastle` + `tsx`, then `npx @ai-hero/sandcastle docker build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent via the locally-installed `tsx`.
+`lazycron sync` checks docker/node/npx on the target, tars `.sandcastle/` over SSH, runs `npm install --prefix .sandcastle` to install pinned `@ai-hero/sandcastle` + `tsx`, then `npx @ai-hero/sandcastle docker build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent via the locally-installed `tsx`.
 
 Sync is a **safe merge** — it only adds or updates jobs derived from `.sandcastle/jobs/*.ts`. Existing jobs created through the TUI are never deleted.
 
@@ -157,7 +157,6 @@ Lazycron does **not** execute user TS at sync time — it only reads metadata. S
 
 ```
 my-repo/
-├── .lazycron/config.yaml            # project name (and future per-project config)
 └── .sandcastle/
     ├── Dockerfile, .env, .env.example
     ├── lib/ensureRepo.ts            # bundled helper for clone + fetch
@@ -170,7 +169,7 @@ my-repo/
 
 ```bash
 lazycron                    # launch TUI (default)
-lazycron init               # scaffold .lazycron/ in current dir
+lazycron init               # add .sandcastle to .gitignore
 lazycron init --with-agents # also scaffold .sandcastle/ (Claude Code + Docker + bundled agent templates)
 lazycron list               # list all cron jobs
 lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
