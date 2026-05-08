@@ -159,7 +159,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Inject `cd <project-dir>` into each command (lands inside the wrapped script body).
-	projectDir := remoteProjectPath(syncServer, projectName, cwd)
+	// Resolve via the backend so the path is absolute on the target — a literal `~`
+	// would not expand inside the single-quoted shell argument.
+	projectDir, err := b.ProjectDir(projectName)
+	if err != nil {
+		return fmt.Errorf("resolve project dir: %w", err)
+	}
 	for i := range incoming {
 		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
 	}
@@ -269,16 +274,6 @@ func ensureSandcastleEnvProjectName(sandcastleDir, projectName string) error {
 	}
 	fmt.Printf("Added PROJECT_NAME=%s to %s\n", projectName, filepath.Join(".sandcastle", ".env"))
 	return nil
-}
-
-// remoteProjectPath returns the directory the cron command should `cd` into
-// before invoking the agent. Local mode uses the current working directory;
-// remote mode uses ~/.lazycron/projects/<name>/.
-func remoteProjectPath(server, projectName, cwd string) string {
-	if server == "" {
-		return cwd
-	}
-	return "~/.lazycron/projects/" + projectName
 }
 
 // shellQuoteSingle wraps s in single quotes, escaping any embedded singles.

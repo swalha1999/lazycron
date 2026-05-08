@@ -35,6 +35,7 @@ func (m *mockBackend) CheckAgentDeps() ([]string, error) { return nil, nil }
 func (m *mockBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
 	return nil
 }
+func (m *mockBackend) ProjectDir(projectName string) (string, error) { return "", nil }
 
 // newTestManager creates a Manager with a mock local backend (avoids system crontab).
 func newTestManager() *Manager {

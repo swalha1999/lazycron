@@ -136,3 +136,9 @@ func (b *FileBackend) RunInProject(projectName, command string, stdout, stderr i
 	cmd.Stderr = stderr
 	return cmd.Run()
 }
+
+// ProjectDir returns the current working directory — file backend has no
+// remote home concept and is used for tests/dry-run.
+func (b *FileBackend) ProjectDir(projectName string) (string, error) {
+	return os.Getwd()
+}

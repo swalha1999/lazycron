@@ -40,4 +40,12 @@ type Backend interface {
 	// RemoteBackend it's `cd ~/.lazycron/projects/<name> && <cmd>`. Output
 	// is streamed to the caller-provided stdout/stderr writers.
 	RunInProject(projectName, command string, stdout, stderr io.Writer) error
+
+	// ProjectDir returns the absolute path to the project's working directory
+	// on the target — what cron entries `cd` into before invoking the agent.
+	// LocalBackend returns the current working directory; RemoteBackend
+	// returns ~/.lazycron/projects/<projectName> with the remote home
+	// resolved to an absolute path (no literal `~`, since cron commands are
+	// single-quoted and `~` does not expand inside single quotes).
+	ProjectDir(projectName string) (string, error)
 }

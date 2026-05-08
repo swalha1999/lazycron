@@ -121,3 +121,8 @@ func (b *LocalBackend) RunInProject(projectName, command string, stdout, stderr 
 	cmd.Stderr = stderr
 	return cmd.Run()
 }
+
+// ProjectDir returns the current working directory — local jobs run in cwd.
+func (b *LocalBackend) ProjectDir(projectName string) (string, error) {
+	return os.Getwd()
+}

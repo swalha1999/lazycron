@@ -313,6 +313,19 @@ func (c *Client) HasCommand(name string) bool {
 	return err == nil
 }
 
+// FileExists reports whether a regular file exists at path on the remote.
+// Returns (false, nil) for missing files and (false, err) for transport errors.
+func (c *Client) FileExists(path string) (bool, error) {
+	_, err := c.Run("test -f " + shellQuoteSingle(path))
+	if err == nil {
+		return true, nil
+	}
+	if exitErr, ok := err.(*ssh.ExitError); ok && exitErr.ExitStatus() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
 // shellQuoteSingle wraps s in single quotes, escaping any embedded singles.
 func shellQuoteSingle(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

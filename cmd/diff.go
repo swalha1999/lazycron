@@ -63,17 +63,20 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Apply the same project-cd wrap that sync would, so the comparison is fair.
-	projectDir := remoteProjectPath(diffServer, projectName, cwd)
-	for i := range incoming {
-		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
-	}
-
 	b, err := resolveBackend(diffServer)
 	if err != nil {
 		return err
 	}
 	defer b.Close()
+
+	// Apply the same project-cd wrap that sync would, so the comparison is fair.
+	projectDir, err := b.ProjectDir(projectName)
+	if err != nil {
+		return fmt.Errorf("resolve project dir: %w", err)
+	}
+	for i := range incoming {
+		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
+	}
 
 	existing, err := b.ReadJobs()
 	if err != nil {

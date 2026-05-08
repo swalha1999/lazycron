@@ -139,16 +139,22 @@ func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	}
 	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(id))
 
-	// Defense in depth: if the caller handed us a script-ref command (i.e.
-	// `bash '<path>'`), wrapping it as a script body would write a file that
-	// invokes itself — every subsequent run becomes a fork bomb. Trust that
-	// the on-remote script is already correct (sync wrote it) and run it.
-	if cron.IsScriptRef(command) {
-		return b.client.Run("bash " + shellQuote(scriptPath))
+	// Mirror the local RunJobNow guard (cron/writer.go): only write the
+	// script when it does not already exist. Sync owns the on-disk script;
+	// re-uploading from an in-memory Command risks overwriting a good script
+	// with a stale or polluted one — which previously turned manual runs
+	// into fork bombs whenever ReadJobs returned a script-ref Command.
+	exists, err := b.client.FileExists(scriptPath)
+	if err != nil {
+		return "", fmt.Errorf("stat remote script: %w", err)
 	}
-
-	if err := b.client.Upload(cron.BuildScriptContent(command), scriptPath, 0o755); err != nil {
-		return "", fmt.Errorf("upload script: %w", err)
+	if !exists {
+		if cron.IsScriptRef(command) {
+			return "", fmt.Errorf("cannot run %s: remote script missing and command is a self-reference (run `lazycron sync -s <server>` first)", id)
+		}
+		if err := b.client.Upload(cron.BuildScriptContent(command), scriptPath, 0o755); err != nil {
+			return "", fmt.Errorf("upload script: %w", err)
+		}
 	}
 
 	return b.client.Run("bash " + shellQuote(scriptPath))
@@ -273,14 +279,25 @@ func (b *RemoteBackend) CheckAgentDeps() ([]string, error) {
 	return missing, nil
 }
 
+// ProjectDir returns the absolute path to the project's directory on the
+// remote (~/.lazycron/projects/<projectName>, with the remote $HOME resolved).
+// Used by sync to write absolute `cd <dir>` prefixes into cron commands —
+// literal `~` would not expand inside the single-quoted shell argument.
+func (b *RemoteBackend) ProjectDir(projectName string) (string, error) {
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return "", err
+	}
+	return lcDir + "/projects/" + projectName, nil
+}
+
 // RunInProject runs command from ~/.lazycron/projects/<projectName> on the
 // remote. Output is captured then written to the supplied writers.
 func (b *RemoteBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
-	lcDir, err := b.lazycronDir()
+	projectDir, err := b.ProjectDir(projectName)
 	if err != nil {
 		return err
 	}
-	projectDir := lcDir + "/projects/" + projectName
 	wrapped := fmt.Sprintf("cd %s && %s", shellQuote(projectDir), command)
 	out, err := b.client.Run(wrapped)
 	// b.client.Run returns combined output; route to stdout regardless of err

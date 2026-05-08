@@ -103,17 +103,6 @@ func TestReadSandcastleJobs_EmptyDir(t *testing.T) {
 	}
 }
 
-// --- remoteProjectPath ---
-
-func TestRemoteProjectPath(t *testing.T) {
-	if got := remoteProjectPath("", "ignored", "/cwd/here"); got != "/cwd/here" {
-		t.Errorf("local mode: got %q, want /cwd/here", got)
-	}
-	if got := remoteProjectPath("vm1", "myproj", "/anything"); got != "~/.lazycron/projects/myproj" {
-		t.Errorf("remote mode: got %q", got)
-	}
-}
-
 // --- mergeJobs ---
 
 func TestMergeJobs_AllNew(t *testing.T) {
