@@ -157,7 +157,10 @@ func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 		}
 	}
 
-	return b.client.Run("bash " + shellQuote(scriptPath))
+	// Merge stderr into stdout so the recorded history captures the full
+	// picture — same shape as the cron wrapper's `{ ...; } 2>&1`. Without
+	// this, stderr-only error messages disappear from the TUI history.
+	return b.client.Run("bash " + shellQuote(scriptPath) + " 2>&1")
 }
 
 func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
