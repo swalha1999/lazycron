@@ -240,11 +240,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeForm:
 		return m.handleFormKey(msg)
 	case modeConfirmDelete:
-		return m.handleConfirmKey(msg)
+		return m.handleConfirmDialogKey(msg, Model.executeConfirmDelete)
 	case modeConfirmDeleteServer:
-		return m.handleConfirmDeleteServerKey(msg)
+		return m.handleConfirmDialogKey(msg, Model.executeConfirmDeleteServer)
 	case modeConfirmDeleteHistory:
-		return m.handleConfirmDeleteHistoryKey(msg)
+		return m.handleConfirmDialogKey(msg, Model.executeConfirmDeleteHistory)
 	case modeHelp:
 		return m.handleHelpKey(msg)
 	case modeRunOutput:
