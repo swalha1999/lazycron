@@ -246,23 +246,6 @@ func TestMergeJobs_MixedAddUpdateUnchanged(t *testing.T) {
 	}
 }
 
-// --- jobNeedsUpdate ---
-
-func TestJobNeedsUpdate_NoChange(t *testing.T) {
-	j := cron.Job{Name: "A", Schedule: "* * * * *", Command: "echo", Enabled: true}
-	if jobNeedsUpdate(j, j) {
-		t.Error("identical jobs should not need update")
-	}
-}
-
-func TestJobNeedsUpdate_ScheduleChange(t *testing.T) {
-	a := cron.Job{Name: "A", Schedule: "* * * * *", Command: "echo", Enabled: true}
-	b := cron.Job{Name: "A", Schedule: "0 3 * * *", Command: "echo", Enabled: true}
-	if !jobNeedsUpdate(a, b) {
-		t.Error("different schedule should need update")
-	}
-}
-
 // --- helpers ---
 
 func writeTS(t *testing.T, dir, filename, content string) {

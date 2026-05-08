@@ -102,19 +102,12 @@ const (
 	diffUnchanged
 )
 
-// fieldChange describes a single field that changed between existing and incoming.
-type fieldChange struct {
-	Field string
-	Old   string
-	New   string
-}
-
 // diffEntry holds the diff information for a single job.
 type diffEntry struct {
 	Kind    diffKind
 	Name    string
 	Job     cron.Job
-	Changes []fieldChange
+	Changes []cron.FieldDiff
 }
 
 // computeDiff compares existing crontab jobs with incoming TS-derived jobs.
@@ -129,12 +122,12 @@ func computeDiff(existing, incoming []cron.Job) []diffEntry {
 	var entries []diffEntry
 	for _, inc := range incoming {
 		if ex, ok := existingByID[inc.ID]; ok {
-			if jobNeedsUpdate(ex, inc) {
+			if changes := cron.DiffJob(ex, inc); len(changes) > 0 {
 				entries = append(entries, diffEntry{
 					Kind:    diffUpdated,
 					Name:    inc.Name,
 					Job:     inc,
-					Changes: diffFields(ex, inc),
+					Changes: changes,
 				})
 			} else {
 				entries = append(entries, diffEntry{
@@ -153,36 +146,6 @@ func computeDiff(existing, incoming []cron.Job) []diffEntry {
 	}
 
 	return entries
-}
-
-// diffFields returns the list of fields that differ between two jobs.
-func diffFields(old, new cron.Job) []fieldChange {
-	var changes []fieldChange
-	if old.Name != new.Name {
-		changes = append(changes, fieldChange{"name", old.Name, new.Name})
-	}
-	if old.Schedule != new.Schedule {
-		changes = append(changes, fieldChange{"schedule", fmt.Sprintf("%q", old.Schedule), fmt.Sprintf("%q", new.Schedule)})
-	}
-	if old.Command != new.Command {
-		changes = append(changes, fieldChange{"command", old.Command, new.Command})
-	}
-	if old.Enabled != new.Enabled {
-		changes = append(changes, fieldChange{"enabled", fmt.Sprintf("%v", old.Enabled), fmt.Sprintf("%v", new.Enabled)})
-	}
-	if old.Tag != new.Tag {
-		changes = append(changes, fieldChange{"tag", old.Tag, new.Tag})
-	}
-	if old.TagColor != new.TagColor {
-		changes = append(changes, fieldChange{"tag_color", old.TagColor, new.TagColor})
-	}
-	if old.Project != new.Project {
-		changes = append(changes, fieldChange{"project", old.Project, new.Project})
-	}
-	if old.OneShot != new.OneShot {
-		changes = append(changes, fieldChange{"once", fmt.Sprintf("%v", old.OneShot), fmt.Sprintf("%v", new.OneShot)})
-	}
-	return changes
 }
 
 func printDiff(entries []diffEntry, quiet bool) {

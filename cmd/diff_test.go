@@ -88,31 +88,23 @@ func TestComputeDiff_Mixed(t *testing.T) {
 	}
 }
 
-func TestDiffFields_MultipleChanges(t *testing.T) {
-	old := cron.Job{Name: "A", Schedule: "* * * * *", Command: "echo a", Enabled: true, Project: "alpha"}
-	new := cron.Job{Name: "B", Schedule: "0 3 * * *", Command: "echo b", Enabled: false, Project: "beta"}
-
-	changes := diffFields(old, new)
-	if len(changes) != 5 {
-		t.Fatalf("expected 5 changes, got %d", len(changes))
+func TestComputeDiff_WrappedOnlyChange(t *testing.T) {
+	// Regression: when only Wrapped differs, sync would update the job but
+	// diff used to render `~ <name>` with no field info. After unifying the
+	// comparators, diff must surface the wrapped change.
+	existing := []cron.Job{
+		{ID: "j", Name: "J", Schedule: "* * * * *", Command: "echo", Enabled: true, Wrapped: false},
+	}
+	incoming := []cron.Job{
+		{ID: "j", Name: "J", Schedule: "* * * * *", Command: "echo", Enabled: true, Wrapped: true},
 	}
 
-	fields := make(map[string]bool)
-	for _, c := range changes {
-		fields[c.Field] = true
+	entries := computeDiff(existing, incoming)
+	if len(entries) != 1 || entries[0].Kind != diffUpdated {
+		t.Fatalf("expected 1 diffUpdated entry, got %+v", entries)
 	}
-	for _, f := range []string{"name", "schedule", "command", "enabled", "project"} {
-		if !fields[f] {
-			t.Errorf("missing change for field %q", f)
-		}
-	}
-}
-
-func TestDiffFields_NoChanges(t *testing.T) {
-	j := cron.Job{Name: "A", Schedule: "* * * * *", Command: "echo", Enabled: true}
-	changes := diffFields(j, j)
-	if len(changes) != 0 {
-		t.Errorf("expected 0 changes, got %d", len(changes))
+	if len(entries[0].Changes) != 1 || entries[0].Changes[0].Field != "wrapped" {
+		t.Errorf("expected single wrapped change, got %+v", entries[0].Changes)
 	}
 }
 
