@@ -117,6 +117,26 @@ lazycron templates apply fix-agent
 
 Each `.sandcastle/jobs/*.ts` file is self-describing — it declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions.
 
+### Bundled agents
+
+`init --with-agents` scaffolds these into `.sandcastle/jobs/`. Delete the ones you don't want before the first `sync`:
+
+| Agent | What it does |
+|---|---|
+| `fix-agent` | Pick one open security issue, create a fix branch, open a PR |
+| `issue-worker-agent` | Pick an open enhancement issue, implement it, open a PR |
+| `refactor-builder-agent` | Pick an open refactor issue, implement it, open a PR |
+| `code-quality-agent` | Find the highest-impact quality improvement and open one issue |
+| `security-review-agent` | Scan recent code for vulnerabilities and open one issue |
+| `feature-suggestion-agent` | Suggest one high-impact UX feature as a GitHub issue |
+
+### Custom agent patterns
+
+The `ensureRepo` + Claude Code + Docker scaffold is general — write your own `.sandcastle/jobs/<name>.ts` for patterns beyond the bundled set:
+
+- **Dependency-watch agent** — track a critical dependency's releases and open issues for breaking changes.
+- **Cross-repo doc-sync agent** — keep a docs site or generated reference in step with code on a schedule.
+
 ### Sync
 
 ```bash
