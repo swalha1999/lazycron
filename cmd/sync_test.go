@@ -28,8 +28,8 @@ export const tagColor = "#f38ba8";
 		t.Fatalf("got %d jobs, want 1", len(jobs))
 	}
 	j := jobs[0]
-	if j.ID != "fix-agent" {
-		t.Errorf("ID = %q, want fix-agent", j.ID)
+	if j.ID != "myproject-fix-agent" {
+		t.Errorf("ID = %q, want myproject-fix-agent (project-scoped)", j.ID)
 	}
 	if j.Name != "Fix Agent" {
 		t.Errorf("Name = %q", j.Name)
@@ -62,8 +62,8 @@ export const name = "A";`)
 	if len(jobs) != 2 {
 		t.Fatalf("want 2 jobs, got %d", len(jobs))
 	}
-	if jobs[0].ID != "apple" || jobs[1].ID != "zebra" {
-		t.Errorf("expected sorted order; got %s, %s", jobs[0].ID, jobs[1].ID)
+	if jobs[0].ID != "p-apple" || jobs[1].ID != "p-zebra" {
+		t.Errorf("expected sorted scoped IDs p-apple, p-zebra; got %s, %s", jobs[0].ID, jobs[1].ID)
 	}
 }
 
@@ -100,6 +100,59 @@ func TestReadSandcastleJobs_EmptyDir(t *testing.T) {
 	}
 	if len(jobs) != 0 {
 		t.Errorf("expected 0 jobs, got %d", len(jobs))
+	}
+}
+
+// TestReadSandcastleJobs_CrossProjectScoping ensures two projects with
+// the same agent filename produce different IDs — the bug they had
+// before scoped IDs caused syncs from project B to silently overwrite
+// project A's entry on a shared remote.
+func TestReadSandcastleJobs_CrossProjectScoping(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	writeTS(t, dirA, "worker-agent.ts", `export const cron = "0 9 * * 1-5";
+export const name = "Worker";`)
+	writeTS(t, dirB, "worker-agent.ts", `export const cron = "0 9 * * 1-5";
+export const name = "Worker";`)
+
+	jobsA, err := readSandcastleJobs(dirA, "project-a")
+	if err != nil {
+		t.Fatalf("readSandcastleJobs A: %v", err)
+	}
+	jobsB, err := readSandcastleJobs(dirB, "project-b")
+	if err != nil {
+		t.Fatalf("readSandcastleJobs B: %v", err)
+	}
+	if jobsA[0].ID == jobsB[0].ID {
+		t.Errorf("project-scoped IDs collided: both = %q", jobsA[0].ID)
+	}
+	if jobsA[0].ID != "project-a-worker-agent" || jobsB[0].ID != "project-b-worker-agent" {
+		t.Errorf("unexpected scoped IDs: A=%q B=%q", jobsA[0].ID, jobsB[0].ID)
+	}
+}
+
+// TestMergeJobs_LegacyBareIDMigration covers the upgrade path from
+// pre-scoped-ID lazycron versions: an existing job on the remote with
+// a bare ID (`worker-agent`) and Project="lazycron" should be matched
+// against an incoming scoped ID (`lazycron-worker-agent`) and updated
+// in place rather than left orphaned next to the new entry.
+func TestMergeJobs_LegacyBareIDMigration(t *testing.T) {
+	existing := []cron.Job{
+		{ID: "worker-agent", Name: "Worker", Schedule: "0 9 * * 1-5", Command: "old", Project: "lazycron", Enabled: true},
+	}
+	incoming := []cron.Job{
+		{ID: "lazycron-worker-agent", Name: "Worker", Schedule: "0 9 * * 1-5", Command: "new", Project: "lazycron", Enabled: true},
+	}
+
+	merged, added, updated, _ := mergeJobs(existing, incoming)
+	if added != 0 || updated != 1 {
+		t.Errorf("legacy migration: added=%d updated=%d, want 0/1", added, updated)
+	}
+	if len(merged) != 1 {
+		t.Errorf("expected 1 merged job (in-place upgrade), got %d", len(merged))
+	}
+	if merged[0].Command != "new" {
+		t.Errorf("merged command = %q, want %q", merged[0].Command, "new")
 	}
 }
 

@@ -201,8 +201,8 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 
 	var jobs []cron.Job
 	for _, f := range files {
-		id := strings.TrimSuffix(filepath.Base(f), ".ts")
-		if err := cron.ValidateID(id); err != nil {
+		bareID := strings.TrimSuffix(filepath.Base(f), ".ts")
+		if err := cron.ValidateID(bareID); err != nil {
 			return nil, fmt.Errorf("invalid sandcastle job filename %s: %w", filepath.Base(f), err)
 		}
 
@@ -220,11 +220,19 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), meta.Cron, err)
 		}
 
+		// Namespace the ID by project so two repos with the same filename
+		// (e.g. both have a worker-agent.ts) don't share a script path or
+		// crontab entry on a shared remote.
+		id := cron.ScopedID(projectName, bareID)
+		if err := cron.ValidateID(id); err != nil {
+			return nil, fmt.Errorf("scoped job ID %q invalid (project=%q, file=%s): %w", id, projectName, filepath.Base(f), err)
+		}
+
 		jobs = append(jobs, cron.Job{
 			ID:       id,
 			Name:     meta.Name,
 			Schedule: cronExpr,
-			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/%s.ts", id),
+			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/%s.ts", bareID),
 			Enabled:  true,
 			Wrapped:  true,
 			Tag:      meta.Tag,
@@ -287,8 +295,17 @@ func shellQuoteSingle(s string) string {
 func mergeJobs(existing, incoming []cron.Job) (merged []cron.Job, added, updated, unchanged int) {
 	idxByID := make(map[string]int, len(existing))
 	for i, j := range existing {
-		if j.ID != "" {
-			idxByID[j.ID] = i
+		if j.ID == "" {
+			continue
+		}
+		idxByID[j.ID] = i
+		// Migration: a job synced by an older lazycron has a bare ID
+		// (e.g. "worker-agent") rather than the project-scoped ID
+		// ("lazycron-worker-agent") this version writes. Index the
+		// scoped form too so a re-sync upgrades the entry in place
+		// instead of leaving the old one orphaned alongside the new.
+		if scoped := cron.ScopedID(j.Project, j.ID); scoped != j.ID {
+			idxByID[scoped] = i
 		}
 	}
 

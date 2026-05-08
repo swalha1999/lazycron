@@ -16,6 +16,20 @@ func GenerateID() string {
 	return hex.EncodeToString(b)
 }
 
+// ScopedID returns a project-namespaced job ID: "<project>-<bareID>" when
+// project is non-empty, otherwise just bareID. Used by sync to keep two
+// projects' agents (with the same source filename) from colliding when
+// they're synced to the same target — without this, both write to the
+// same script path and crontab entry, silently clobbering each other.
+// Falls back to bareID when project is empty so non-sandcastle jobs
+// (TUI-created, random-hex IDs) keep their existing identity.
+func ScopedID(project, bareID string) string {
+	if project == "" {
+		return bareID
+	}
+	return project + "-" + bareID
+}
+
 // IsIDChar reports whether c is a valid job ID character: [a-z0-9_-].
 func IsIDChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-'
