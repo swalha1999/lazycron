@@ -203,11 +203,24 @@ func (c *Client) Run(cmd string) (string, error) {
 	session.Stderr = &stderr
 
 	err = session.Run(cmd)
-	output := strings.TrimSpace(stdout.String())
-	if err != nil && output == "" {
-		output = strings.TrimSpace(stderr.String())
+	stdoutStr := strings.TrimSpace(stdout.String())
+	stderrStr := strings.TrimSpace(stderr.String())
+	// On success, return stdout — callers like FileExists / ReadFile expect
+	// just the command's stdout. On failure, surface both streams so the
+	// user sees the actual error message even when the command also wrote
+	// progress noise to stdout (the previous behavior dropped stderr in
+	// that case, leaving "Run Failed" with only the progress output).
+	if err == nil {
+		return stdoutStr, nil
 	}
-	return output, err
+	switch {
+	case stdoutStr == "":
+		return stderrStr, err
+	case stderrStr == "":
+		return stdoutStr, err
+	default:
+		return stdoutStr + "\n" + stderrStr, err
+	}
 }
 
 // Upload writes content to a remote file path.
