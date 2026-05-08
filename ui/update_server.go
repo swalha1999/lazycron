@@ -80,28 +80,7 @@ func (m Model) handlePasswordPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) handleConfirmDeleteServerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "left", "right", "h", "l":
-		m.confirmYes = !m.confirmYes
-		return m, nil
-	case "y", "Y":
-		m.confirmYes = true
-		return m.executeConfirmDeleteServer()
-	case "enter":
-		return m.executeConfirmDeleteServer()
-	case "n", "N", "esc":
-		m.mode = modeNormal
-		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
-	}
-	return m, nil
-}
-
 func (m Model) executeConfirmDeleteServer() (tea.Model, tea.Cmd) {
-	if !m.confirmYes {
-		m.mode = modeNormal
-		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
-	}
 	idx := m.serverSelected
 	if idx <= 0 || idx >= m.manager.ServerCount() {
 		m.mode = modeNormal

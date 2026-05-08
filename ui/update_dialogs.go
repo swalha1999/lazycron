@@ -8,16 +8,23 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleConfirmDialogKey handles key input for any yes/no confirmation dialog.
+// On confirm (y/Y or enter when "yes" is selected) it invokes execute, which
+// can assume the user has confirmed and only needs to perform the action.
+func (m Model) handleConfirmDialogKey(msg tea.KeyMsg, execute func(Model) (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "left", "right", "h", "l":
 		m.confirmYes = !m.confirmYes
 		return m, nil
 	case "y", "Y":
 		m.confirmYes = true
-		return m.executeConfirmDelete()
+		return execute(m)
 	case "enter":
-		return m.executeConfirmDelete()
+		if !m.confirmYes {
+			m.mode = modeNormal
+			return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
+		}
+		return execute(m)
 	case "n", "N", "esc":
 		m.mode = modeNormal
 		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
@@ -26,10 +33,6 @@ func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) executeConfirmDelete() (tea.Model, tea.Cmd) {
-	if !m.confirmYes {
-		m.mode = modeNormal
-		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
-	}
 	jobIdx := m.currentJobIndex()
 	if jobIdx >= 0 && jobIdx < len(m.jobs) {
 		name := m.jobs[jobIdx].Name
@@ -50,28 +53,7 @@ func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleConfirmDeleteHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "left", "right", "h", "l":
-		m.confirmYes = !m.confirmYes
-		return m, nil
-	case "y", "Y":
-		m.confirmYes = true
-		return m.executeConfirmDeleteHistory()
-	case "enter":
-		return m.executeConfirmDeleteHistory()
-	case "n", "N", "esc":
-		m.mode = modeNormal
-		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
-	}
-	return m, nil
-}
-
 func (m Model) executeConfirmDeleteHistory() (tea.Model, tea.Cmd) {
-	if !m.confirmYes {
-		m.mode = modeNormal
-		return m, m.setStatus("Cancelled", statusInfo, 3*time.Second)
-	}
 	if m.historySelected >= 0 && m.historySelected < len(m.history) {
 		entry := m.history[m.historySelected]
 		var cmds []tea.Cmd

@@ -39,28 +39,8 @@ func (m Model) View() string {
 		fg := renderForm(&m.form, m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
-	case modeConfirmDelete:
-		jobName := ""
-		if jobIdx := m.selectedJobIndex(); jobIdx >= 0 {
-			jobName = m.jobs[jobIdx].Name
-		}
-		fg := renderConfirmDialog(fmt.Sprintf("Delete job '%s'?", jobName), m.confirmYes)
-		content = overlay(panels, fg, m.width, contentHeight)
-
-	case modeConfirmDeleteServer:
-		serverName := ""
-		if m.serverSelected > 0 && m.serverSelected < m.manager.ServerCount() {
-			serverName = m.manager.ServerAt(m.serverSelected).Name
-		}
-		fg := renderConfirmDialog(fmt.Sprintf("Remove server '%s'?", serverName), m.confirmYes)
-		content = overlay(panels, fg, m.width, contentHeight)
-
-	case modeConfirmDeleteHistory:
-		entryName := ""
-		if m.historySelected >= 0 && m.historySelected < len(m.history) {
-			entryName = m.history[m.historySelected].JobName
-		}
-		fg := renderConfirmDialog(fmt.Sprintf("Delete history entry '%s'?", entryName), m.confirmYes)
+	case modeConfirmDelete, modeConfirmDeleteServer, modeConfirmDeleteHistory:
+		fg := renderConfirmDialog(m.confirmDialogPrompt(), m.confirmYes)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeHelp:
@@ -243,6 +223,32 @@ func (m Model) buildDetailContent(width int) string {
 		selectedJob = &m.jobs[jobIdx]
 	}
 	return renderDetail(selectedJob, width)
+}
+
+// confirmDialogPrompt returns the prompt text for whichever confirmation
+// dialog mode is currently active. Returns "" for non-confirm modes.
+func (m Model) confirmDialogPrompt() string {
+	switch m.mode {
+	case modeConfirmDelete:
+		name := ""
+		if jobIdx := m.selectedJobIndex(); jobIdx >= 0 {
+			name = m.jobs[jobIdx].Name
+		}
+		return fmt.Sprintf("Delete job '%s'?", name)
+	case modeConfirmDeleteServer:
+		name := ""
+		if m.serverSelected > 0 && m.serverSelected < m.manager.ServerCount() {
+			name = m.manager.ServerAt(m.serverSelected).Name
+		}
+		return fmt.Sprintf("Remove server '%s'?", name)
+	case modeConfirmDeleteHistory:
+		name := ""
+		if m.historySelected >= 0 && m.historySelected < len(m.history) {
+			name = m.history[m.historySelected].JobName
+		}
+		return fmt.Sprintf("Delete history entry '%s'?", name)
+	}
+	return ""
 }
 
 // selectedJobIndex returns the job index for the current visual row,
