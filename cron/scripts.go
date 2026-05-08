@@ -203,11 +203,13 @@ func IsScriptRef(command string) bool {
 	return false
 }
 
-// resolveScript reads the actual command from a script file reference.
-// If the command is not a script ref or reading fails, it returns the original command.
-func resolveScript(command string) string {
+// ScriptRefPath returns the script file path embedded in a script-ref
+// command (e.g. `bash '/home/u/.lazycron/scripts/x.sh'` -> `/home/u/...x.sh`),
+// or "" if the command is not a script ref. Handles every recognised
+// invocation prefix and strips surrounding quotes.
+func ScriptRefPath(command string) string {
 	if !IsScriptRef(command) {
-		return command
+		return ""
 	}
 	var path string
 	for _, p := range scriptRefPrefixes {
@@ -216,7 +218,16 @@ func resolveScript(command string) string {
 			break
 		}
 	}
-	path = strings.Trim(path, "'\"")
+	return strings.Trim(path, "'\"")
+}
+
+// resolveScript reads the actual command from a script file reference.
+// If the command is not a script ref or reading fails, it returns the original command.
+func resolveScript(command string) string {
+	path := ScriptRefPath(command)
+	if path == "" {
+		return command
+	}
 	content, err := ReadScriptCommand(path)
 	if err != nil {
 		return command

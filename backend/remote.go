@@ -64,14 +64,21 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	jobs := cron.Parse(output)
 
 	// Resolve script refs that couldn't be resolved locally (remote files).
+	// If resolution fails the Command field would otherwise stay as a script
+	// self-reference (`bash '<path>'`), and any subsequent RunJob call would
+	// overwrite the on-remote script with that self-reference — turning every
+	// future invocation into a fork bomb. Skip the job rather than carry a
+	// poisoned Command forward.
 	for i, j := range jobs {
-		if cron.IsScriptRef(j.Command) {
-			path := strings.Trim(strings.TrimPrefix(j.Command, "sh "), "'\"")
-			data, readErr := b.client.ReadFile(path)
-			if readErr == nil {
-				jobs[i].Command = cron.StripShebang(string(data))
-			}
+		path := cron.ScriptRefPath(j.Command)
+		if path == "" {
+			continue
 		}
+		data, readErr := b.client.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
+		jobs[i].Command = cron.StripShebang(string(data))
 	}
 
 	return jobs, nil
@@ -132,12 +139,19 @@ func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	}
 	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(id))
 
-	// Upload script to remote.
+	// Defense in depth: if the caller handed us a script-ref command (i.e.
+	// `bash '<path>'`), wrapping it as a script body would write a file that
+	// invokes itself — every subsequent run becomes a fork bomb. Trust that
+	// the on-remote script is already correct (sync wrote it) and run it.
+	if cron.IsScriptRef(command) {
+		return b.client.Run("bash " + shellQuote(scriptPath))
+	}
+
 	if err := b.client.Upload(cron.BuildScriptContent(command), scriptPath, 0o755); err != nil {
 		return "", fmt.Errorf("upload script: %w", err)
 	}
 
-	return b.client.Run("sh " + shellQuote(scriptPath))
+	return b.client.Run("bash " + shellQuote(scriptPath))
 }
 
 func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {

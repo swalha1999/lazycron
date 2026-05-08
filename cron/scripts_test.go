@@ -146,6 +146,29 @@ func TestIsScriptRef(t *testing.T) {
 	}
 }
 
+// --- ScriptRefPath ---
+
+func TestScriptRefPath(t *testing.T) {
+	tests := []struct {
+		command string
+		want    string
+	}{
+		{"bash '/home/u/.lazycron/scripts/x.sh'", "/home/u/.lazycron/scripts/x.sh"},
+		{"sh '/home/u/.lazycron/scripts/x.sh'", "/home/u/.lazycron/scripts/x.sh"},
+		{"bash /home/u/.lazycron/scripts/x.sh", "/home/u/.lazycron/scripts/x.sh"},
+		{"echo not-a-ref", ""},
+		{"bash /tmp/other.sh", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			got := ScriptRefPath(tt.command)
+			if got != tt.want {
+				t.Errorf("ScriptRefPath(%q) = %q, want %q", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
 // --- resolveScript ---
 
 func TestResolveScript_Success(t *testing.T) {
