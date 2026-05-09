@@ -3,11 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
 )
 
@@ -34,56 +32,16 @@ func init() {
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get cwd: %w", err)
-	}
-
-	sandcastleDir := filepath.Join(cwd, ".sandcastle")
-	jobsDir := filepath.Join(sandcastleDir, "jobs")
-	if info, err := os.Stat(jobsDir); err != nil || !info.IsDir() {
-		if _, scErr := os.Stat(sandcastleDir); scErr != nil {
-			return fmt.Errorf("no .sandcastle/ directory found at %s — run `lazycron init --with-agents` first", sandcastleDir)
-		}
-		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron templates apply <name>` to scaffold an agent", jobsDir)
-	}
-
-	pcfg, err := config.LoadProjectConfig(filepath.Join(cwd, ".lazycron"))
+	sctx, err := loadSyncContext(diffServer, diffProject)
 	if err != nil {
 		return err
 	}
-	projectName := config.ResolveProjectName(diffProject, pcfg, cwd)
-
-	incoming, err := readSandcastleJobs(jobsDir, projectName)
-	if err != nil {
-		return err
-	}
-	if len(incoming) == 0 {
-		fmt.Printf("No .ts files found in %s\n", jobsDir)
+	if sctx == nil {
 		return nil
 	}
+	defer sctx.Backend.Close()
 
-	b, err := resolveBackend(diffServer)
-	if err != nil {
-		return err
-	}
-	defer b.Close()
-
-	// Apply the same project-cd wrap that sync would, so the comparison is fair.
-	projectDir, err := b.ProjectDir(projectName)
-	if err != nil {
-		return fmt.Errorf("resolve project dir: %w", err)
-	}
-	for i := range incoming {
-		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
-	}
-
-	existing, err := b.ReadJobs()
-	if err != nil {
-		return fmt.Errorf("failed to read jobs: %w", err)
-	}
-
-	changes := computeDiff(existing, incoming)
+	changes := computeDiff(sctx.ExistingJobs, sctx.IncomingJobs)
 	printDiff(changes, diffQuiet)
 
 	if diffExitCode && hasChanges(changes) {
