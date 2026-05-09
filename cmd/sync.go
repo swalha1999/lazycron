@@ -50,58 +50,26 @@ func init() {
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get cwd: %w", err)
-	}
-
-	// Resolve project layout.
-	lazycronDir := filepath.Join(cwd, ".lazycron")
-	sandcastleDir := filepath.Join(cwd, ".sandcastle")
-	jobsDir := filepath.Join(sandcastleDir, "jobs")
-
-	if _, err := os.Stat(jobsDir); err != nil {
-		if _, scErr := os.Stat(sandcastleDir); scErr != nil {
-			return fmt.Errorf("no .sandcastle/ directory found at %s — run `lazycron init --with-agents` first", sandcastleDir)
-		}
-		return fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron templates list` to browse agents and `lazycron templates apply <name>` to scaffold one", jobsDir)
-	}
-
-	// Resolve project name (--project > config.yaml > cwd basename).
-	pcfg, err := config.LoadProjectConfig(lazycronDir)
+	sctx, err := loadSyncContext(syncServer, syncProject)
 	if err != nil {
 		return err
 	}
-	projectName := config.ResolveProjectName(syncProject, pcfg, cwd)
+	if sctx == nil {
+		return nil
+	}
+	defer sctx.Backend.Close()
 
 	// Ensure .sandcastle/.env has PROJECT_NAME. The agent reads this to align
 	// its cache dir (~/.lazycron-cache/repos/<name>) and sandcastle Docker image
 	// tag with the lazycron project — missing it lands on a hard-coded default
 	// and silently runs the wrong cached repo / image.
-	if err := ensureSandcastleEnvProjectName(sandcastleDir, projectName); err != nil {
+	if err := ensureSandcastleEnvProjectName(sctx.SandcastleDir, sctx.ProjectName); err != nil {
 		return fmt.Errorf("update .sandcastle/.env: %w", err)
 	}
 
-	// Read TS jobs.
-	incoming, err := readSandcastleJobs(jobsDir, projectName)
-	if err != nil {
-		return err
-	}
-	if len(incoming) == 0 {
-		fmt.Printf("No .ts files found in %s\n", jobsDir)
-		return nil
-	}
-
-	// Resolve backend.
-	b, err := resolveBackend(syncServer)
-	if err != nil {
-		return err
-	}
-	defer b.Close()
-
 	// Deps check on the target (where cron will fire).
 	if !syncSkipDepsChk {
-		missing, err := b.CheckAgentDeps()
+		missing, err := sctx.Backend.CheckAgentDeps()
 		if err != nil {
 			return fmt.Errorf("check agent deps: %w", err)
 		}
@@ -128,14 +96,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 			excludesSandcastle = append(excludesSandcastle, "./.env")
 		}
 
-		if _, err := os.Stat(lazycronDir); err == nil {
-			fmt.Printf("Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", syncServer, projectName)
-			if err := b.CopyProjectFiles(lazycronDir, projectName+"/.lazycron", excludesLazycron); err != nil {
+		if _, err := os.Stat(sctx.LazycronDir); err == nil {
+			fmt.Printf("Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", syncServer, sctx.ProjectName)
+			if err := sctx.Backend.CopyProjectFiles(sctx.LazycronDir, sctx.ProjectName+"/.lazycron", excludesLazycron); err != nil {
 				return fmt.Errorf("copy .lazycron/: %w", err)
 			}
 		}
-		fmt.Printf("Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", syncServer, projectName)
-		if err := b.CopyProjectFiles(sandcastleDir, projectName+"/.sandcastle", excludesSandcastle); err != nil {
+		fmt.Printf("Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", syncServer, sctx.ProjectName)
+		if err := sctx.Backend.CopyProjectFiles(sctx.SandcastleDir, sctx.ProjectName+"/.sandcastle", excludesSandcastle); err != nil {
 			return fmt.Errorf("copy .sandcastle/: %w", err)
 		}
 	}
@@ -145,7 +113,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// before any cron firing.
 	if !syncNoInstall {
 		fmt.Println("Installing .sandcastle/ dependencies (npm install)...")
-		if err := b.RunInProject(projectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", os.Stdout, os.Stderr); err != nil {
+		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("npm install in .sandcastle/: %w", err)
 		}
 	}
@@ -153,33 +121,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
 	if !syncNoBuild {
 		fmt.Println("Building sandcastle image...")
-		if err := b.RunInProject(projectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", os.Stdout, os.Stderr); err != nil {
+		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", os.Stdout, os.Stderr); err != nil {
 			return fmt.Errorf("build sandcastle image: %w", err)
 		}
 	}
 
-	// Inject `cd <project-dir>` into each command (lands inside the wrapped script body).
-	// Resolve via the backend so the path is absolute on the target — a literal `~`
-	// would not expand inside the single-quoted shell argument.
-	projectDir, err := b.ProjectDir(projectName)
-	if err != nil {
-		return fmt.Errorf("resolve project dir: %w", err)
-	}
-	for i := range incoming {
-		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
-	}
-
-	// Read existing jobs.
-	existing, err := b.ReadJobs()
-	if err != nil {
-		return fmt.Errorf("failed to read jobs: %w", err)
-	}
-
-	// Merge.
-	merged, added, updated, unchanged := mergeJobs(existing, incoming)
+	merged, added, updated, unchanged := mergeJobs(sctx.ExistingJobs, sctx.IncomingJobs)
 
 	if added+updated > 0 {
-		if err := b.WriteJobs(merged); err != nil {
+		if err := sctx.Backend.WriteJobs(merged); err != nil {
 			return fmt.Errorf("failed to write jobs: %w", err)
 		}
 	}
