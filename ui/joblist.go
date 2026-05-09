@@ -149,22 +149,9 @@ func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height in
 		maxNameWidth = 8
 	}
 
-	// Calculate visible area for scrolling
-	listHeight := height - 2
-	if listHeight < 1 {
-		listHeight = 1
-	}
+	win := computeScrollWindow(len(rows), nil, selRow, height-2)
 
-	startIdx := 0
-	if selRow >= listHeight {
-		startIdx = selRow - listHeight + 1
-	}
-	endIdx := startIdx + listHeight
-	if endIdx > len(rows) {
-		endIdx = len(rows)
-	}
-
-	for i := startIdx; i < endIdx; i++ {
+	for i := win.startPos; i < win.endPos; i++ {
 		row := rows[i]
 
 		if row.kind == rowHeader {
@@ -186,14 +173,13 @@ func renderJobList(jobs []cron.Job, selRow int, rows []listRow, width, height in
 			b.WriteString(line)
 		}
 
-		if i < endIdx-1 {
+		if i < win.endPos-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	// Scroll indicator
-	if len(rows) > listHeight {
-		scrollInfo := fmt.Sprintf(" %d/%d", selRow+1, len(rows))
+	if win.needsIndicator {
+		scrollInfo := fmt.Sprintf(" %d/%d", win.selPos+1, len(win.visible))
 		b.WriteString("\n")
 		b.WriteString(mutedItemStyle.Render(scrollInfo))
 	}
