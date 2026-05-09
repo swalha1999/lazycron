@@ -12,42 +12,15 @@ func renderServerList(servers []backend.ServerInfo, selected, activeIdx, width, 
 		return mutedItemStyle.Render("No servers")
 	}
 
-	// Build list of visible indices
-	var visible []int
-	for i := range servers {
-		if matchSet == nil || matchSet[i] {
-			visible = append(visible, i)
-		}
-	}
-
-	if len(visible) == 0 {
+	win := computeScrollWindow(len(servers), matchSet, selected, height)
+	if len(win.visible) == 0 {
 		return mutedItemStyle.Render("No matches")
-	}
-
-	// Find selected position within visible list
-	selPos := 0
-	for j, idx := range visible {
-		if idx == selected {
-			selPos = j
-			break
-		}
 	}
 
 	var b strings.Builder
 
-	visibleHeight := height
-	startPos := 0
-	if selPos >= visibleHeight {
-		startPos = selPos - visibleHeight + 1
-	}
-
-	endPos := startPos + visibleHeight
-	if endPos > len(visible) {
-		endPos = len(visible)
-	}
-
-	for p := startPos; p < endPos; p++ {
-		i := visible[p]
+	for p := win.startPos; p < win.endPos; p++ {
+		i := win.visible[p]
 		srv := servers[i]
 		isSelected := i == selected
 		isActive := i == activeIdx
@@ -84,14 +57,13 @@ func renderServerList(servers []backend.ServerInfo, selected, activeIdx, width, 
 		}
 
 		b.WriteString(line)
-		if p < endPos-1 {
+		if p < win.endPos-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	// Scroll indicator
-	if len(visible) > visibleHeight {
-		scrollInfo := fmt.Sprintf(" [%d/%d]", selPos+1, len(visible))
+	if win.needsIndicator {
+		scrollInfo := fmt.Sprintf(" [%d/%d]", win.selPos+1, len(win.visible))
 		b.WriteString("\n" + mutedItemStyle.Render(scrollInfo))
 	}
 
