@@ -28,6 +28,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setStatus(msg.err.Error(), statusError, 5*time.Second)
 		}
 		m.jobs = msg.jobs
+		m.rebuildRows()
 		cmds := []tea.Cmd{}
 		if len(m.jobs) > 0 {
 			cmds = append(cmds, m.setStatus(fmt.Sprintf("Loaded %d job(s)", len(m.jobs)), statusInfo, 2*time.Second))
@@ -153,6 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = 0
 			m.selectedRow = 0
 			m.historySelected = 0
+			m.rebuildRows()
 			serverName := m.manager.ServerAt(msg.index).Name
 			return m, m.setStatus(fmt.Sprintf("Switched to %s", serverName), statusSuccess, 3*time.Second)
 		}

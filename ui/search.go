@@ -43,6 +43,7 @@ func (m *Model) clearSearch() {
 	m.searchQuery = ""
 	m.searchPanel = -1
 	m.searchJobMatch = nil
+	m.rebuildRows()
 }
 
 // hasActiveSearch returns true if a search filter is currently applied.
@@ -55,12 +56,14 @@ func (m *Model) applySearch(query string) {
 	m.searchQuery = query
 	if query == "" {
 		m.searchJobMatch = nil
+		m.rebuildRows()
 		return
 	}
 
 	switch m.searchPanel {
 	case panelJobs:
 		m.searchJobMatch = matchJobs(m.jobs, query)
+		m.rebuildRows()
 		m.clampSelectedRow()
 	case panelServers:
 		// Clamp server selection to visible items

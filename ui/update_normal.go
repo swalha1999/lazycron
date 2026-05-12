@@ -8,48 +8,34 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 )
 
-// currentJobIndex returns the job index for the current selectedRow, or -1 if on a header.
-func (m *Model) currentJobIndex() int {
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
-		return -1
-	}
-	if rows[m.selectedRow].kind == rowJob {
-		return rows[m.selectedRow].jobIdx
-	}
-	return -1
-}
-
 // isOnHeader returns true if the current selectedRow is a group header.
 func (m *Model) isOnHeader() bool {
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+	if m.selectedRow < 0 || m.selectedRow >= len(m.jobListRows) {
 		return false
 	}
-	return rows[m.selectedRow].kind == rowHeader
+	return m.jobListRows[m.selectedRow].kind == rowHeader
 }
 
 // toggleCurrentHeader toggles the collapse state of the header at selectedRow.
 func (m *Model) toggleCurrentHeader() {
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
+	if m.selectedRow < 0 || m.selectedRow >= len(m.jobListRows) {
 		return
 	}
-	if rows[m.selectedRow].kind == rowHeader {
-		project := rows[m.selectedRow].project
+	if m.jobListRows[m.selectedRow].kind == rowHeader {
+		project := m.jobListRows[m.selectedRow].project
 		m.collapsedProjects[project] = !m.collapsedProjects[project]
+		m.rebuildRows()
 	}
 }
 
 // clampSelectedRow ensures selectedRow is within bounds of current rows.
 func (m *Model) clampSelectedRow() {
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	if len(rows) == 0 {
+	if len(m.jobListRows) == 0 {
 		m.selectedRow = 0
 		return
 	}
-	if m.selectedRow >= len(rows) {
-		m.selectedRow = len(rows) - 1
+	if m.selectedRow >= len(m.jobListRows) {
+		m.selectedRow = len(m.jobListRows) - 1
 	}
 	if m.selectedRow < 0 {
 		m.selectedRow = 0
@@ -95,12 +81,10 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.serverSelected = next
 			}
 		case panelJobs:
-			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 			if m.selectedRow > 0 {
 				m.selectedRow--
 				m.detailScroll = 0
 			}
-			_ = rows
 		case panelHistory:
 			if next := m.nextVisibleHistory(m.historySelected-1, -1); next >= 0 {
 				m.historySelected = next
@@ -119,8 +103,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.serverSelected = next
 			}
 		case panelJobs:
-			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-			if m.selectedRow < len(rows)-1 {
+			if m.selectedRow < len(m.jobListRows)-1 {
 				m.selectedRow++
 				m.detailScroll = 0
 			}
@@ -140,8 +123,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, -1)
 				if swapIdx >= 0 {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
-					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-					m.selectedRow = rowForJobIdx(rows, swapIdx)
+					m.rebuildRows()
+					m.selectedRow = rowForJobIdx(m.jobListRows, swapIdx)
 					b := m.manager.ActiveBackend()
 					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
@@ -155,8 +138,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, +1)
 				if swapIdx >= 0 {
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
-					rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-					m.selectedRow = rowForJobIdx(rows, swapIdx)
+					m.rebuildRows()
+					m.selectedRow = rowForJobIdx(m.jobListRows, swapIdx)
 					b := m.manager.ActiveBackend()
 					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
@@ -392,6 +375,7 @@ func (m Model) switchToServer(index int) (tea.Model, tea.Cmd) {
 			m.selected = 0
 			m.selectedRow = 0
 			m.historySelected = 0
+			m.rebuildRows()
 		}
 		return m, loadServerData(m.manager, index)
 	}

@@ -31,6 +31,25 @@ type projectGroup struct {
 	jobIdxs []int
 }
 
+// rebuildRows refreshes m.jobListRows from the current jobs, collapsed
+// projects, and search filter. Call this after any mutation to those inputs
+// so cached row state stays in sync.
+func (m *Model) rebuildRows() {
+	m.jobListRows = buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
+}
+
+// currentJobIndex returns the job index for the current selectedRow,
+// or -1 if the selection is out of range or on a project header.
+func (m *Model) currentJobIndex() int {
+	if m.selectedRow < 0 || m.selectedRow >= len(m.jobListRows) {
+		return -1
+	}
+	if m.jobListRows[m.selectedRow].kind == rowJob {
+		return m.jobListRows[m.selectedRow].jobIdx
+	}
+	return -1
+}
+
 // buildRows constructs the visual row list from jobs grouped by project.
 // Projects are sorted alphabetically, with the "Ungrouped" section at the bottom.
 // If matchSet is non-nil, only jobs with indices in matchSet are included.

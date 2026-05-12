@@ -88,15 +88,15 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.form.editing {
 			job.Enabled = m.jobs[m.form.editIndex].Enabled
 			m.jobs[m.form.editIndex] = job
+			m.rebuildRows()
 			// Re-position selection to follow the job (project may have changed)
-			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-			m.selectedRow = rowForJobIdx(rows, m.form.editIndex)
+			m.selectedRow = rowForJobIdx(m.jobListRows, m.form.editIndex)
 			statusText = fmt.Sprintf("Updated job '%s'", job.Name)
 		} else {
 			m.jobs = append(m.jobs, job)
+			m.rebuildRows()
 			// Point selectedRow to the new job's visual row
-			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-			m.selectedRow = rowForJobIdx(rows, len(m.jobs)-1)
+			m.selectedRow = rowForJobIdx(m.jobListRows, len(m.jobs)-1)
 			statusText = fmt.Sprintf("Created job '%s'", job.Name)
 		}
 		m.mode = modeNormal
