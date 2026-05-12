@@ -69,7 +69,7 @@ func (m Model) View() string {
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeProjectPrompt:
-		fg := renderProjectPrompt(&m.projectInput, m.jobs, m.selectedJobIndex(), m.width)
+		fg := renderProjectPrompt(&m.projectInput, m.jobs, m.currentJobIndex(), m.width)
 		content = overlay(panels, fg, m.width, contentHeight)
 
 	case modeMonitor:
@@ -153,8 +153,7 @@ func (m Model) renderPanels(height int) string {
 	serversBox = injectBorderTitle(serversBox, "1", serversTitle, serversActive)
 
 	// [2] Jobs panel
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	listContent := renderJobList(m.jobs, m.selectedRow, rows, listWidth-4, jobsHeight, m.collapsedProjects, m.lastRunStatus)
+	listContent := renderJobList(m.jobs, m.selectedRow, m.jobListRows, listWidth-4, jobsHeight, m.collapsedProjects, m.lastRunStatus)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
 	if jobsActive {
@@ -217,7 +216,7 @@ func (m Model) buildDetailContent(width int) string {
 		}
 		return renderHistoryDetail(entry, width)
 	}
-	jobIdx := m.selectedJobIndex()
+	jobIdx := m.currentJobIndex()
 	var selectedJob *cron.Job
 	if jobIdx >= 0 && jobIdx < len(m.jobs) {
 		selectedJob = &m.jobs[jobIdx]
@@ -231,7 +230,7 @@ func (m Model) confirmDialogPrompt() string {
 	switch m.mode {
 	case modeConfirmDelete:
 		name := ""
-		if jobIdx := m.selectedJobIndex(); jobIdx >= 0 {
+		if jobIdx := m.currentJobIndex(); jobIdx >= 0 {
 			name = m.jobs[jobIdx].Name
 		}
 		return fmt.Sprintf("Delete job '%s'?", name)
@@ -249,20 +248,6 @@ func (m Model) confirmDialogPrompt() string {
 		return fmt.Sprintf("Delete history entry '%s'?", name)
 	}
 	return ""
-}
-
-// selectedJobIndex returns the job index for the current visual row,
-// or -1 if on a header row or no jobs exist.
-func (m Model) selectedJobIndex() int {
-	rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-	if m.selectedRow < 0 || m.selectedRow >= len(rows) {
-		return -1
-	}
-	row := rows[m.selectedRow]
-	if row.kind == rowJob {
-		return row.jobIdx
-	}
-	return -1
 }
 
 func (m Model) applyDetailScroll(detailContent string, innerHeight int) string {

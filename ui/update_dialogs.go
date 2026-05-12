@@ -37,6 +37,7 @@ func (m Model) executeConfirmDelete() (tea.Model, tea.Cmd) {
 	if jobIdx >= 0 && jobIdx < len(m.jobs) {
 		name := m.jobs[jobIdx].Name
 		m.jobs = append(m.jobs[:jobIdx], m.jobs[jobIdx+1:]...)
+		m.rebuildRows()
 		m.clampSelectedRow()
 		m.mode = modeNormal
 		b := m.manager.ActiveBackend()
@@ -87,8 +88,8 @@ func (m Model) handleProjectPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				statusText = fmt.Sprintf("Cleared project on '%s'", m.jobs[jobIdx].Name)
 			}
 			// Rebuild rows and move selection to follow the job
-			rows := buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
-			m.selectedRow = rowForJobIdx(rows, jobIdx)
+			m.rebuildRows()
+			m.selectedRow = rowForJobIdx(m.jobListRows, jobIdx)
 			b := m.manager.ActiveBackend()
 			return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(statusText, statusSuccess, 4*time.Second))
 		}
