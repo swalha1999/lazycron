@@ -15,8 +15,8 @@ This creates `.lazycron/config.yaml` (project metadata) and scaffolds `.sandcast
 2. Apply an agent template:
 
 ```bash
-lazycron templates apply fix-agent
-# Created .sandcastle/jobs/fix-agent.ts
+lazycron templates apply worker-agent
+# Created .sandcastle/jobs/worker-agent.ts
 ```
 
 The TS file declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions (e.g. `gh pr create`).
@@ -117,7 +117,7 @@ process.chdir(repoDir);
 You can run any synced job immediately by its ID:
 
 ```bash
-lazycron run fix-agent
+lazycron run worker-agent
 ```
 
 ## Tips
