@@ -234,12 +234,6 @@ func ensureSandcastleEnvProjectName(sandcastleDir, projectName string) error {
 	return nil
 }
 
-// shellQuoteSingle wraps s in single quotes, escaping any embedded singles.
-// Local copy here so cmd doesn't depend on ssh-internal helpers.
-func shellQuoteSingle(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // mergeJobs merges incoming jobs into existing jobs by ID.
 // Jobs in existing that are not in incoming are preserved unchanged.
 func mergeJobs(existing, incoming []cron.Job) (merged []cron.Job, added, updated, unchanged int) {
