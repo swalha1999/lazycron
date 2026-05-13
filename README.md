@@ -111,8 +111,8 @@ This adds `.sandcastle` to `.gitignore` and scaffolds a `.sandcastle/` directory
 Apply an agent template:
 
 ```bash
-lazycron templates apply fix-agent
-# Created .sandcastle/jobs/fix-agent.ts
+lazycron templates apply worker-agent
+# Created .sandcastle/jobs/worker-agent.ts
 ```
 
 Each `.sandcastle/jobs/*.ts` file is self-describing — it declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions.
@@ -123,12 +123,10 @@ Each `.sandcastle/jobs/*.ts` file is self-describing — it declares its cron sc
 
 | Agent | What it does |
 |---|---|
-| `fix-agent` | Pick one open security issue, create a fix branch, open a PR |
-| `issue-worker-agent` | Pick an open enhancement issue, implement it, open a PR |
-| `refactor-builder-agent` | Pick an open refactor issue, implement it, open a PR |
-| `code-quality-agent` | Find the highest-impact quality improvement and open one issue |
-| `security-review-agent` | Scan recent code for vulnerabilities and open one issue |
-| `feature-suggestion-agent` | Suggest one high-impact UX feature as a GitHub issue |
+| `audit-agents` | Weekly cleanup scout — reads the codebase and files ONE high-impact cleanup issue (no code changes) |
+| `worker-agent` | Picks the lowest-numbered untaken open issue, claims it with `Taken`, implements it, opens a PR |
+
+The two pair up: `audit-agents` fills the backlog, `worker-agent` drains it.
 
 ### Custom agent patterns
 
@@ -164,7 +162,7 @@ Each `.sandcastle/jobs/*.ts` file declares two metadata exports as **double-quot
 
 ```typescript
 export const cron = "0 9 * * 1-5";
-export const name = "Fix Agent";
+export const name = "Worker Agent";
 export const tag = "BP";          // optional
 export const tagColor = "#f38ba8"; // optional
 
@@ -181,8 +179,8 @@ my-repo/
     ├── Dockerfile, .env, .env.example
     ├── lib/ensureRepo.ts            # bundled helper for clone + fetch
     └── jobs/
-        ├── fix-agent.ts
-        └── code-quality-agent.ts
+        ├── audit-agents.ts
+        └── worker-agent.ts
 ```
 
 ## CLI
@@ -197,7 +195,7 @@ lazycron run "backup"       # run a job by name or ID
 lazycron sync               # sync .sandcastle/jobs/*.ts to local crontab
 lazycron sync -s MyServer   # sync to a remote server (ships files + builds image)
 lazycron templates list     # browse templates
-lazycron templates apply "fix-agent"        # scaffold a sandcastle agent template
+lazycron templates apply "worker-agent"     # scaffold a sandcastle agent template
 lazycron --version          # show version
 ```
 

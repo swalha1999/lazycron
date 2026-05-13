@@ -47,7 +47,7 @@ Both the local machine running `lazycron sync` and the target machine where cron
 ```typescript
 // description: One-line summary shown in `lazycron templates list`
 export const cron = "0 9 * * 1-5";
-export const name = "Fix Agent";
+export const name = "Worker Agent";
 export const tag = "BP";          // optional
 export const tagColor = "#f38ba8"; // optional
 
@@ -94,8 +94,8 @@ if (result.commits.length > 0) {
 
 ### Two patterns for the host/sandbox split
 
-- **PR agents** (fix, issue-worker, refactor-builder): the agent commits inside the sandbox; the host pushes and opens the PR. Sandbox does not need GitHub credentials.
-- **Issue-only agents** (security-review, code-quality, feature-suggestion): the agent calls `gh issue create` directly inside the sandbox. The container needs `GH_TOKEN`, supplied via `docker({ env: { GH_TOKEN: process.env.GH_TOKEN ?? "" } })`.
+- **PR agents** (e.g. `worker-agent`): the agent works on a fresh branch inside the sandbox and opens the PR from there. The sandbox needs `GH_TOKEN` (passed via `agentSandboxConfig()`) so it can run `gh pr create`.
+- **Issue-only agents** (e.g. `audit-agents`): the agent calls `gh issue create` directly inside the sandbox. The container needs `GH_TOKEN`, supplied via `docker({ env: { GH_TOKEN: process.env.GH_TOKEN ?? "" } })`.
 
 ## Concurrency
 
@@ -116,8 +116,8 @@ my-repo/
 │   ├── lib/
 │   │   └── ensureRepo.ts    # bundled by `lazycron init --with-agents`
 │   └── jobs/
-│       ├── fix-agent.ts
-│       └── code-quality-agent.ts
+│       ├── audit-agents.ts
+│       └── worker-agent.ts
 └── …rest of your repo
 ```
 
