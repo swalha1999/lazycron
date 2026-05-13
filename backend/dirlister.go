@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/swalha1999/lazycron/cron"
 	sshclient "github.com/swalha1999/lazycron/ssh"
 )
 
@@ -22,8 +23,7 @@ func NewRemoteDirLister(client *sshclient.Client) *RemoteDirLister {
 func (r *RemoteDirLister) ListDirs(path string) ([]string, error) {
 	// Use find with maxdepth 1 to list only direct subdirectories.
 	// This is more reliable than ls for filtering directories only.
-	escapedPath := strings.ReplaceAll(path, "'", "'\\''")
-	cmd := "find '" + escapedPath + "' -maxdepth 1 -mindepth 1 -type d -o -type l 2>/dev/null | sort"
+	cmd := "find " + cron.ShellQuote(path) + " -maxdepth 1 -mindepth 1 -type d -o -type l 2>/dev/null | sort"
 	output, err := r.client.Run(cmd)
 	if err != nil {
 		return nil, err

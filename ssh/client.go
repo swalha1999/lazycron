@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/swalha1999/lazycron/cron"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -226,9 +227,9 @@ func (c *Client) Run(cmd string) (string, error) {
 // Upload writes content to a remote file path.
 func (c *Client) Upload(content, path string, mode os.FileMode) error {
 	// Use cat to write content via stdin
-	escapedPath := strings.ReplaceAll(path, "'", "'\\''")
-	cmd := fmt.Sprintf("mkdir -p \"$(dirname '%s')\" && cat > '%s' && chmod %o '%s'",
-		escapedPath, escapedPath, mode, escapedPath)
+	quotedPath := cron.ShellQuote(path)
+	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\" && cat > %s && chmod %o %s",
+		quotedPath, quotedPath, mode, quotedPath)
 
 	c.mu.Lock()
 	conn := c.conn
@@ -262,7 +263,7 @@ func (c *Client) Upload(content, path string, mode os.FileMode) error {
 // rest of this client's transport pattern, and to avoid a binary dependency
 // on rsync. tar's --exclude form is portable across BSD and GNU tar.
 func (c *Client) UploadDirectory(localDir, remoteDir string, excludes []string) error {
-	if _, err := c.Run("mkdir -p " + shellQuoteSingle(remoteDir)); err != nil {
+	if _, err := c.Run("mkdir -p " + cron.ShellQuote(remoteDir)); err != nil {
 		return fmt.Errorf("create remote dir: %w", err)
 	}
 
@@ -307,7 +308,7 @@ func (c *Client) UploadDirectory(localDir, remoteDir string, excludes []string) 
 	session.Stderr = &remoteErr
 	session.Stdout = io.Discard
 
-	runErr := session.Run("tar -xzf - -C " + shellQuoteSingle(remoteDir))
+	runErr := session.Run("tar -xzf - -C " + cron.ShellQuote(remoteDir))
 	tarWaitErr := tarCmd.Wait()
 
 	if tarWaitErr != nil {
@@ -322,14 +323,14 @@ func (c *Client) UploadDirectory(localDir, remoteDir string, excludes []string) 
 // HasCommand returns true if `command -v <name>` exits zero on the remote.
 // Used to verify presence of binaries like docker/node/npx before sync.
 func (c *Client) HasCommand(name string) bool {
-	_, err := c.Run("command -v " + shellQuoteSingle(name) + " >/dev/null 2>&1")
+	_, err := c.Run("command -v " + cron.ShellQuote(name) + " >/dev/null 2>&1")
 	return err == nil
 }
 
 // FileExists reports whether a regular file exists at path on the remote.
 // Returns (false, nil) for missing files and (false, err) for transport errors.
 func (c *Client) FileExists(path string) (bool, error) {
-	_, err := c.Run("test -f " + shellQuoteSingle(path))
+	_, err := c.Run("test -f " + cron.ShellQuote(path))
 	if err == nil {
 		return true, nil
 	}
@@ -339,14 +340,9 @@ func (c *Client) FileExists(path string) (bool, error) {
 	return false, err
 }
 
-// shellQuoteSingle wraps s in single quotes, escaping any embedded singles.
-func shellQuoteSingle(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
 // ReadFile reads a file from the remote server.
 func (c *Client) ReadFile(path string) ([]byte, error) {
-	output, err := c.Run(fmt.Sprintf("cat '%s'", strings.ReplaceAll(path, "'", "'\\''")))
+	output, err := c.Run("cat " + cron.ShellQuote(path))
 	if err != nil {
 		return nil, err
 	}
@@ -355,8 +351,8 @@ func (c *Client) ReadFile(path string) ([]byte, error) {
 
 // ListFiles lists files in a remote directory matching a pattern.
 func (c *Client) ListFiles(dir, pattern string) ([]string, error) {
-	cmd := fmt.Sprintf("ls -1 '%s'/%s 2>/dev/null || true",
-		strings.ReplaceAll(dir, "'", "'\\''"), pattern)
+	cmd := fmt.Sprintf("ls -1 %s/%s 2>/dev/null || true",
+		cron.ShellQuote(dir), pattern)
 	output, err := c.Run(cmd)
 	if err != nil {
 		return nil, err

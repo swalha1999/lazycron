@@ -83,7 +83,7 @@ func loadSyncContext(serverFlag, projectFlag string) (*syncContext, error) {
 		return nil, fmt.Errorf("resolve project dir: %w", err)
 	}
 	for i := range incoming {
-		incoming[i].Command = fmt.Sprintf("cd %s && %s", shellQuoteSingle(projectDir), incoming[i].Command)
+		incoming[i].Command = fmt.Sprintf("cd %s && %s", cron.ShellQuote(projectDir), incoming[i].Command)
 	}
 
 	existing, err := b.ReadJobs()
