@@ -219,20 +219,13 @@ func (b *RemoteBackend) DeleteHistory(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve history dir: %w", err)
 	}
-	historyDir := lcDir + "/history"
 
-	// Clean the path and verify it stays within the history directory.
-	cleaned := filepath.Clean(filePath)
-	rel, err := filepath.Rel(historyDir, cleaned)
+	safe, err := ensureInsideDir(lcDir+"/history", filePath)
 	if err != nil {
-		return fmt.Errorf("refusing to delete file outside history dir")
-	}
-	if strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return fmt.Errorf("refusing to delete file outside history dir")
+		return err
 	}
 
-	safePath := historyDir + "/" + rel
-	_, err = b.client.Run("rm -f " + shellQuote(safePath))
+	_, err = b.client.Run("rm -f " + shellQuote(safe))
 	return err
 }
 
