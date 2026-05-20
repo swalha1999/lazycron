@@ -86,6 +86,13 @@ func RunJobNow(id, command string) (string, error) {
 	// Only write the script if it doesn't exist yet (SyncScripts handles normal updates).
 	// This avoids overwriting a good script with a potentially stale in-memory command.
 	if _, err := os.Stat(path); os.IsNotExist(err) {
+		// Refuse to write a self-reference: if the on-disk script went missing,
+		// resolveScript falls back to returning the script-ref command itself.
+		// Writing that back and executing it would invoke the same path on its
+		// last line, forking another bash each time — a fork bomb.
+		if IsScriptRef(command) {
+			return "", fmt.Errorf("cannot run %s: local script missing and command is a self-reference — run `lazycron sync` first", id)
+		}
 		if err := WriteScript(id, command); err != nil {
 			return "", fmt.Errorf("write script: %w", err)
 		}

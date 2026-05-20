@@ -3,6 +3,7 @@ package cron
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,25 @@ func TestWriteScript_MultilineCommand(t *testing.T) {
 	}
 	if content != cmd {
 		t.Errorf("content = %q, want %q", content, cmd)
+	}
+}
+
+func TestWriteScript_RefusesSelfRef(t *testing.T) {
+	dir := withFakeScriptsDir(t)
+
+	selfRef := "bash '" + dir + "/abc12345.sh'"
+	err := WriteScript("abc12345", selfRef)
+	if err == nil {
+		t.Fatal("expected error when command is a script ref")
+	}
+	if !strings.Contains(err.Error(), "self-referential") {
+		t.Errorf("error should mention self-referential, got %q", err.Error())
+	}
+
+	// Crucial: no file should have been written. A file with a self-ref body
+	// becomes a fork bomb the first time it runs.
+	if _, statErr := os.Stat(ScriptPath("abc12345")); !os.IsNotExist(statErr) {
+		t.Error("script file should not exist after self-ref guard fires")
 	}
 }
 

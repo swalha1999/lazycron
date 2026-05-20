@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,15 @@ func ScriptPath(jobID string) string {
 }
 
 // WriteScript writes a job's command to its script file.
+//
+// Refuses to write a self-referential command (e.g. `bash '~/.lazycron/scripts/<id>.sh'`):
+// if resolveScript falls back to returning the script-ref command when the
+// on-disk file is missing, writing it back would produce a script whose body
+// invokes itself — a fork bomb on the next run.
 func WriteScript(jobID, command string) error {
+	if IsScriptRef(command) {
+		return fmt.Errorf("refusing to write self-referential script for %s: command is a script ref (run `lazycron sync` to recover)", jobID)
+	}
 	dir := scriptsDir()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err

@@ -302,6 +302,38 @@ func TestRunJobNow_CreatesScriptIfMissing(t *testing.T) {
 	}
 }
 
+func TestRunJobNow_SelfRefWithMissingScriptErrors(t *testing.T) {
+	dir := withFakeScriptsDir(t)
+	shellCalls := 0
+	withFakeShell(t, func(command string) (string, error) {
+		shellCalls++
+		return "", nil
+	})
+
+	// Simulate: crontab points at the script, but the file went missing.
+	// parser.resolveScript falls back to the raw script-ref command, which
+	// then reaches RunJobNow as `command`. We must refuse to run it.
+	selfRef := "bash '" + dir + "/abc12345.sh'"
+	_, err := RunJobNow("abc12345", selfRef)
+	if err == nil {
+		t.Fatal("expected error when command is a self-reference and script is missing")
+	}
+	if !strings.Contains(err.Error(), "self-reference") {
+		t.Errorf("error should mention self-reference, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "lazycron sync") {
+		t.Errorf("error should suggest running `lazycron sync`, got %q", err.Error())
+	}
+	if shellCalls != 0 {
+		t.Errorf("shell should not be invoked when refusing to run a self-ref; got %d calls", shellCalls)
+	}
+
+	// Script file must NOT have been written (that's what creates the fork bomb).
+	if _, statErr := os.Stat(dir + "/abc12345.sh"); !os.IsNotExist(statErr) {
+		t.Error("script file should not exist after self-ref guard fires")
+	}
+}
+
 func TestRunJobNow_DoesNotOverwriteExistingScript(t *testing.T) {
 	dir := withFakeScriptsDir(t)
 	withFakeShell(t, func(command string) (string, error) {
