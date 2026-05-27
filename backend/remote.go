@@ -64,11 +64,11 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	jobs := cron.Parse(output)
 
 	// Resolve script refs that couldn't be resolved locally (remote files).
-	// If resolution fails the Command field would otherwise stay as a script
-	// self-reference (`bash '<path>'`), and any subsequent RunJob call would
-	// overwrite the on-remote script with that self-reference — turning every
-	// future invocation into a fork bomb. Skip the job rather than carry a
-	// poisoned Command forward.
+	// If the remote script is missing/unreadable the Command stays as the
+	// script self-reference (`bash '<path>'`); we keep the job in the slice
+	// so a subsequent WriteJobs preserves the user's crontab entry, and rely
+	// on the IsScriptRef guard in WriteJobs/RunJob to refuse uploading or
+	// running a self-referential body (which would otherwise fork-bomb).
 	for i, j := range jobs {
 		path := cron.ScriptRefPath(j.Command)
 		if path == "" {
@@ -97,9 +97,16 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 		return fmt.Errorf("create scripts dir: %w", err)
 	}
 
-	// Upload script files for each job.
+	// Upload script files for each job. Refuse self-referential commands —
+	// these arise when ReadJobs couldn't resolve a script ref (missing or
+	// unreadable remote file). Wrapping `bash '<path>'` back into a script
+	// at that same path turns every cron firing into a fork bomb. Mirrors
+	// the guard in RunJob and cron.WriteScript.
 	active := make(map[string]bool)
 	for _, j := range jobs {
+		if cron.IsScriptRef(j.Command) {
+			return fmt.Errorf("cannot upload script for %s: command is a self-reference (run `lazycron sync -s <server>` first)", j.Name)
+		}
 		filename := filepath.Base(cron.ScriptPath(j.ID))
 		active[filename] = true
 		content := cron.BuildScriptContent(j.Command)
