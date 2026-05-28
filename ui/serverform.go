@@ -41,13 +41,9 @@ type serverFormModel struct {
 func newServerForm() serverFormModel {
 	f := serverFormModel{}
 	for i := 0; i < srvFieldCount; i++ {
-		ti := textinput.New()
-		ti.Prompt = ""
+		ti := newStyledInput()
 		ti.Placeholder = srvFieldHints[i]
 		ti.CharLimit = 256
-		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 		f.inputs[i] = ti
 	}
 	f.inputs[srvFieldPort].SetValue("22")

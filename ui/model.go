@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
@@ -122,26 +121,18 @@ func (m *Model) setStatus(msg string, kind statusType, d time.Duration) tea.Cmd 
 }
 
 func newPasswordInput() textinput.Model {
-	ti := textinput.New()
-	ti.Prompt = ""
+	ti := newStyledInput()
 	ti.Placeholder = "Enter password"
 	ti.CharLimit = 256
 	ti.EchoMode = textinput.EchoPassword
 	ti.EchoCharacter = '*'
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 	return ti
 }
 
 func newProjectInput() textinput.Model {
-	ti := textinput.New()
-	ti.Prompt = ""
+	ti := newStyledInput()
 	ti.Placeholder = "Project name (empty to clear)"
 	ti.CharLimit = 64
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 	return ti
 }
 

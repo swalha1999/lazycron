@@ -88,13 +88,9 @@ func (tp *templatePickerModel) selectTemplate() {
 
 	tp.variableInputs = make([]textinput.Model, len(tmpl.Variables))
 	for i, v := range tmpl.Variables {
-		ti := textinput.New()
-		ti.Prompt = ""
+		ti := newStyledInput()
 		ti.Placeholder = v.Default
 		ti.CharLimit = 256
-		ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-		ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-		ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 		tp.variableInputs[i] = ti
 	}
 	tp.activeVariable = 0

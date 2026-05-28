@@ -5,20 +5,15 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 )
 
 func newSearchInput() textinput.Model {
-	ti := textinput.New()
-	ti.Prompt = ""
+	ti := newStyledInput()
 	ti.Placeholder = "type to filter..."
 	ti.CharLimit = 128
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted)
-	ti.TextStyle = lipgloss.NewStyle().Foreground(colorFg)
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(colorHighlight)
 	return ti
 }
 
