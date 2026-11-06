@@ -10,7 +10,7 @@ import (
 	"github.com/swalha1999/lazycron/history"
 )
 
-func renderDetail(job *cron.Job, width int) string {
+func renderDetail(job *cron.Job, width int, runs runState) string {
 	if job == nil {
 		return mutedItemStyle.Render("\n  Select a job to view details")
 	}
@@ -63,6 +63,18 @@ func renderDetail(job *cron.Job, width int) string {
 	// Cron expression
 	b.WriteString(renderDetailRow("Expression", mutedItemStyle.Render(job.Schedule)))
 	b.WriteString("\n")
+
+	// Runner, and the run in progress
+	b.WriteString(renderDetailRow("Runner", detailValueStyle.Render(job.EffectiveRunner())))
+	b.WriteString("\n")
+	if a, ok := runs.running(job.ID); ok {
+		running := runningBadge() + " " + detailValueStyle.Render("since "+relativeTime(a.StartedAt))
+		if a.Terminal != "" {
+			running += "  " + mutedItemStyle.Render("press ") + helpKeyStyle.Render("a") + mutedItemStyle.Render(" to attach")
+		}
+		b.WriteString(renderDetailRow("Running", running))
+		b.WriteString("\n")
+	}
 
 	// Format warning
 	if !job.Wrapped {
@@ -122,7 +134,7 @@ func renderDetailRow(label, value string) string {
 	return fmt.Sprintf("  %s %s", detailLabelStyle.Render(label+":"), value)
 }
 
-func renderHistoryDetail(entry *history.Entry, width int) string {
+func renderHistoryDetail(entry *history.Entry, width int, runs runState) string {
 	if entry == nil {
 		return mutedItemStyle.Render("\n  Select a history entry to view details")
 	}
@@ -150,6 +162,8 @@ func renderHistoryDetail(entry *history.Entry, width int) string {
 	// Relative time
 	b.WriteString(renderDetailRow("When", mutedItemStyle.Render(relativeTime(entry.Timestamp))))
 	b.WriteString("\n")
+
+	renderRunRows(&b, entry, runs)
 
 	// Output
 	b.WriteString("\n")
@@ -190,4 +204,42 @@ func wrapText(text string, width int) []string {
 		lines = append(lines, text)
 	}
 	return lines
+}
+
+// renderRunRows adds the run-engine fields of a history entry: exit code,
+// runner and its herdr terminal (and whether it can still be attached).
+func renderRunRows(b *strings.Builder, entry *history.Entry, runs runState) {
+	row := func(label, value string) {
+		b.WriteString(renderDetailRow(label, value))
+		b.WriteString("\n")
+	}
+	switch {
+	case entry.Signal != 0:
+		row("Exit", errorStyle.Render(fmt.Sprintf("killed (signal %d)", entry.Signal)))
+	case entry.ExitCode != nil:
+		row("Exit", detailValueStyle.Render(fmt.Sprint(*entry.ExitCode)))
+	}
+	if entry.Runner != "" {
+		row("Runner", detailValueStyle.Render(entry.Runner))
+	}
+	if entry.FallbackReason != "" {
+		row("Fallback", warnStyle.Render(entry.FallbackReason))
+	}
+	if entry.Terminal != "" {
+		kept, live := runs.terminalKept(entry.Terminal)
+		state := mutedItemStyle.Render("(removed)")
+		switch {
+		case live:
+			state = terminalBadgeStyle.Render("open") + "  " + mutedItemStyle.Render("press ") + helpKeyStyle.Render("a") + mutedItemStyle.Render(" to attach")
+		case kept:
+			state = mutedItemStyle.Render("finished, kept") + "  " + mutedItemStyle.Render("press ") + helpKeyStyle.Render("a") + mutedItemStyle.Render(" to view")
+		}
+		row("Terminal", detailValueStyle.Render(entry.Terminal)+" "+state)
+	}
+	if entry.RunID != "" {
+		row("Run", mutedItemStyle.Render(entry.RunID))
+	}
+	if entry.OutputTruncated {
+		row("Note", warnStyle.Render("output truncated by herdr-core scrollback"))
+	}
 }

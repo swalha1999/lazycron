@@ -183,6 +183,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = ""
 			return m, m.serverForm.focusActive()
 		}
+		if m.focusPanel == panelJobs || m.focusPanel == panelHistory {
+			return m.startAttach()
+		}
 
 	case "c":
 		if m.focusPanel == panelServers {

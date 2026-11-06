@@ -30,6 +30,7 @@ type jobRanMsg struct {
 type historyLoadedMsg struct {
 	entries []history.Entry
 	err     error
+	runs    runState
 }
 
 type historyDeletedMsg struct {
@@ -90,7 +91,7 @@ func (m Model) Init() tea.Cmd {
 	if tzErr == nil {
 		m.manager.SetServerTimezone(0, tzName, tzOffset)
 	}
-	return tea.Batch(loadJobs(b), loadHistory(b), historyTick(), timeTick(), splashTimer())
+	return tea.Batch(loadJobs(b), loadHistory(b), historyTick(), timeTick(), splashTimer(), checkHerdrNotice(b))
 }
 
 // disableCompletedOneShotsMsg is sent after one-shot jobs have been auto-disabled.
@@ -178,7 +179,7 @@ func runFailure(e history.Entry) error {
 func loadHistory(b backend.Backend) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := b.LoadHistory()
-		return historyLoadedMsg{entries: entries, err: err}
+		return historyLoadedMsg{entries: entries, err: err, runs: loadRunState(b, entries)}
 	}
 }
 
