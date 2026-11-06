@@ -19,7 +19,12 @@ type RemoteBackend struct {
 	name       string
 	client     *sshclient.Client
 	remoteHome string // cached remote $HOME (set during EnsureRecordScript)
+	runner     string // the server's default runner ("" = the local default)
 }
+
+// SetDefaultRunner sets the runner jobs without an override use on this
+// server (config servers[].runner).
+func (b *RemoteBackend) SetDefaultRunner(runner string) { b.runner = runner }
 
 // NewRemoteBackend creates a new remote backend.
 func NewRemoteBackend(name string, client *sshclient.Client) *RemoteBackend {
@@ -121,7 +126,11 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	}
 
 	// Format crontab, replacing local paths with remote paths.
-	crontabContent := cron.RelocateCrontab(cron.FormatCrontab(jobs), remoteScriptsDir, remoteHome+"/.lazycron/bin")
+	defaultRunner := cron.DefaultRunner
+	if b.runner != "" {
+		defaultRunner = b.runner
+	}
+	crontabContent := cron.RelocateCrontab(cron.FormatCrontabFor(jobs, defaultRunner), remoteScriptsDir, remoteHome+"/.lazycron/bin")
 
 	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
 		shellQuote(crontabContent)))

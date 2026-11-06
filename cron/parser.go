@@ -106,6 +106,12 @@ func IsCurrentFormat(rawCommand string) bool {
 // CrontabLine returns the crontab representation of a job,
 // including the name comment and optionally the disabled prefix.
 func (j Job) CrontabLine() string {
+	return j.CrontabLineFor(DefaultRunner)
+}
+
+// CrontabLineFor is CrontabLine for a crontab whose default runner is
+// defaultRunner (a remote server can have its own).
+func (j Job) CrontabLineFor(defaultRunner string) string {
 	var b strings.Builder
 	nameComment := j.Name + " @id:" + j.ID
 	if j.Runner != "" {
@@ -139,7 +145,7 @@ func (j Job) CrontabLine() string {
 	} else {
 		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
 	}
-	if j.EffectiveRunner() == config.RunnerHerdr {
+	if j.runnerWith(defaultRunner) == config.RunnerHerdr {
 		wrapped = ExecLine(j, wrapped)
 	}
 	if !j.Enabled {

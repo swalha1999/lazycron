@@ -80,21 +80,14 @@ func (e *Executor) Run(req Request) (history.Entry, error) {
 
 	var out outcome
 	fallback := ""
-	if req.Runner == config.RunnerHerdr {
-		if e.HC == nil {
-			fallback = e.HCUnavailable
-		} else {
-			var started bool
-			out, started, fallback = e.runHerdr(&active)
-			if started {
-				fallback = ""
-			}
-		}
-		if fallback != "" {
-			active.Runner = config.RunnerPlain
-		}
+	switch {
+	case req.Runner != config.RunnerHerdr:
+	case e.HC == nil:
+		fallback = e.HCUnavailable
+	default:
+		out, fallback = e.runHerdr(&active)
 	}
-	if active.Runner != config.RunnerHerdr {
+	if req.Runner != config.RunnerHerdr || fallback != "" {
 		out = e.runPlain(&active)
 	}
 

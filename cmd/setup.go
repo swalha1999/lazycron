@@ -76,6 +76,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		report := setupReport{Result: res, Server: serverLabel(), DryRun: dryRun}
 		report.Runner = chooseRunner(res.HerdrReady)
 		report.Steps = append(report.Steps, saveRunnerSetting(report.Runner))
+		if rb, ok := b.(*backend.RemoteBackend); ok {
+			rb.SetDefaultRunner(report.Runner)
+		}
 		report.Steps = append(report.Steps, rewriteCrontab(b, report.Runner))
 		if globalServer == "" && report.Runner == config.RunnerHerdr && !dryRun {
 			if cfg, err := config.Load(); err == nil {

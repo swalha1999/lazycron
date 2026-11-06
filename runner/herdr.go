@@ -45,13 +45,13 @@ func terminalName(jobID, runID string) string {
 	return base + suffix
 }
 
-// runHerdr starts the job in a herdr terminal and waits for it. started is
-// false when the terminal could not be started; fallback then says why and
-// the caller runs the job plainly instead.
-func (e *Executor) runHerdr(a *Active) (out outcome, started bool, fallback string) {
+// runHerdr starts the job in a herdr terminal and waits for it. When the
+// terminal cannot be started, fallback says why and the caller runs the job
+// plainly instead.
+func (e *Executor) runHerdr(a *Active) (out outcome, fallback string) {
 	exitFile := e.Paths.ExitFile(a.RunID)
 	if err := os.MkdirAll(e.Paths.Runs, 0o700); err != nil {
-		return outcome{}, false, "cannot create runs dir: " + err.Error()
+		return outcome{}, "cannot create runs dir: " + err.Error()
 	}
 	_ = os.Remove(exitFile)
 
@@ -65,7 +65,7 @@ func (e *Executor) runHerdr(a *Active) (out outcome, started bool, fallback stri
 	})
 	if err != nil {
 		a.TerminalName = ""
-		return outcome{}, false, "herdr-core could not start the run: " + err.Error()
+		return outcome{}, "herdr-core could not start the run: " + err.Error()
 	}
 	a.Terminal = addr
 	a.Runner = config.RunnerHerdr
@@ -81,7 +81,7 @@ func (e *Executor) runHerdr(a *Active) (out outcome, started bool, fallback stri
 	} else if out.note == "" {
 		out.note = "lazycron: could not read the terminal: " + err.Error()
 	}
-	return out, true, ""
+	return out, ""
 }
 
 // awaitHerdr waits until the job wrote its exit code or the terminal ended.

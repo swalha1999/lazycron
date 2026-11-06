@@ -37,9 +37,15 @@ func ReadCrontab() (string, error) {
 
 // FormatCrontab formats jobs into crontab file content.
 func FormatCrontab(jobs []Job) string {
+	return FormatCrontabFor(jobs, DefaultRunner)
+}
+
+// FormatCrontabFor formats jobs for a crontab whose default runner is
+// defaultRunner.
+func FormatCrontabFor(jobs []Job, defaultRunner string) string {
 	var b strings.Builder
 	for i, job := range jobs {
-		b.WriteString(job.CrontabLine())
+		b.WriteString(job.CrontabLineFor(defaultRunner))
 		if i < len(jobs)-1 {
 			b.WriteString("\n")
 		}

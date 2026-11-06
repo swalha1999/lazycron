@@ -89,3 +89,18 @@ func TestRelocateCrontab(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatCrontabForUsesGivenDefault(t *testing.T) {
+	withDefaultRunner(t, config.RunnerPlain)
+	jobs := []Job{
+		{ID: "a", Name: "A", Schedule: "* * * * *", Command: "true", Enabled: true},
+		{ID: "b", Name: "B", Schedule: "* * * * *", Command: "true", Enabled: true, Runner: config.RunnerPlain},
+	}
+	out := FormatCrontabFor(jobs, config.RunnerHerdr)
+	if !strings.Contains(out, " exec 'a'") || strings.Contains(out, " exec 'b'") {
+		t.Fatalf("server default must apply only to jobs without an override:\n%s", out)
+	}
+	if strings.Contains(FormatCrontab(jobs), " exec ") {
+		t.Fatal("FormatCrontab must keep using DefaultRunner")
+	}
+}

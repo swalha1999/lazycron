@@ -74,7 +74,9 @@ func findServer(cfg *config.Config, name string) (*config.ServerConfig, error) {
 // newRemoteBackend builds an unconnected backend for a configured server.
 func newRemoteBackend(srv config.ServerConfig) *backend.RemoteBackend {
 	client := sshclient.NewClient(srv.Host, srv.PortOrDefault(), srv.User, "", config.ExpandHome(srv.KeyPath), srv.UseAgent)
-	return backend.NewRemoteBackend(srv.Name, client)
+	remote := backend.NewRemoteBackend(srv.Name, client)
+	remote.SetDefaultRunner(srv.Runner)
+	return remote
 }
 
 // openRemoteBackend connects to the configured server called name.

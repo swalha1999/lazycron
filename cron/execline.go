@@ -15,10 +15,14 @@ var DefaultRunner = config.RunnerPlain
 
 // EffectiveRunner returns the job's runner override or DefaultRunner.
 func (j Job) EffectiveRunner() string {
+	return j.runnerWith(DefaultRunner)
+}
+
+func (j Job) runnerWith(defaultRunner string) string {
 	if j.Runner != "" {
 		return j.Runner
 	}
-	return DefaultRunner
+	return defaultRunner
 }
 
 // LazycronBinPath returns ~/.lazycron/bin/lazycron, the stable link to the
