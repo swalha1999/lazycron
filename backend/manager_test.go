@@ -2,12 +2,14 @@ package backend
 
 import (
 	"io"
+	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 	"github.com/swalha1999/lazycron/monitor"
+	"github.com/swalha1999/lazycron/runner"
 )
 
 // mockBackend implements Backend for testing.
@@ -16,18 +18,16 @@ type mockBackend struct {
 	closed bool
 }
 
-func (m *mockBackend) Name() string                                              { return m.name }
-func (m *mockBackend) ReadJobs() ([]cron.Job, error)                             { return nil, nil }
-func (m *mockBackend) WriteJobs(jobs []cron.Job) error                           { return nil }
-func (m *mockBackend) RunJob(id, name, command string) (string, error)           { return "", nil }
-func (m *mockBackend) LoadHistory() ([]history.Entry, error)                     { return nil, nil }
-func (m *mockBackend) WriteHistory(jobID, jobName, output string, ok bool) error { return nil }
-func (m *mockBackend) DeleteHistory(filePath string) error                       { return nil }
-func (m *mockBackend) EnsureRecordScript() error                                 { return nil }
-func (m *mockBackend) GetTimezone() (string, int, error)                        { return "UTC", 0, nil }
-func (m *mockBackend) GetRunningJobs() ([]monitor.RunningJob, error)             { return nil, nil }
-func (m *mockBackend) KillJob(pid int) error                                     { return nil }
-func (m *mockBackend) Close() error                                              { m.closed = true; return nil }
+func (m *mockBackend) Name() string                                  { return m.name }
+func (m *mockBackend) ReadJobs() ([]cron.Job, error)                 { return nil, nil }
+func (m *mockBackend) WriteJobs(jobs []cron.Job) error               { return nil }
+func (m *mockBackend) LoadHistory() ([]history.Entry, error)         { return nil, nil }
+func (m *mockBackend) DeleteHistory(filePath string) error           { return nil }
+func (m *mockBackend) EnsureRecordScript() error                     { return nil }
+func (m *mockBackend) GetTimezone() (string, int, error)             { return "UTC", 0, nil }
+func (m *mockBackend) GetRunningJobs() ([]monitor.RunningJob, error) { return nil, nil }
+func (m *mockBackend) KillJob(pid int) error                         { return nil }
+func (m *mockBackend) Close() error                                  { m.closed = true; return nil }
 func (m *mockBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
 	return nil
 }
@@ -36,6 +36,14 @@ func (m *mockBackend) RunInProject(projectName, command string, stdout, stderr i
 	return nil
 }
 func (m *mockBackend) ProjectDir(projectName string) (string, error) { return "", nil }
+func (m *mockBackend) ExecJob(job cron.Job, req ExecRequest) (history.Entry, error) {
+	return history.Entry{}, nil
+}
+func (m *mockBackend) StartJob(job cron.Job, req ExecRequest) error        { return nil }
+func (m *mockBackend) ActiveRuns() ([]runner.Active, error)                { return nil, nil }
+func (m *mockBackend) Herdr() (*runner.HC, error)                          { return nil, nil }
+func (m *mockBackend) KillProcessGroup(pgid int) error                     { return nil }
+func (m *mockBackend) InteractiveCommand(argv []string) (*exec.Cmd, error) { return nil, nil }
 
 // newTestManager creates a Manager with a mock local backend (avoids system crontab).
 func newTestManager() *Manager {
@@ -293,7 +301,7 @@ func TestRemoveServer_ActiveAfterLowerRemoved(t *testing.T) {
 	m.AddServer(ServerInfo{Name: "prod"}, &mockBackend{name: "prod"})
 	m.AddServer(ServerInfo{Name: "staging"}, &mockBackend{name: "staging"})
 
-	m.SwitchTo(2) // active = staging (index 2)
+	m.SwitchTo(2)     // active = staging (index 2)
 	m.RemoveServer(1) // remove prod (index 1)
 
 	// Active was 2, removed index 1, so active should shift to 1

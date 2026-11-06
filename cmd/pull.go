@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,20 +21,19 @@ var pullCmd = &cobra.Command{
 }
 
 var (
-	pullServer  string
 	pullProject string
 	pullDir     string
 )
 
 func init() {
-	pullCmd.Flags().StringVarP(&pullServer, "server", "s", "", "target server name from config")
+	pullCmd.Flags().StringVarP(&globalServer, "server", "s", "", "target server name from config")
 	pullCmd.Flags().StringVarP(&pullProject, "project", "p", "", "only pull jobs from this project group")
 	pullCmd.Flags().StringVar(&pullDir, "dir", "", "path to .lazycron directory (default: ./.lazycron)")
 	rootCmd.AddCommand(pullCmd)
 }
 
 func runPull(cmd *cobra.Command, args []string) error {
-	b, err := resolveBackend(pullServer)
+	b, err := resolveBackend(globalServer)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(jobs) == 0 {
-		fmt.Println("No jobs found to pull")
+		fmt.Fprintln(humanOut, "No jobs found to pull")
 		return nil
 	}
 
@@ -74,8 +74,10 @@ func runPull(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Pulled: %d jobs written to %s\n", len(jobs), stubDir)
-	return nil
+	return render(cmd, map[string]any{"pulled": len(jobs), "dir": stubDir}, func(w io.Writer) error {
+		_, err := fmt.Fprintf(w, "Pulled: %d jobs written to %s\n", len(jobs), stubDir)
+		return err
+	})
 }
 
 func filterByProject(jobs []cron.Job, project string) []cron.Job {

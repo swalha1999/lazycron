@@ -20,8 +20,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case splashDoneMsg:
 		if m.mode == modeSplash {
 			m.mode = modeNormal
+			if m.herdrNoticePending {
+				m.mode = modeHerdrNotice
+			}
 		}
 		return m, nil
+
+	case herdrNoticeMsg:
+		if m.mode == modeSplash {
+			m.herdrNoticePending = true
+		} else if m.mode == modeNormal {
+			m.mode = modeHerdrNotice
+		}
+		return m, nil
+
+	case herdrInstalledMsg:
+		if msg.err != nil {
+			return m, m.setStatus("herdr-core install failed: "+msg.err.Error(), statusError, 6*time.Second)
+		}
+		return m, m.setStatus("herdr-core installed. Run `lazycron setup` to switch jobs to herdr mode.", statusSuccess, 8*time.Second)
+
+	case attachPreparedMsg:
+		return m.handleAttachPrepared(msg)
+
+	case attachDoneMsg:
+		reload := loadHistory(m.manager.ActiveBackend())
+		if msg.err != nil {
+			return m, tea.Batch(reload, m.setStatus("Attach ended: "+msg.err.Error(), statusError, 4*time.Second))
+		}
+		return m, reload
 
 	case jobsLoadedMsg:
 		if msg.err != nil {
@@ -56,6 +83,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyLoadedMsg:
 		if msg.err == nil {
 			m.history = msg.entries
+			m.runs = msg.runs
 			m.lastRunStatus = buildLastRunStatus(m.history)
 			// Auto-disable completed one-shot jobs (backup for record.sh)
 			if len(m.jobs) > 0 && len(m.history) > 0 {
@@ -75,13 +103,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case historySavedMsg:
-		if msg.err == nil {
-			b := m.manager.ActiveBackend()
-			return m, loadHistory(b)
-		}
-		return m, nil
-
 	case historyDeletedMsg:
 		if msg.err != nil {
 			return m, m.setStatus(fmt.Sprintf("Failed to delete history: %v", msg.err), statusError, 4*time.Second)
@@ -89,13 +110,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case jobRanMsg:
-		output := msg.output
-		if output == "" && msg.err != nil {
-			output = msg.err.Error()
-		}
-		success := msg.err == nil
-		b := m.manager.ActiveBackend()
-		saveCmd := saveHistory(b, msg.id, msg.name, output, success)
+		reloadHistory := loadHistory(m.manager.ActiveBackend()) // the run engine recorded the run
 
 		if msg.err != nil {
 			m.runOutput = msg.output
@@ -107,7 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, saveCmd
+			return m, reloadHistory
 		}
 		if msg.output != "" {
 			m.runOutput = msg.output
@@ -116,9 +131,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, saveCmd
+			return m, reloadHistory
 		}
-		return m, tea.Batch(saveCmd, m.setStatus(fmt.Sprintf("Job '%s' ran successfully", msg.name), statusSuccess, 4*time.Second))
+		return m, tea.Batch(reloadHistory, m.setStatus(fmt.Sprintf("Job '%s' ran successfully", msg.name), statusSuccess, 4*time.Second))
 
 	case serverConnectedMsg:
 		if msg.err != nil {
@@ -265,6 +280,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSearchKey(msg)
 	case modeMonitor:
 		return m, m.handleMonitorKey(msg.String())
+	case modeHerdrNotice:
+		return m.handleHerdrNoticeKey(msg)
 	default:
 		return m.handleNormalKey(msg)
 	}

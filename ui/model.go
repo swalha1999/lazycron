@@ -29,6 +29,7 @@ const (
 	modeProjectPrompt
 	modeSearch
 	modeMonitor
+	modeHerdrNotice
 )
 
 type statusType int
@@ -103,6 +104,12 @@ type Model struct {
 
 	// Last-run status indicator per job (maps job ID → success of most recent run)
 	lastRunStatus map[string]*bool
+
+	// Runs in progress and herdr terminal states (refreshed with history)
+	runs runState
+
+	// herdrNoticePending shows the herdr-core notice once the splash ends
+	herdrNoticePending bool
 
 	// Monitor state
 	monitorGroups   []monitorGroupRow // grouped running jobs for display

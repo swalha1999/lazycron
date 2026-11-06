@@ -4,9 +4,9 @@ import "fmt"
 
 // FieldDiff describes a single Job field that differs between two jobs.
 type FieldDiff struct {
-	Field string
-	Old   string
-	New   string
+	Field string `json:"field"`
+	Old   string `json:"old"`
+	New   string `json:"new"`
 }
 
 // jobFieldComparators is the single source of truth for which Job fields
@@ -26,6 +26,7 @@ var jobFieldComparators = []struct {
 	{"tag", func(a, b Job) bool { return a.Tag != b.Tag }, func(j Job) string { return j.Tag }},
 	{"tag_color", func(a, b Job) bool { return a.TagColor != b.TagColor }, func(j Job) string { return j.TagColor }},
 	{"project", func(a, b Job) bool { return a.Project != b.Project }, func(j Job) string { return j.Project }},
+	{"runner", func(a, b Job) bool { return a.Runner != b.Runner }, func(j Job) string { return j.Runner }},
 }
 
 // DiffJob returns the list of fields that differ between a and b, in the

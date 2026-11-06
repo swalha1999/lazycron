@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/swalha1999/lazycron/config"
 )
 
 // Job represents a single cron job entry.
@@ -19,6 +21,14 @@ type Job struct {
 	TagColor string // hex color for the tag, e.g. "#f38ba8"
 	OneShot  bool   // true if this job should run once and then self-disable
 	Project  string // optional project group for organizing jobs
+	Runner   string // per-job runner override ("plain", "herdr"); "" uses DefaultRunner
+	ExecLine bool   // parsed: the crontab line is a herdr exec line (not compared by DiffJob)
+}
+
+// NeedsRewrite reports whether writing the job back would change its line
+// format: legacy wrapper, or exec/record line not matching its runner.
+func (j Job) NeedsRewrite() bool {
+	return !j.Wrapped || j.ExecLine != (j.EffectiveRunner() == config.RunnerHerdr)
 }
 
 // RecordBinPath returns the path to ~/.lazycron/bin/record.
@@ -50,6 +60,10 @@ func WrapWithRecordOnce(command, jobID, jobName string) string {
 // StripRecord removes the record wrapper from a raw crontab command,
 // returning the user's original command.
 func StripRecord(command string) string {
+	if IsExecLine(command) {
+		return StripRecord(execLineRecord(command))
+	}
+
 	// Current format: __lc_out=$({ cmd; } 2>&1); __lc_ec=$?; echo "$__lc_out" | record "name" "$__lc_ec"
 	if strings.HasPrefix(command, wrapPrefix) {
 		if endIdx := strings.Index(command, wrapEndMarker); endIdx != -1 {
@@ -83,14 +97,26 @@ func StripRecord(command string) string {
 // IsCurrentFormat reports whether a raw crontab command uses the current
 // record wrapper format (as opposed to a legacy or missing wrapper).
 func IsCurrentFormat(rawCommand string) bool {
+	if IsExecLine(rawCommand) {
+		return IsCurrentFormat(execLineRecord(rawCommand))
+	}
 	return strings.HasPrefix(rawCommand, wrapPrefix)
 }
 
 // CrontabLine returns the crontab representation of a job,
 // including the name comment and optionally the disabled prefix.
 func (j Job) CrontabLine() string {
+	return j.CrontabLineFor(DefaultRunner)
+}
+
+// CrontabLineFor is CrontabLine for a crontab whose default runner is
+// defaultRunner (a remote server can have its own).
+func (j Job) CrontabLineFor(defaultRunner string) string {
 	var b strings.Builder
 	nameComment := j.Name + " @id:" + j.ID
+	if j.Runner != "" {
+		nameComment += runnerMarker + j.Runner
+	}
 	if j.OneShot {
 		nameComment += " @once"
 	}
@@ -110,14 +136,17 @@ func (j Job) CrontabLine() string {
 	// error in a sourced rc file (e.g. zsh-only syntax in ~/.zshrc) is fatal
 	// and aborts the script before the user's command runs. Cron runs this
 	// line directly, so the preamble's `2>/dev/null || true` cannot rescue
-	// a POSIX-mode parse abort. See cron/writer.go:RunJobNow for the same
-	// reasoning on the manual-run path.
+	// a POSIX-mode parse abort. The run engine (runner package) runs
+	// scripts with bash for the same reason.
 	scriptCmd := "bash '" + ScriptPath(j.ID) + "'"
 	var wrapped string
 	if j.OneShot {
 		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)
 	} else {
 		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
+	}
+	if j.runnerWith(defaultRunner) == config.RunnerHerdr {
+		wrapped = ExecLine(j, wrapped)
 	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
@@ -154,6 +183,8 @@ func Parse(output string) []Job {
 			name, tag, tagColor = extractTag(name)
 			id := ""
 			name, id = extractID(name)
+			runner := ""
+			name, runner = extractRunner(name)
 			if id == "" {
 				id = GenerateID()
 			}
@@ -170,6 +201,7 @@ func Parse(output string) []Job {
 					job.TagColor = tagColor
 					job.OneShot = oneShot
 					job.Project = project
+					job.Runner = runner
 					jobs = append(jobs, job)
 					i++
 					continue
@@ -295,6 +327,7 @@ func parseJobLine(line, name string) (Job, bool) {
 			Command:  resolveScript(StripRecord(rawCmd)),
 			Enabled:  false,
 			Wrapped:  IsCurrentFormat(rawCmd),
+			ExecLine: IsExecLine(rawCmd),
 		}, true
 	}
 
@@ -314,6 +347,7 @@ func parseJobLine(line, name string) (Job, bool) {
 		Command:  resolveScript(StripRecord(rawCmd)),
 		Enabled:  true,
 		Wrapped:  IsCurrentFormat(rawCmd),
+		ExecLine: IsExecLine(rawCmd),
 	}, true
 }
 

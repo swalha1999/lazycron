@@ -62,6 +62,16 @@ func NewClient(host string, port int, user, password, keyPath string, useAgent b
 	}
 }
 
+// SSHArgs returns arguments for the system ssh binary that reach the same
+// host, for interactive sessions this client cannot provide (e.g. attach).
+func (c *Client) SSHArgs() []string {
+	args := []string{"-t", "-p", fmt.Sprint(c.port)}
+	if c.keyPath != "" {
+		args = append(args, "-i", c.keyPath)
+	}
+	return append(args, c.user+"@"+c.host)
+}
+
 // SetPassword sets the password for authentication at runtime (not persisted).
 func (c *Client) SetPassword(pw string) {
 	c.mu.Lock()

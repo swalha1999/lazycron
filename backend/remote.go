@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -20,7 +19,12 @@ type RemoteBackend struct {
 	name       string
 	client     *sshclient.Client
 	remoteHome string // cached remote $HOME (set during EnsureRecordScript)
+	runner     string // the server's default runner ("" = the local default)
 }
+
+// SetDefaultRunner sets the runner jobs without an override use on this
+// server (config servers[].runner).
+func (b *RemoteBackend) SetDefaultRunner(runner string) { b.runner = runner }
 
 // NewRemoteBackend creates a new remote backend.
 func NewRemoteBackend(name string, client *sshclient.Client) *RemoteBackend {
@@ -28,6 +32,9 @@ func NewRemoteBackend(name string, client *sshclient.Client) *RemoteBackend {
 }
 
 func (b *RemoteBackend) Name() string { return b.name }
+
+// Client returns the SSH client (for setup steps on the server).
+func (b *RemoteBackend) Client() *sshclient.Client { return b.client }
 
 // SetPassword sets the password on the underlying SSH client for runtime auth.
 func (b *RemoteBackend) SetPassword(pw string) {
@@ -119,10 +126,11 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	}
 
 	// Format crontab, replacing local paths with remote paths.
-	crontabContent := cron.FormatCrontab(jobs)
-	crontabContent = strings.ReplaceAll(crontabContent, cron.ScriptsDir(), remoteScriptsDir)
-	remoteRecordBin := remoteHome + "/.lazycron/bin/record"
-	crontabContent = strings.ReplaceAll(crontabContent, cron.RecordBinPath(), remoteRecordBin)
+	defaultRunner := cron.DefaultRunner
+	if b.runner != "" {
+		defaultRunner = b.runner
+	}
+	crontabContent := cron.RelocateCrontab(cron.FormatCrontabFor(jobs, defaultRunner), remoteScriptsDir, remoteHome+"/.lazycron/bin")
 
 	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
 		shellQuote(crontabContent)))
@@ -132,6 +140,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	return nil
 }
 
+// RunJob runs a job script directly over SSH (servers without lazycron).
 func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	lcDir, err := b.lazycronDir()
 	if err != nil {
@@ -139,7 +148,7 @@ func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	}
 	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(id))
 
-	// Mirror the local RunJobNow guard (cron/writer.go): only write the
+	// Mirror the local ensureScript guard (backend/runs.go): only write the
 	// script when it does not already exist. Sync owns the on-disk script;
 	// re-uploading from an in-memory Command risks overwriting a good script
 	// with a stale or polluted one — which previously turned manual runs
@@ -185,11 +194,10 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 		if err != nil {
 			continue
 		}
-		var e history.Entry
-		if err := json.Unmarshal(data, &e); err != nil {
+		e, err := history.ParseEntry(f, data)
+		if err != nil {
 			continue
 		}
-		e.FilePath = f
 		entries = append(entries, e)
 	}
 
@@ -198,20 +206,6 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 	})
 
 	return entries, nil
-}
-
-func (b *RemoteBackend) WriteHistory(jobID, jobName, output string, success bool) error {
-	filename, data, err := history.BuildHistoryFile(jobID, jobName, output, success)
-	if err != nil {
-		return err
-	}
-
-	lcDir, lcErr := b.lazycronDir()
-	if lcErr != nil {
-		return lcErr
-	}
-
-	return b.client.Upload(string(data), lcDir+"/history/"+filename, 0o644)
 }
 
 func (b *RemoteBackend) DeleteHistory(filePath string) error {

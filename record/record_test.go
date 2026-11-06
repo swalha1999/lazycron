@@ -12,7 +12,7 @@ import (
 
 // runRecordScript executes the record shell script with the given input and arguments.
 // It sets HOME to a temp directory and returns the parsed entry and output file path.
-func runRecordScript(t *testing.T, input string, args ...string) (Entry, string) {
+func runRecordScript(t *testing.T, input string, args ...string) (scriptEntry, string) {
 	t.Helper()
 
 	home := t.TempDir()
@@ -45,7 +45,7 @@ func runRecordScript(t *testing.T, input string, args ...string) (Entry, string)
 		t.Fatalf("reading JSON: %v", err)
 	}
 
-	var entry Entry
+	var entry scriptEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		t.Fatalf("parsing JSON: %v\nraw: %s", err, data)
 	}
@@ -419,7 +419,7 @@ func TestScript_NoArgs(t *testing.T) {
 func TestScript_CompatibleWithGoEntry(t *testing.T) {
 	entry, _ := runRecordScript(t, "test output", "a1000014", "compat-job", "0")
 
-	// Verify all fields expected by history.LoadEntry / record.Entry
+	// Verify all fields expected by history.LoadEntry
 	if entry.JobName == "" {
 		t.Error("JobName is empty")
 	}
@@ -510,4 +510,14 @@ func TestInstallRecord_Idempotent(t *testing.T) {
 	if string(data) != string(ScriptContent) {
 		t.Error("installed content should match embedded script")
 	}
+}
+
+// scriptEntry is the JSON the record script writes (a subset of history.Entry,
+// which this package cannot import).
+type scriptEntry struct {
+	JobID     string `json:"job_id,omitempty"`
+	JobName   string `json:"job_name"`
+	Timestamp string `json:"timestamp"`
+	Output    string `json:"output"`
+	Success   *bool  `json:"success,omitempty"`
 }

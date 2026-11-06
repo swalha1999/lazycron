@@ -8,7 +8,7 @@ import (
 	"github.com/swalha1999/lazycron/history"
 )
 
-func renderHistoryList(entries []history.Entry, selected, width, height int, focused bool, matchSet map[int]bool) string {
+func renderHistoryList(entries []history.Entry, selected, width, height int, focused bool, matchSet map[int]bool, runs runState) string {
 	if len(entries) == 0 {
 		return mutedItemStyle.Render("\n  No history yet")
 	}
@@ -20,7 +20,7 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 
 	var b strings.Builder
 
-	maxNameWidth := width - 16
+	maxNameWidth := width - 18 // room for the time and a terminal badge
 	if maxNameWidth < 8 {
 		maxNameWidth = 8
 	}
@@ -49,6 +49,9 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 		}
 
 		line := fmt.Sprintf("%-*s  %s", maxNameWidth, name, mutedItemStyle.Render(ago))
+		if badge := runs.terminalBadge(entry.Terminal); badge != "" {
+			line += " " + badge
+		}
 
 		if i == selected && focused {
 			if failed {

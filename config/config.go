@@ -15,11 +15,26 @@ type ServerConfig struct {
 	User     string `yaml:"user"`
 	KeyPath  string `yaml:"key_path,omitempty"`
 	UseAgent bool   `yaml:"use_agent,omitempty"`
+	// Runner overrides the default runner for jobs written to this server.
+	Runner string `yaml:"runner,omitempty"`
+}
+
+// PortOrDefault returns the SSH port, 22 when unset.
+func (s ServerConfig) PortOrDefault() int {
+	if s.Port == 0 {
+		return 22
+	}
+	return s.Port
 }
 
 // Config is the top-level configuration structure.
 type Config struct {
 	Servers []ServerConfig `yaml:"servers"`
+
+	// Runner is the default way jobs run: RunnerPlain (default when empty)
+	// or RunnerHerdr. Jobs can override it individually.
+	Runner string      `yaml:"runner,omitempty"`
+	Herdr  HerdrConfig `yaml:"herdr,omitempty"`
 }
 
 // configPath returns the path to ~/.lazycron/config.yml.

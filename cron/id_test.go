@@ -86,3 +86,21 @@ func TestValidateID_Invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestSlugID(t *testing.T) {
+	cases := map[string]string{
+		"Nightly Backup":  "nightly-backup",
+		"  DB -- dump!! ": "db-dump",
+		"report_v2":       "report-v2",
+		"日本":              "",
+		"Already-ok-123":  "already-ok-123",
+	}
+	for in, want := range cases {
+		if got := SlugID(in); got != want {
+			t.Errorf("SlugID(%q) = %q, want %q", in, got, want)
+		}
+		if got := SlugID(in); got != "" && ValidateID(got) != nil {
+			t.Errorf("SlugID(%q) produced invalid id %q", in, got)
+		}
+	}
+}

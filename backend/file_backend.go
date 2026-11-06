@@ -5,19 +5,37 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 	"github.com/swalha1999/lazycron/monitor"
+	"github.com/swalha1999/lazycron/runner"
 )
 
 // FileBackend reads/writes a plain crontab file and uses a temp history
 // directory instead of the system crontab. Useful for testing and dry-run.
+// Job scripts live beside the file in <cronFile>.lazycron/scripts so the real
+// ~/.lazycron/scripts is never touched.
 type FileBackend struct {
 	cronFile   string
 	historyDir string
+}
+
+// ScriptsDir returns where this backend keeps job scripts. The path contains
+// ".lazycron/scripts" so crontab lines referencing it parse as script refs.
+func (b *FileBackend) ScriptsDir() string {
+	return b.cronFile + ".lazycron/scripts"
+}
+
+// StateDir returns the backend's private lazycron directory (runs, holds).
+func (b *FileBackend) StateDir() string {
+	return b.cronFile + ".lazycron"
+}
+
+// HistoryDir returns the backend's history directory.
+func (b *FileBackend) HistoryDir() string {
+	return b.historyDir
 }
 
 // NewFileBackend creates a backend backed by a crontab file and history directory.
@@ -42,14 +60,11 @@ func (b *FileBackend) ReadJobs() ([]cron.Job, error) {
 }
 
 func (b *FileBackend) WriteJobs(jobs []cron.Job) error {
-	content := cron.FormatCrontab(jobs)
+	if err := cron.SyncScriptsIn(b.ScriptsDir(), jobs); err != nil {
+		return fmt.Errorf("sync scripts: %w", err)
+	}
+	content := cron.RelocateCrontab(cron.FormatCrontab(jobs), b.ScriptsDir(), "")
 	return os.WriteFile(b.cronFile, []byte(content), 0o644)
-}
-
-func (b *FileBackend) RunJob(id, name, command string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
 }
 
 func (b *FileBackend) LoadHistory() ([]history.Entry, error) {
@@ -57,13 +72,6 @@ func (b *FileBackend) LoadHistory() ([]history.Entry, error) {
 		return nil, err
 	}
 	return history.LoadAllFrom(b.historyDir)
-}
-
-func (b *FileBackend) WriteHistory(jobID, jobName, output string, success bool) error {
-	if err := os.MkdirAll(b.historyDir, 0o755); err != nil {
-		return err
-	}
-	return history.WriteEntryTo(b.historyDir, jobID, jobName, output, success)
 }
 
 func (b *FileBackend) DeleteHistory(filePath string) error {
@@ -121,3 +129,31 @@ func (b *FileBackend) RunInProject(projectName, command string, stdout, stderr i
 func (b *FileBackend) ProjectDir(projectName string) (string, error) {
 	return os.Getwd()
 }
+
+// Paths returns the run-engine layout private to this crontab file.
+func (b *FileBackend) Paths() runner.Paths {
+	p := runner.PathsUnder(b.StateDir())
+	p.Scripts = b.ScriptsDir()
+	p.History = b.historyDir
+	return p
+}
+
+func (b *FileBackend) ExecJob(job cron.Job, req ExecRequest) (history.Entry, error) {
+	return execLocally(b, b.Paths(), job, req)
+}
+
+func (b *FileBackend) StartJob(job cron.Job, req ExecRequest) error {
+	return startLocally(b.Paths(), job, req, "--cron-file", b.cronFile)
+}
+
+func (b *FileBackend) ActiveRuns() ([]runner.Active, error) {
+	return runner.LoadActive(b.Paths().Runs)
+}
+
+func (b *FileBackend) Herdr() (*runner.HC, error) { return localHC() }
+
+func (b *FileBackend) InteractiveCommand(argv []string) (*exec.Cmd, error) {
+	return localCommand(argv), nil
+}
+
+func (b *FileBackend) KillProcessGroup(pgid int) error { return killGroup(pgid) }

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // GenerateID returns a random 8-character lowercase hex string
@@ -57,4 +58,29 @@ func ValidateID(id string) error {
 		}
 	}
 	return nil
+}
+
+// SlugID derives a job ID from a name: lowercase, runs of other characters
+// collapsed to "-", trimmed, at most 64 characters. Returns "" when the name
+// has no usable characters.
+func SlugID(name string) string {
+	var b []byte
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		c := byte(r)
+		if r < 128 && IsIDChar(c) && c != '-' && c != '_' {
+			b = append(b, c)
+			dash = false
+			continue
+		}
+		if !dash && len(b) > 0 {
+			b = append(b, '-')
+			dash = true
+		}
+	}
+	id := strings.Trim(string(b), "-")
+	if len(id) > 64 {
+		id = strings.Trim(id[:64], "-")
+	}
+	return id
 }

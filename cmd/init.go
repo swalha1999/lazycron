@@ -68,6 +68,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	printNextSteps(withAgents)
+	if wantJSON(cmd) {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"project": name, "with_agents": withAgents})
+	}
 	return nil
 }
 
@@ -86,7 +89,7 @@ func scaffoldSandcastle(cwd, projectName string) error {
 	if err := writeEnsureRepoLib(cwd); err != nil {
 		return fmt.Errorf("write ensureRepo.ts: %w", err)
 	}
-	fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "lib", "ensureRepo.ts"))
+	fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "lib", "ensureRepo.ts"))
 
 	if err := applyAllSandcastleTemplates(cwd); err != nil {
 		return fmt.Errorf("apply sandcastle templates: %w", err)
@@ -140,10 +143,10 @@ func realScaffoldSandcastleConfig(cwd, projectName string) error {
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
-		fmt.Printf("Created %s\n", filepath.Join(".sandcastle", f.dest))
+		fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", f.dest))
 	}
 	if repoURL != "" {
-		fmt.Printf("Detected REPO_URL=%s from git remote (pre-filled in .sandcastle/.env)\n", repoURL)
+		fmt.Fprintf(humanOut, "Detected REPO_URL=%s from git remote (pre-filled in .sandcastle/.env)\n", repoURL)
 	}
 	return nil
 }
@@ -234,11 +237,11 @@ func applyAllSandcastleTemplates(cwd string) error {
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", dest, err)
 		}
-		fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "jobs", t.Filename+".ts"))
+		fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "jobs", t.Filename+".ts"))
 		created++
 	}
 	if created > 0 {
-		fmt.Printf("Applied %d sandcastle agent template(s) to .sandcastle/jobs/\n", created)
+		fmt.Fprintf(humanOut, "Applied %d sandcastle agent template(s) to .sandcastle/jobs/\n", created)
 	}
 	return nil
 }
@@ -292,7 +295,7 @@ func isInteractive() bool {
 }
 
 func promptYesNo(prompt string) bool {
-	fmt.Print(prompt)
+	fmt.Fprint(humanOut, prompt)
 	r := bufio.NewReader(os.Stdin)
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -303,15 +306,15 @@ func promptYesNo(prompt string) bool {
 }
 
 func printNextSteps(withAgents bool) {
-	fmt.Println()
-	fmt.Println("Next steps:")
+	fmt.Fprintln(humanOut)
+	fmt.Fprintln(humanOut, "Next steps:")
 	if withAgents {
-		fmt.Println("  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN)")
-		fmt.Println("  2. Review/trim .sandcastle/jobs/*.ts — delete agents you don't want scheduled")
-		fmt.Println("  3. lazycron sync             # local (builds Docker image, installs cron)")
-		fmt.Println("     lazycron sync --server X  # remote, ships .sandcastle/ + builds image")
+		fmt.Fprintln(humanOut, "  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN)")
+		fmt.Fprintln(humanOut, "  2. Review/trim .sandcastle/jobs/*.ts — delete agents you don't want scheduled")
+		fmt.Fprintln(humanOut, "  3. lazycron sync             # local (builds Docker image, installs cron)")
+		fmt.Fprintln(humanOut, "     lazycron sync --server X  # remote, ships .sandcastle/ + builds image")
 	} else {
-		fmt.Println("  1. lazycron init --with-agents   # to add sandcastle agents later")
-		fmt.Println("  2. lazycron templates list")
+		fmt.Fprintln(humanOut, "  1. lazycron init --with-agents   # to add sandcastle agents later")
+		fmt.Fprintln(humanOut, "  2. lazycron templates list")
 	}
 }

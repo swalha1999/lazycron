@@ -2,10 +2,12 @@ package backend
 
 import (
 	"io"
+	"os/exec"
 
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
 	"github.com/swalha1999/lazycron/monitor"
+	"github.com/swalha1999/lazycron/runner"
 )
 
 // Backend abstracts all cron and history operations for a single server.
@@ -13,15 +15,29 @@ type Backend interface {
 	Name() string
 	ReadJobs() ([]cron.Job, error)
 	WriteJobs(jobs []cron.Job) error
-	RunJob(id, name, command string) (string, error)
 	LoadHistory() ([]history.Entry, error)
-	WriteHistory(jobID, jobName, output string, success bool) error
 	DeleteHistory(filePath string) error
 	EnsureRecordScript() error
 	GetTimezone() (string, int, error) // returns timezone name and offset in seconds
 	GetRunningJobs() ([]monitor.RunningJob, error)
 	KillJob(pid int) error
 	Close() error
+
+	// ExecJob runs a job now through the run engine (herdr or plain, as the
+	// job says), waits for it and returns its recorded history entry.
+	ExecJob(job cron.Job, req ExecRequest) (history.Entry, error)
+	// StartJob starts a run in the background and returns at once; the run
+	// shows up in ActiveRuns and later in LoadHistory under req.RunID.
+	StartJob(job cron.Job, req ExecRequest) error
+	// ActiveRuns returns runs in progress, newest first.
+	ActiveRuns() ([]runner.Active, error)
+	// KillProcessGroup ends a plain run's process group (SIGTERM).
+	KillProcessGroup(pgid int) error
+	// Herdr returns a herdr-core client on the target.
+	Herdr() (*runner.HC, error)
+	// InteractiveCommand returns a command that runs argv on the target with
+	// this terminal's stdio (used for `hc attach`).
+	InteractiveCommand(argv []string) (*exec.Cmd, error)
 
 	// CopyProjectFiles transfers a local directory to the project's location
 	// on the target. remoteSubpath is appended to the backend's project root

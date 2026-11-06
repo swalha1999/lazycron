@@ -1,6 +1,8 @@
 # lazycron
 
-A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax. Comes with built-in job templates and a full CLI.
+A terminal UI for managing cron jobs, inspired by [lazygit](https://github.com/jesseduffield/lazygit). View, create, edit, and run your crontab entries without memorizing cron syntax. Comes with built-in job templates and a full, agent-friendly CLI.
+
+Optionally, every run can execute inside a [herdr-core](https://herdr.dev) terminal: cron still decides *when*, but you can watch a run live, open it after the fact or take it over (answer a blocked agent) from the TUI, `hc`, herdr-app or the hirte iPhone app.
 
 ![lazycron demo](assets/demo.gif)
 
@@ -15,6 +17,15 @@ curl -fsSL https://get.lazycron.com | sh
 ```bash
 go install github.com/swalha1999/lazycron@latest   # Go
 ```
+
+The install script also installs **herdr-core** with herdr's official core-only installer if it is missing. herdr is a separate project; skip it with `sh -s -- --no-herdr` or `LAZYCRON_NO_HERDR=1`. Then run:
+
+```bash
+lazycron setup --dry-run   # see what it would change
+lazycron setup             # herdr-core at boot, linger, herdr runner, crontab rewrite
+```
+
+Without herdr-core everything works as plain cron jobs.
 
 **macOS Users:** On first run, macOS will ask you to allow your terminal to "administer your computer." Click Allow — this is needed for crontab access. If the prompt keeps appearing, go to System Settings → Privacy & Security → App Management and add your terminal app.
 
@@ -54,7 +65,17 @@ An interactive 5-column picker for building cron expressions field by field. Sup
 The work directory field includes a fuzzy-matching directory browser with drill-in/drill-out navigation, breadcrumbs, and scroll support.
 
 ### Execution History
-Job runs are recorded to `~/.lazycron/history/` as JSON files, capturing output, exit codes, and timestamps. History refreshes automatically and is viewable in the History panel.
+Job runs are recorded to `~/.lazycron/history/` as JSON files (one per run, named by its run id), capturing output, exit code or signal, timestamps, the runner and the herdr terminal. Runs in progress are tracked in `~/.lazycron/runs/`. History refreshes automatically and is viewable in the History panel; jobs with a run in progress show `⟳`, and history entries whose herdr terminal is still kept show `⧉`.
+
+### Runs in herdr terminals
+With the herdr runner (`lazycron setup`, or `--runner herdr` per job), each run starts as a labeled herdr-core terminal:
+
+- **Watch or take over**: press `a` on a job (its running run) or a history entry, or run `lazycron attach <run>`; detach with `ctrl+\`.
+- **Seen later**: after the job ends the terminal stays open for `herdr.hold` (default 72h) in `~/.lazycron/Cron`, so herdr-app, which only shows live terminals, still picks up a 02:00 run when you open it in the morning, in a space named "Cron". Close the pane when done.
+- **Never lost**: if herdr-core is missing or can't start the run, the job runs plainly and the history entry says why. If the lazycron binary is gone, the crontab line runs the job through the plain record wrapper.
+- **Tidy**: only the newest `herdr.keep_runs` (default 5) finished run terminals per job are kept.
+
+See [docs/herdr.md](docs/herdr.md) for details and configuration.
 
 ## Keybindings
 
@@ -62,9 +83,11 @@ Job runs are recorded to `~/.lazycron/history/` as JSON files, capturing output,
 |---|---|
 | `n` | New job |
 | `enter` / `e` | Edit selected job |
-| `d` | Delete selected job |
+| `d` | Duplicate selected job |
+| `D` | Delete selected job (or history entry) |
 | `space` | Toggle enable/disable |
 | `r` | Run job now |
+| `a` | Attach to the run's herdr terminal (jobs / history panel) |
 | `U` | Update job to latest format |
 | `R` | Refresh from crontab |
 | `1` / `2` / `3` | Switch panel |
@@ -78,8 +101,8 @@ Job runs are recorded to `~/.lazycron/history/` as JSON files, capturing output,
 Press `n` then `t` to create a job from a built-in template, or use the CLI:
 
 ```bash
-lazycron templates list                    # browse all templates
-lazycron templates list --category ai      # filter by category
+lazycron templates ls                      # browse all templates
+lazycron templates ls --category ai        # filter by category
 lazycron templates apply "Claude Code Review"  # apply interactively
 ```
 
@@ -185,24 +208,50 @@ my-repo/
 
 ## CLI
 
+Everything the TUI does is available on the command line, built for scripts and AI agents: JSON output when stdout is not a terminal (`--json` / `--json=false` to force), errors as `{"error":{"kind","message","hint"}}` with meaningful exit codes, stable ids, idempotent commands and `--dry-run` on every change. `--server <name>` targets a remote server on any command.
+
 ```bash
-lazycron                    # launch TUI (default)
-lazycron init               # add .sandcastle to .gitignore
-lazycron init --with-agents # also scaffold .sandcastle/ (Claude Code + Docker + bundled agent templates)
-lazycron list               # list all cron jobs
-lazycron add -n "backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
-lazycron run "backup"       # run a job by name or ID
-lazycron sync               # sync .sandcastle/jobs/*.ts to local crontab
-lazycron sync -s MyServer   # sync to a remote server (ships files + builds image)
-lazycron templates list     # browse templates
-lazycron templates apply "worker-agent"     # scaffold a sandcastle agent template
-lazycron --version          # show version
+lazycron                                 # launch TUI (default)
+
+# jobs
+lazycron ls                              # list jobs (alias: list)
+lazycron get backup                      # one job + its last run
+lazycron add --id backup -n "Backup" -s "every day at 3am" -c "pg_dump mydb > /tmp/backup.sql"
+lazycron edit backup --schedule "0 4 * * *"
+lazycron disable backup | enable backup | rm backup
+lazycron export > jobs.yml               # jobs as a declarative file
+lazycron apply jobs.yml [--prune]        # make the machine match it, report the diff
+
+# runs
+lazycron run backup                      # run now (waits; exit 1 if it fails)
+lazycron run backup --no-wait            # start in the background, print the run id
+lazycron wait <run> --timeout 10m
+lazycron runs [backup]                   # in progress + finished
+lazycron logs <run>                      # output (live while running); logs <job> lists runs
+lazycron attach <run>                    # take over the herdr terminal
+lazycron kill <run>
+lazycron events                          # JSON lines: run.started / run.finished / run.failed
+
+# machine
+lazycron setup [--server X] [--dry-run]  # herdr-core, boot service, linger, crontab format
+lazycron doctor                          # health check
+lazycron server ls | add | rm | test
+lazycron agent-help                      # one-read guide for agents
+lazycron skill install                   # install it as a Claude Code skill
+
+# sandcastle agents
+lazycron init [--with-agents]
+lazycron sync [-s MyServer] | diff | pull
+lazycron templates ls | apply "worker-agent"
 ```
+
+Exit codes: `0` ok, `1` failure (including a failed run), `2` usage, `3` not found, `4` conflict, `5` unavailable, `6` timeout. See [docs/cli.md](docs/cli.md).
 
 ## Requirements
 
 - macOS or Linux
-- `crontab` command available on PATH
+- `crontab` command available on PATH and a running cron daemon (`lazycron doctor` checks both)
+- Optional: [herdr-core](https://herdr.dev) 0.1.18+ for herdr runs
 
 ## License
 

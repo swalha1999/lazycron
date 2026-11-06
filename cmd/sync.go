@@ -2,17 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/swalha1999/lazycron/backend"
-	"github.com/swalha1999/lazycron/config"
 	"github.com/swalha1999/lazycron/cron"
-	"github.com/swalha1999/lazycron/record"
-	sshclient "github.com/swalha1999/lazycron/ssh"
 	"github.com/swalha1999/lazycron/template"
 )
 
@@ -29,7 +26,6 @@ var syncCmd = &cobra.Command{
 }
 
 var (
-	syncServer      string
 	syncProject     string
 	syncNoEnv       bool
 	syncNoFiles     bool
@@ -39,7 +35,7 @@ var (
 )
 
 func init() {
-	syncCmd.Flags().StringVarP(&syncServer, "server", "s", "", "target server name from config")
+	syncCmd.Flags().StringVarP(&globalServer, "server", "s", "", "target server name from config")
 	syncCmd.Flags().StringVar(&syncProject, "project", "", "project name (overrides .lazycron/config.yaml; defaults to cwd basename)")
 	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env or .sandcastle/.env to the remote")
 	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ or .sandcastle/ files (crontab only)")
@@ -50,7 +46,7 @@ func init() {
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
-	sctx, err := loadSyncContext(syncServer, syncProject)
+	sctx, err := loadSyncContext(globalServer, syncProject)
 	if err != nil {
 		return err
 	}
@@ -75,8 +71,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 		if len(missing) > 0 {
 			target := "this machine"
-			if syncServer != "" {
-				target = syncServer
+			if globalServer != "" {
+				target = globalServer
 			}
 			return fmt.Errorf(
 				"sandcastle agents need {docker, node, npx} on %s but the following are missing: %s. "+
@@ -88,7 +84,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Transfer files (only if remote and --no-files not set).
-	if syncServer != "" && !syncNoFiles {
+	if globalServer != "" && !syncNoFiles {
 		excludesLazycron := []string{}
 		excludesSandcastle := []string{"./node_modules", "./logs"}
 		if syncNoEnv {
@@ -97,12 +93,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 
 		if _, err := os.Stat(sctx.LazycronDir); err == nil {
-			fmt.Printf("Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", syncServer, sctx.ProjectName)
+			fmt.Fprintf(humanOut, "Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", globalServer, sctx.ProjectName)
 			if err := sctx.Backend.CopyProjectFiles(sctx.LazycronDir, sctx.ProjectName+"/.lazycron", excludesLazycron); err != nil {
 				return fmt.Errorf("copy .lazycron/: %w", err)
 			}
 		}
-		fmt.Printf("Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", syncServer, sctx.ProjectName)
+		fmt.Fprintf(humanOut, "Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", globalServer, sctx.ProjectName)
 		if err := sctx.Backend.CopyProjectFiles(sctx.SandcastleDir, sctx.ProjectName+"/.sandcastle", excludesSandcastle); err != nil {
 			return fmt.Errorf("copy .sandcastle/: %w", err)
 		}
@@ -112,16 +108,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// .sandcastle/node_modules/.bin/tsx directly, so this must complete
 	// before any cron firing.
 	if !syncNoInstall {
-		fmt.Println("Installing .sandcastle/ dependencies (npm install)...")
-		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintln(humanOut, "Installing .sandcastle/ dependencies (npm install)...")
+		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", humanOut, humanOut); err != nil {
 			return fmt.Errorf("npm install in .sandcastle/: %w", err)
 		}
 	}
 
 	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
 	if !syncNoBuild {
-		fmt.Println("Building sandcastle image...")
-		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintln(humanOut, "Building sandcastle image...")
+		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", humanOut, humanOut); err != nil {
 			return fmt.Errorf("build sandcastle image: %w", err)
 		}
 	}
@@ -134,8 +130,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Synced: %d added, %d updated, %d unchanged\n", added, updated, unchanged)
-	return nil
+	summary := map[string]any{"project": sctx.ProjectName, "server": serverLabel(), "added": added, "updated": updated, "unchanged": unchanged}
+	return render(cmd, summary, func(w io.Writer) error {
+		_, err := fmt.Fprintf(w, "Synced: %d added, %d updated, %d unchanged\n", added, updated, unchanged)
+		return err
+	})
 }
 
 // readSandcastleJobs walks .sandcastle/jobs/*.ts, parses metadata from each
@@ -230,7 +229,7 @@ func ensureSandcastleEnvProjectName(sandcastleDir, projectName string) error {
 	if _, err := f.WriteString(addition); err != nil {
 		return err
 	}
-	fmt.Printf("Added PROJECT_NAME=%s to %s\n", projectName, filepath.Join(".sandcastle", ".env"))
+	fmt.Fprintf(humanOut, "Added PROJECT_NAME=%s to %s\n", projectName, filepath.Join(".sandcastle", ".env"))
 	return nil
 }
 
@@ -271,52 +270,4 @@ func mergeJobs(existing, incoming []cron.Job) (merged []cron.Job, added, updated
 	}
 
 	return merged, added, updated, unchanged
-}
-
-// resolveBackend creates the appropriate backend for the sync target.
-func resolveBackend(serverName string) (backend.Backend, error) {
-	if serverName == "" {
-		if err := cron.CheckCrontabAvailable(); err != nil {
-			return nil, err
-		}
-		if err := record.InstallRecord(); err != nil {
-			return nil, fmt.Errorf("install record script: %w", err)
-		}
-		return backend.NewLocalBackend(), nil
-	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-
-	var srv *config.ServerConfig
-	var names []string
-	for i := range cfg.Servers {
-		names = append(names, cfg.Servers[i].Name)
-		if cfg.Servers[i].Name == serverName {
-			srv = &cfg.Servers[i]
-		}
-	}
-	if srv == nil {
-		if len(names) == 0 {
-			return nil, fmt.Errorf("server %q not found (no servers configured)", serverName)
-		}
-		return nil, fmt.Errorf("server %q not found (available: %s)", serverName, strings.Join(names, ", "))
-	}
-
-	port := srv.Port
-	if port == 0 {
-		port = 22
-	}
-
-	client := sshclient.NewClient(srv.Host, port, srv.User, "", config.ExpandHome(srv.KeyPath), srv.UseAgent)
-	remote := backend.NewRemoteBackend(srv.Name, client)
-
-	if err := remote.EnsureRecordScript(); err != nil {
-		remote.Close()
-		return nil, fmt.Errorf("connect to %s: %w", serverName, err)
-	}
-
-	return remote, nil
 }

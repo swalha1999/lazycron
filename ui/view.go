@@ -75,6 +75,9 @@ func (m Model) View() string {
 	case modeMonitor:
 		content = m.renderMonitorView()
 
+	case modeHerdrNotice:
+		content = overlay(panels, renderHerdrNotice(), m.width, contentHeight)
+
 	default:
 		content = panels
 	}
@@ -153,7 +156,7 @@ func (m Model) renderPanels(height int) string {
 	serversBox = injectBorderTitle(serversBox, "1", serversTitle, serversActive)
 
 	// [2] Jobs panel
-	listContent := renderJobList(m.jobs, m.selectedRow, m.jobListRows, listWidth-4, jobsHeight, m.collapsedProjects, m.lastRunStatus)
+	listContent := renderJobList(m.jobs, m.selectedRow, m.jobListRows, listWidth-4, jobsHeight, m.collapsedProjects, m.lastRunStatus, m.runs)
 	jobsActive := m.focusPanel == panelJobs
 	jobsPanelStyle := panelStyle
 	if jobsActive {
@@ -171,7 +174,7 @@ func (m Model) renderPanels(height int) string {
 
 	// [3] History panel
 	histMatchSet := m.historyMatchSet()
-	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory, histMatchSet)
+	historyContent := renderHistoryList(m.history, m.historySelected, listWidth-4, historyHeight, m.focusPanel == panelHistory, histMatchSet, m.runs)
 	historyActive := m.focusPanel == panelHistory
 	historyPanelStyle := panelStyle
 	if historyActive {
@@ -214,14 +217,14 @@ func (m Model) buildDetailContent(width int) string {
 		if m.historySelected >= 0 && m.historySelected < len(m.history) {
 			entry = &m.history[m.historySelected]
 		}
-		return renderHistoryDetail(entry, width)
+		return renderHistoryDetail(entry, width, m.runs)
 	}
 	jobIdx := m.currentJobIndex()
 	var selectedJob *cron.Job
 	if jobIdx >= 0 && jobIdx < len(m.jobs) {
 		selectedJob = &m.jobs[jobIdx]
 	}
-	return renderDetail(selectedJob, width)
+	return renderDetail(selectedJob, width, m.runs)
 }
 
 // confirmDialogPrompt returns the prompt text for whichever confirmation

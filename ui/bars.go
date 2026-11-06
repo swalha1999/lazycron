@@ -83,9 +83,11 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 				helpBinding("enter", "edit") + helpSep() +
 				helpBinding("space", "toggle") + helpSep() +
 				helpBinding("r", "run") + helpSep() +
+				helpBinding("a", "attach") + helpSep() +
 				helpBinding("D", "delete") + helpSep()
 		} else if focusPanel == panelHistory {
-			help = helpBinding("D", "delete") + helpSep()
+			help = helpBinding("a", "attach") + helpSep() +
+				helpBinding("D", "delete") + helpSep()
 		}
 		help += helpBinding("/", "search") + helpSep() +
 			helpBinding("?", "help") + helpSep() +
@@ -105,6 +107,9 @@ func renderBottomBar(m mode, focusPanel int, statusMsg string, statusKind status
 			helpBinding("esc", "cancel")
 	case modeHelp:
 		help = helpBinding("esc", "back")
+	case modeHerdrNotice:
+		help = helpBinding("y", "install herdr-core") + helpSep() +
+			helpBinding("n", "not now")
 	case modeRunOutput:
 		help = helpBinding("esc", "close")
 	case modeNewJobChoice:
@@ -172,9 +177,13 @@ func renderHelpScreen() string {
 		{"D", "Delete selected job"},
 		{"space", "Toggle enable/disable"},
 		{"r", "Run job now"},
+		{"a", "Attach to its running herdr terminal"},
 		{"U", "Update job to latest format"},
 		{"p", "Set/change project group"},
 		{"J/K", "Move job up/down (reorder)"},
+		{"", "── History Panel ──"},
+		{"a", "Attach to the run's herdr terminal"},
+		{"D", "Delete history entry"},
 		{"", "── General ──"},
 		{"/", "Search/filter current panel"},
 		{"esc", "Clear search filter"},

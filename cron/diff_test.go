@@ -44,11 +44,11 @@ func TestDiffJob_AllFieldsCovered(t *testing.T) {
 	// field from jobFieldComparators.
 	a := Job{
 		Name: "a", Schedule: "* * * * *", Command: "cmd-a", Enabled: false,
-		Wrapped: false, OneShot: false, Tag: "ta", TagColor: "#aaa", Project: "pa",
+		Wrapped: false, OneShot: false, Tag: "ta", TagColor: "#aaa", Project: "pa", Runner: "plain",
 	}
 	b := Job{
 		Name: "b", Schedule: "0 3 * * *", Command: "cmd-b", Enabled: true,
-		Wrapped: true, OneShot: true, Tag: "tb", TagColor: "#bbb", Project: "pb",
+		Wrapped: true, OneShot: true, Tag: "tb", TagColor: "#bbb", Project: "pb", Runner: "herdr",
 	}
 	diffs := DiffJob(a, b)
 	if len(diffs) != len(jobFieldComparators) {
