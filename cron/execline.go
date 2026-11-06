@@ -15,7 +15,10 @@ var DefaultRunner = config.RunnerPlain
 
 // EffectiveRunner returns the job's runner override or DefaultRunner.
 func (j Job) EffectiveRunner() string {
-	return j.runnerWith(DefaultRunner)
+	if j.Runner != "" {
+		return j.Runner // without touching the process-wide default
+	}
+	return DefaultRunner
 }
 
 func (j Job) runnerWith(defaultRunner string) string {

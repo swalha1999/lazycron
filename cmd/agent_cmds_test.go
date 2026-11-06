@@ -54,7 +54,9 @@ func startFirstJobInBackground(t *testing.T, env *testEnv) {
 		t.Errorf("read jobs: %v", err)
 		return
 	}
-	if err := startBackground(b, jobs[0]); err != nil {
+	job := jobs[0]
+	job.Runner = "plain" // explicit, so this goroutine never reads cron.DefaultRunner
+	if err := startBackground(b, job); err != nil {
 		t.Errorf("start: %v", err)
 	}
 }
