@@ -17,13 +17,6 @@ func withFakeCrontab(t *testing.T, fake func(stdin string, args ...string) (stri
 	t.Cleanup(func() { runCrontab = original })
 }
 
-// withFakeShell replaces runShell for the duration of a test.
-func withFakeShell(t *testing.T, fake func(command string) (string, error)) {
-	t.Helper()
-	original := runShell
-	runShell = fake
-	t.Cleanup(func() { runShell = original })
-}
 
 // withFakeLookPath replaces lookPath for the duration of a test.
 func withFakeLookPath(t *testing.T, fake func(file string) (string, error)) {
@@ -241,81 +234,5 @@ func TestCheckCrontabAvailable_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "crontab command not found") {
 		t.Errorf("error should mention crontab not found, got %q", err.Error())
-	}
-}
-
-// --- RunJobNow ---
-
-func TestRunJobNow_Success(t *testing.T) {
-	withFakeScriptsDir(t)
-	withFakeShell(t, func(command string) (string, error) {
-		return "hello world", nil
-	})
-
-	out, err := RunJobNow("abc12345", "echo hello world")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if out != "hello world" {
-		t.Errorf("output = %q, want %q", out, "hello world")
-	}
-}
-
-func TestRunJobNow_Failure(t *testing.T) {
-	withFakeScriptsDir(t)
-	withFakeShell(t, func(command string) (string, error) {
-		return "command not found", fmt.Errorf("exit status 127")
-	})
-
-	out, err := RunJobNow("abc12345", "nonexistent-command")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if out != "command not found" {
-		t.Errorf("output = %q, want error output", out)
-	}
-}
-
-func TestRunJobNow_CreatesScriptIfMissing(t *testing.T) {
-	dir := withFakeScriptsDir(t)
-	var gotCommand string
-	withFakeShell(t, func(command string) (string, error) {
-		gotCommand = command
-		return "", nil
-	})
-
-	RunJobNow("abc12345", "cd /tmp && ls -la")
-
-	// Should run via quoted script path
-	expectedPath := "bash '" + dir + "/abc12345.sh'"
-	if gotCommand != expectedPath {
-		t.Errorf("command = %q, want %q", gotCommand, expectedPath)
-	}
-
-	// Script file should exist with the command
-	content, err := ReadScriptCommand(dir + "/abc12345.sh")
-	if err != nil {
-		t.Fatalf("script file not found: %v", err)
-	}
-	if content != "cd /tmp && ls -la" {
-		t.Errorf("script content = %q, want %q", content, "cd /tmp && ls -la")
-	}
-}
-
-func TestRunJobNow_DoesNotOverwriteExistingScript(t *testing.T) {
-	dir := withFakeScriptsDir(t)
-	withFakeShell(t, func(command string) (string, error) {
-		return "", nil
-	})
-
-	// Write a script with the "correct" command
-	WriteScript("abc12345", "echo correct")
-
-	// Run with a "stale" command — should NOT overwrite
-	RunJobNow("abc12345", "echo stale")
-
-	content, _ := ReadScriptCommand(dir + "/abc12345.sh")
-	if content != "echo correct" {
-		t.Errorf("script was overwritten: got %q, want %q", content, "echo correct")
 	}
 }

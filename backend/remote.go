@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -129,6 +128,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	return nil
 }
 
+// RunJob runs a job script directly over SSH (servers without lazycron).
 func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	lcDir, err := b.lazycronDir()
 	if err != nil {
@@ -136,7 +136,7 @@ func (b *RemoteBackend) RunJob(id, name, command string) (string, error) {
 	}
 	scriptPath := lcDir + "/scripts/" + filepath.Base(cron.ScriptPath(id))
 
-	// Mirror the local RunJobNow guard (cron/writer.go): only write the
+	// Mirror the local ensureScript guard (backend/runs.go): only write the
 	// script when it does not already exist. Sync owns the on-disk script;
 	// re-uploading from an in-memory Command risks overwriting a good script
 	// with a stale or polluted one — which previously turned manual runs
@@ -182,11 +182,10 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 		if err != nil {
 			continue
 		}
-		var e history.Entry
-		if err := json.Unmarshal(data, &e); err != nil {
+		e, err := history.ParseEntry(f, data)
+		if err != nil {
 			continue
 		}
-		e.FilePath = f
 		entries = append(entries, e)
 	}
 
@@ -195,20 +194,6 @@ func (b *RemoteBackend) LoadHistory() ([]history.Entry, error) {
 	})
 
 	return entries, nil
-}
-
-func (b *RemoteBackend) WriteHistory(jobID, jobName, output string, success bool) error {
-	filename, data, err := history.BuildHistoryFile(jobID, jobName, output, success)
-	if err != nil {
-		return err
-	}
-
-	lcDir, lcErr := b.lazycronDir()
-	if lcErr != nil {
-		return lcErr
-	}
-
-	return b.client.Upload(string(data), lcDir+"/history/"+filename, 0o644)
 }
 
 func (b *RemoteBackend) DeleteHistory(filePath string) error {

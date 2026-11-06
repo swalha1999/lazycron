@@ -23,8 +23,8 @@ var templatesCmd = &cobra.Command{
 var templatesListCmd = &cobra.Command{
 	Use:     "ls",
 	Aliases: []string{"list"},
-	Short: "List available templates",
-	RunE:  runTemplatesList,
+	Short:   "List available templates",
+	RunE:    runTemplatesList,
 }
 
 var (

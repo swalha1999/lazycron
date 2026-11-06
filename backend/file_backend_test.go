@@ -49,11 +49,23 @@ func TestFileBackend_History(t *testing.T) {
 	cronFile := filepath.Join(dir, "crontab")
 	histDir := filepath.Join(dir, "history")
 
+	t.Setenv("HOME", dir)
 	fb := NewFileBackend(cronFile, histDir)
 
-	// Write a history entry.
-	if err := fb.WriteHistory("abc12345", "test-job", "output", true); err != nil {
-		t.Fatalf("WriteHistory: %v", err)
+	// Run a job: the run engine records the history entry.
+	job := cron.Job{ID: "abc12345", Name: "test-job", Schedule: "* * * * *", Command: "echo output; exit 4", Enabled: true}
+	if err := fb.WriteJobs([]cron.Job{job}); err != nil {
+		t.Fatalf("WriteJobs: %v", err)
+	}
+	ran, err := fb.ExecJob(job, ExecRequest{Trigger: "manual"})
+	if err != nil {
+		t.Fatalf("ExecJob: %v", err)
+	}
+	if ran.Output != "output" || ran.ExitCode == nil || *ran.ExitCode != 4 || *ran.Success {
+		t.Fatalf("unexpected run: %+v", ran)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "crontab.lazycron", "scripts", "abc12345.sh")); err != nil {
+		t.Fatalf("script must live beside the crontab file: %v", err)
 	}
 
 	entries, err := fb.LoadHistory()
@@ -63,7 +75,7 @@ func TestFileBackend_History(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
-	if entries[0].JobName != "test-job" {
+	if entries[0].JobName != "test-job" || entries[0].RunID != ran.RunID {
 		t.Errorf("JobName = %q, want %q", entries[0].JobName, "test-job")
 	}
 

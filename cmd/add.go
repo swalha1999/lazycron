@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/cron"
 )
@@ -10,28 +8,32 @@ import (
 var addCmd = &cobra.Command{
 	Use:   "add",
 	Short: "Add a new cron job",
-	Long:  "Add a new cron job non-interactively with flags.",
-	RunE:  runAdd,
+	Long: "Add a new cron job non-interactively with flags. Idempotent: adding a job " +
+		"identical to an existing one (same id, or same name without --id) changes " +
+		"nothing; a different job under the same id or name is a conflict (exit 4).",
+	Args: cobra.NoArgs,
+	RunE: runAdd,
 }
 
-var (
-	addName     string
-	addSchedule string
-	addCommand  string
-	addWorkDir  string
-	addProject  string
-	addDisabled bool
-	addOnce     bool
-)
+var addSpec struct {
+	jobSpec
+	disabled bool
+}
 
 func init() {
-	addCmd.Flags().StringVarP(&addName, "name", "n", "", "Job name (required)")
-	addCmd.Flags().StringVarP(&addSchedule, "schedule", "s", "", "Cron schedule or human-readable (required)")
-	addCmd.Flags().StringVarP(&addCommand, "command", "c", "", "Command to run (required)")
-	addCmd.Flags().StringVarP(&addWorkDir, "workdir", "w", "", "Working directory (optional)")
-	addCmd.Flags().StringVarP(&addProject, "project", "p", "", "Project group (optional)")
-	addCmd.Flags().BoolVar(&addDisabled, "disabled", false, "Create the job in disabled state")
-	addCmd.Flags().BoolVar(&addOnce, "once", false, "Run once at the specified datetime and then disable")
+	f := addCmd.Flags()
+	f.StringVar(&addSpec.ID, "id", "", "job id (default: random; [a-z0-9_-], stable across edits)")
+	f.StringVarP(&addSpec.Name, "name", "n", "", "Job name (required)")
+	f.StringVarP(&addSpec.Schedule, "schedule", "s", "", "Cron schedule or human-readable (required)")
+	f.StringVarP(&addSpec.Command, "command", "c", "", "Command to run (required)")
+	f.StringVarP(&addSpec.Workdir, "workdir", "w", "", "Working directory (optional)")
+	f.StringVarP(&addSpec.Project, "project", "p", "", "Project group (optional)")
+	f.StringVar(&addSpec.Tag, "tag", "", "short colored tag shown after the name")
+	f.StringVar(&addSpec.TagColor, "tag-color", "", "tag color, e.g. #f38ba8")
+	f.StringVar(&addSpec.Runner, "runner", "", "plain or herdr (default: config runner)")
+	f.BoolVar(&addSpec.disabled, "disabled", false, "Create the job in disabled state")
+	f.BoolVar(&addSpec.Once, "once", false, "Run once at the specified datetime and then disable")
+	addDryRunFlag(addCmd)
 
 	addCmd.MarkFlagRequired("name")
 	addCmd.MarkFlagRequired("schedule")
@@ -41,51 +43,41 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	if err := cron.CheckCrontabAvailable(); err != nil {
+	spec := addSpec.jobSpec
+	enabled := !addSpec.disabled
+	spec.Enabled = &enabled
+	if spec.ID == "" {
+		spec.ID = cron.GenerateID()
+	}
+	job, err := spec.toJob()
+	if err != nil {
 		return err
 	}
-
-	var cronExpr string
-	if addOnce {
-		expr, _, err := cron.DatetimeToCron(addSchedule)
-		if err != nil {
-			return fmt.Errorf("invalid datetime %q: %w", addSchedule, err)
+	explicitID := addSpec.ID != ""
+	return mutateJobs(cmd, func(jobs []cron.Job) ([]cron.Job, mutationResult, error) {
+		if existing, ok := sameJob(jobs, job, explicitID); ok {
+			if cron.JobsDiffer(existing, withID(job, existing.ID)) {
+				return nil, mutationResult{}, errConflict("job %q (%s) already exists with different settings", existing.Name, existing.ID).
+					withHint("change it with `lazycron edit %s`, or pick another --id/--name", existing.ID)
+			}
+			return jobs, mutationResult{Action: actionUnchanged, Job: toJobView(existing)}, nil
 		}
-		cronExpr = expr
-	} else {
-		cronExpr = cron.HumanToCron(addSchedule)
-		if err := cron.ValidateCron(cronExpr); err != nil {
-			return fmt.Errorf("invalid schedule %q: %w", addSchedule, err)
+		return append(jobs, job), mutationResult{Action: actionCreated, Job: toJobView(job)}, nil
+	})
+}
+
+// sameJob finds the job an add would duplicate: by id when one was given,
+// otherwise by name.
+func sameJob(jobs []cron.Job, job cron.Job, byID bool) (cron.Job, bool) {
+	for _, j := range jobs {
+		if (byID && j.ID == job.ID) || (!byID && j.Name == job.Name) {
+			return j, true
 		}
 	}
+	return cron.Job{}, false
+}
 
-	finalCmd := addCommand
-	if addWorkDir != "" {
-		finalCmd = fmt.Sprintf("cd %s && %s", cron.ShellQuote(addWorkDir), addCommand)
-	}
-
-	job := cron.Job{
-		ID:       cron.GenerateID(),
-		Name:     addName,
-		Schedule: cronExpr,
-		Command:  finalCmd,
-		Enabled:  !addDisabled,
-		Wrapped:  true,
-		OneShot:  addOnce,
-		Project:  addProject,
-	}
-
-	raw, err := cron.ReadCrontab()
-	if err != nil {
-		return fmt.Errorf("failed to read crontab: %w", err)
-	}
-	jobs := cron.Parse(raw)
-
-	jobs = append(jobs, job)
-	if err := cron.WriteCrontab(jobs); err != nil {
-		return fmt.Errorf("failed to write crontab: %w", err)
-	}
-
-	fmt.Printf("Created job '%s' with schedule: %s\n", job.Name, cronExpr)
-	return nil
+func withID(j cron.Job, id string) cron.Job {
+	j.ID = id
+	return j
 }

@@ -2,7 +2,6 @@ package cron
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,13 +17,6 @@ var (
 		}
 		out, err := cmd.CombinedOutput()
 		return string(out), err
-	}
-
-	// runShell executes a shell command and returns trimmed output.
-	runShell = func(command string) (string, error) {
-		cmd := exec.Command("sh", "-c", command)
-		out, err := cmd.CombinedOutput()
-		return strings.TrimSpace(string(out)), err
 	}
 
 	// lookPath checks if a command exists in PATH.
@@ -88,24 +80,4 @@ func CheckCrontabAvailable() error {
 		return fmt.Errorf("crontab command not found in PATH — lazycron requires crontab to be installed")
 	}
 	return nil
-}
-
-// RunJobNow ensures the script file is up-to-date and runs it.
-// Returns the combined stdout/stderr output and any error.
-func RunJobNow(id, command string) (string, error) {
-	path := ScriptPath(id)
-
-	// Only write the script if it doesn't exist yet (SyncScripts handles normal updates).
-	// This avoids overwriting a good script with a potentially stale in-memory command.
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := WriteScript(id, command); err != nil {
-			return "", fmt.Errorf("write script: %w", err)
-		}
-	}
-
-	// bash, not sh: macOS /bin/sh is bash in POSIX-strict mode, where a parse
-	// error during `. ~/.zshrc` (zsh-only completion syntax) kills the script
-	// silently before the user's command runs — leaving the TUI/history with
-	// only "exit status 1" and no output to surface.
-	return runShell("bash '" + path + "'")
 }

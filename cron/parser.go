@@ -123,8 +123,8 @@ func (j Job) CrontabLine() string {
 	// error in a sourced rc file (e.g. zsh-only syntax in ~/.zshrc) is fatal
 	// and aborts the script before the user's command runs. Cron runs this
 	// line directly, so the preamble's `2>/dev/null || true` cannot rescue
-	// a POSIX-mode parse abort. See cron/writer.go:RunJobNow for the same
-	// reasoning on the manual-run path.
+	// a POSIX-mode parse abort. The run engine (runner package) runs
+	// scripts with bash for the same reason.
 	scriptCmd := "bash '" + ScriptPath(j.ID) + "'"
 	var wrapped string
 	if j.OneShot {

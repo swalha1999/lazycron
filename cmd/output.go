@@ -73,3 +73,10 @@ func printError(cmd *cobra.Command, w io.Writer, ce *cliError) {
 		fmt.Fprintf(w, "Hint: %s\n", ce.Hint)
 	}
 }
+
+// jsonForced reports whether --json was passed explicitly (for commands whose
+// default output is not JSON even when piped, like exec and export).
+func jsonForced(cmd *cobra.Command) bool {
+	f := cmd.Flags().Lookup("json")
+	return f != nil && f.Changed && jsonFlag
+}

@@ -305,7 +305,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMsg = fmt.Sprintf("Running '%s'...", job.Name)
 				m.statusKind = statusInfo
 				b := m.manager.ActiveBackend()
-				return m, runJob(b, job.ID, job.Name, job.Command)
+				return m, runJob(b, job)
 			}
 		}
 

@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/history"
+	"github.com/swalha1999/lazycron/runner"
 )
 
 type jobsLoadedMsg struct {
@@ -28,10 +30,6 @@ type jobRanMsg struct {
 type historyLoadedMsg struct {
 	entries []history.Entry
 	err     error
-}
-
-type historySavedMsg struct {
-	err error
 }
 
 type historyDeletedMsg struct {
@@ -153,10 +151,27 @@ func saveJobs(b backend.Backend, jobs []cron.Job) tea.Cmd {
 	}
 }
 
-func runJob(b backend.Backend, id, name, command string) tea.Cmd {
+// runJob runs a job through the backend's run engine (herdr or plain), which
+// records the history entry itself.
+func runJob(b backend.Backend, job cron.Job) tea.Cmd {
 	return func() tea.Msg {
-		output, err := b.RunJob(id, name, command)
-		return jobRanMsg{id: id, name: name, output: output, err: err}
+		entry, err := b.ExecJob(job, backend.ExecRequest{Trigger: runner.TriggerManual})
+		if err == nil && (entry.Success == nil || !*entry.Success) {
+			err = runFailure(entry)
+		}
+		return jobRanMsg{id: job.ID, name: job.Name, output: entry.Output, err: err}
+	}
+}
+
+// runFailure describes why a recorded run failed.
+func runFailure(e history.Entry) error {
+	switch {
+	case e.Signal != 0:
+		return fmt.Errorf("killed by signal %d", e.Signal)
+	case e.ExitCode != nil:
+		return fmt.Errorf("exit status %d", *e.ExitCode)
+	default:
+		return fmt.Errorf("run ended without an exit code")
 	}
 }
 
@@ -171,13 +186,6 @@ func deleteHistory(b backend.Backend, filePath string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.DeleteHistory(filePath)
 		return historyDeletedMsg{err: err}
-	}
-}
-
-func saveHistory(b backend.Backend, jobID, jobName, output string, success bool) tea.Cmd {
-	return func() tea.Msg {
-		err := b.WriteHistory(jobID, jobName, output, success)
-		return historySavedMsg{err: err}
 	}
 }
 

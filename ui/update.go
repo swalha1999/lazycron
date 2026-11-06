@@ -75,13 +75,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case historySavedMsg:
-		if msg.err == nil {
-			b := m.manager.ActiveBackend()
-			return m, loadHistory(b)
-		}
-		return m, nil
-
 	case historyDeletedMsg:
 		if msg.err != nil {
 			return m, m.setStatus(fmt.Sprintf("Failed to delete history: %v", msg.err), statusError, 4*time.Second)
@@ -89,13 +82,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case jobRanMsg:
-		output := msg.output
-		if output == "" && msg.err != nil {
-			output = msg.err.Error()
-		}
-		success := msg.err == nil
-		b := m.manager.ActiveBackend()
-		saveCmd := saveHistory(b, msg.id, msg.name, output, success)
+		reloadHistory := loadHistory(m.manager.ActiveBackend()) // the run engine recorded the run
 
 		if msg.err != nil {
 			m.runOutput = msg.output
@@ -107,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, saveCmd
+			return m, reloadHistory
 		}
 		if msg.output != "" {
 			m.runOutput = msg.output
@@ -116,9 +103,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = modeRunOutput
 			m.runOutputScroll = 0
 			m.statusMsg = ""
-			return m, saveCmd
+			return m, reloadHistory
 		}
-		return m, tea.Batch(saveCmd, m.setStatus(fmt.Sprintf("Job '%s' ran successfully", msg.name), statusSuccess, 4*time.Second))
+		return m, tea.Batch(reloadHistory, m.setStatus(fmt.Sprintf("Job '%s' ran successfully", msg.name), statusSuccess, 4*time.Second))
 
 	case serverConnectedMsg:
 		if msg.err != nil {

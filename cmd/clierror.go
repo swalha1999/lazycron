@@ -15,6 +15,7 @@ const (
 	exitNotFound    = 3 // job, run, server or template does not exist (same as hc)
 	exitConflict    = 4 // the change conflicts with existing state
 	exitUnavailable = 5 // crontab, herdr-core or a server cannot be reached
+	exitTimeout     = 6 // `wait --timeout` passed before the run ended
 )
 
 // Error kinds, reported as error.kind in JSON.
@@ -25,6 +26,7 @@ const (
 	kindConflict    = "conflict"
 	kindUnavailable = "unavailable"
 	kindJobFailed   = "job_failed"
+	kindTimeout     = "timeout"
 )
 
 // cliError is an error with a machine-readable kind, an optional hint and the
@@ -67,6 +69,10 @@ func errUnavailable(format string, args ...any) *cliError {
 
 func errFailure(format string, args ...any) *cliError {
 	return newCLIError(kindFailure, exitFailure, format, args...)
+}
+
+func errTimeout(format string, args ...any) *cliError {
+	return newCLIError(kindTimeout, exitTimeout, format, args...)
 }
 
 func errJobFailed(format string, args ...any) *cliError {

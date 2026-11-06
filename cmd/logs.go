@@ -2,19 +2,22 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/history"
 )
 
 var logsCmd = &cobra.Command{
-	Use:   "logs <job-name-or-id>",
-	Short: "View execution history for a specific job",
-	Long:  "Show recent execution history for a cron job, including timestamps, status, and duration or error output.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runLogs,
+	Use:   "logs <job-or-run>",
+	Short: "Show a run's output, or a job's recent runs",
+	Long: "With a run id, prints that run's output (live from its herdr terminal while it " +
+		"runs). With a job, lists its recent runs; -o prints the newest run's output.",
+	Args: cobra.ExactArgs(1),
+	RunE: runLogs,
 }
 
 var (
@@ -30,57 +33,91 @@ func init() {
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
-	name := args[0]
+	ref := args[0]
+	return withBackend(func(b backend.Backend) error {
+		run, rec, err := resolveRun(b, ref)
+		if err != nil {
+			return noRunsYet(cmd, b, ref, err)
+		}
+		if logsOutput || run.ID == ref {
+			return printRunOutput(cmd, b, run, rec)
+		}
+		return printJobRuns(cmd, rec, run.JobID)
+	})
+}
 
-	b, err := resolveBackend(globalServer)
-	if err != nil {
+// noRunsYet answers `logs <job>` for a job with no runs yet with an
+// empty list (as before); anything else is the original error.
+func noRunsYet(cmd *cobra.Command, b backend.Backend, ref string, err error) error {
+	jobs, rerr := b.ReadJobs()
+	if rerr != nil {
 		return err
 	}
-	defer b.Close()
+	if _, ferr := findJob(jobs, ref); ferr != nil {
+		return err
+	}
+	return render(cmd, map[string]any{"runs": []runView{}}, func(w io.Writer) error {
+		_, werr := fmt.Fprintf(w, "No history found for %q\n", ref)
+		return werr
+	})
+}
 
-	entries, err := b.LoadHistory()
+// printRunOutput prints one run with its output.
+func printRunOutput(cmd *cobra.Command, b backend.Backend, run runView, rec runRecords) error {
+	output := rec.entries[run.ID].Output
+	if run.State == stateRunning {
+		output = liveOutput(b, run)
+	}
+	run.Output = &output
+	return render(cmd, run, func(w io.Writer) error {
+		text := strings.TrimSpace(output)
+		if text == "" {
+			text = "(no output)"
+		}
+		_, err := fmt.Fprintln(w, text)
+		return err
+	})
+}
+
+// liveOutput reads a running run's terminal; plain runs have no live output.
+func liveOutput(b backend.Backend, run runView) string {
+	if run.Terminal == "" {
+		return ""
+	}
+	hc, err := b.Herdr()
 	if err != nil {
-		return fmt.Errorf("failed to load history: %w", err)
+		return ""
 	}
+	r, err := hc.Read(run.Terminal, 2000)
+	if err != nil {
+		return ""
+	}
+	return r.Text
+}
 
-	// Filter entries matching job name or ID.
-	var matched []history.Entry
-	for _, e := range entries {
-		if strings.EqualFold(e.JobName, name) || strings.EqualFold(e.JobID, name) {
-			matched = append(matched, e)
+// printJobRuns lists a job's recent runs in the classic logs format.
+func printJobRuns(cmd *cobra.Command, rec runRecords, jobID string) error {
+	var runs []runView
+	for _, r := range rec.views {
+		if r.JobID == jobID {
+			runs = append(runs, r)
 		}
 	}
-
-	if len(matched) == 0 {
-		fmt.Printf("No history found for %q\n", name)
-		return nil
+	if logsCount > 0 && len(runs) > logsCount {
+		runs = runs[:logsCount]
 	}
-
-	// If --output flag, show full output of the most recent run.
-	if logsOutput {
-		latest := matched[0]
-		output := strings.TrimSpace(latest.Output)
-		if output == "" {
-			fmt.Println("(no output)")
-		} else {
-			fmt.Println(output)
+	return render(cmd, map[string]any{"runs": runs}, func(w io.Writer) error {
+		for _, r := range runs {
+			if r.State == stateRunning {
+				fmt.Fprintf(w, "%s  …  running (%s)\n", r.StartedAt, r.ID)
+				continue
+			}
+			e := rec.entries[r.ID]
+			ts, parsed := formatTimestamp(e.Timestamp)
+			fmt.Fprintf(w, "%s  %s  %s\n", ts, formatStatus(e.Success), formatDetail(e, parsed))
 		}
 		return nil
-	}
-
-	// Limit to -n entries.
-	if logsCount > 0 && len(matched) > logsCount {
-		matched = matched[:logsCount]
-	}
-
-	for _, e := range matched {
-		ts, duration := formatTimestamp(e.Timestamp)
-		status := formatStatus(e.Success)
-		detail := formatDetail(e, duration)
-		fmt.Printf("%s  %s  %s\n", ts, status, detail)
-	}
-
-	return nil
+	})
 }
 
 // formatTimestamp parses the RFC3339 timestamp and returns the formatted date

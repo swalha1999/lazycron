@@ -10,6 +10,7 @@ import (
 	"github.com/swalha1999/lazycron/history"
 	"github.com/swalha1999/lazycron/monitor"
 	"github.com/swalha1999/lazycron/record"
+	"github.com/swalha1999/lazycron/runner"
 )
 
 // LocalBackend wraps existing cron/history packages for localhost operations.
@@ -33,16 +34,8 @@ func (b *LocalBackend) WriteJobs(jobs []cron.Job) error {
 	return cron.WriteCrontab(jobs)
 }
 
-func (b *LocalBackend) RunJob(id, name, command string) (string, error) {
-	return cron.RunJobNow(id, command)
-}
-
 func (b *LocalBackend) LoadHistory() ([]history.Entry, error) {
 	return history.LoadAll()
-}
-
-func (b *LocalBackend) WriteHistory(jobID, jobName, output string, success bool) error {
-	return history.WriteEntry(jobID, jobName, output, success)
 }
 
 func (b *LocalBackend) DeleteHistory(filePath string) error {
@@ -108,3 +101,23 @@ func (b *LocalBackend) RunInProject(projectName, command string, stdout, stderr 
 func (b *LocalBackend) ProjectDir(projectName string) (string, error) {
 	return os.Getwd()
 }
+
+func (b *LocalBackend) ExecJob(job cron.Job, req ExecRequest) (history.Entry, error) {
+	return execLocally(b, runner.LocalPaths(), job, req)
+}
+
+func (b *LocalBackend) StartJob(job cron.Job, req ExecRequest) error {
+	return startLocally(runner.LocalPaths(), job, req)
+}
+
+func (b *LocalBackend) ActiveRuns() ([]runner.Active, error) {
+	return runner.LoadActive(runner.LocalPaths().Runs)
+}
+
+func (b *LocalBackend) Herdr() (*runner.HC, error) { return localHC() }
+
+func (b *LocalBackend) InteractiveCommand(argv []string) (*exec.Cmd, error) {
+	return localCommand(argv), nil
+}
+
+func (b *LocalBackend) KillProcessGroup(pgid int) error { return killGroup(pgid) }
