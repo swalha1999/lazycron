@@ -123,6 +123,31 @@ my-repo/
 
 After `lazycron sync --server X`, the same layout (minus your source code) lives at `~/.lazycron/projects/<name>/` on the remote machine. The repo cache (where `ensureRepo` clones to) lives at `~/.lazycron-cache/repos/<name>/` and is **not** synced — it's created on first run.
 
+## Watching and steering agent runs
+
+Agent jobs installed by `sync` follow the machine's default runner. With the
+herdr runner (`lazycron setup`, see [herdr.md](herdr.md)) every firing runs in
+a herdr-core terminal: watch it live, answer a blocked agent with
+`lazycron attach <run>` (or from herdr-app's "Cron" space), and read it after
+the fact even if it finished at night. Without herdr-core they run as plain
+cron jobs.
+
+## Agents managing lazycron
+
+Agents (Claude Code and others) can drive lazycron itself through the CLI: it
+prints JSON when piped, reports errors as `{"error":{kind,message,hint}}` with
+stable exit codes, and every change is idempotent with `--dry-run`. Give an
+agent `lazycron agent-help`, or install it as a Claude Code skill with
+`lazycron skill install`. Typical loop:
+
+```bash
+lazycron apply jobs.yml --dry-run && lazycron apply jobs.yml
+run=$(lazycron run nightly-report --no-wait | jq -r .id)
+lazycron wait "$run" --timeout 30m || lazycron logs "$run"
+```
+
+See [cli.md](cli.md) for the full reference.
+
 ## Caveats
 
 - **`lazycron pull` is one-way for sandcastle jobs.** The metadata parser cannot reverse a TS file from a crontab line, so `pull` writes read-only `.lazycron/_pulled/<id>.crontab` stubs for inspection — not source files.

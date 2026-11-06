@@ -1,6 +1,7 @@
 # Plan: agent-first lazycron on herdr-core
 
-Status: in progress (started 2026-11-06). Owner: Muhammad (swalha1999).
+Status: **done** (2026-11-06, branch `agent-first-herdr`). Owner: Muhammad (swalha1999).
+See "Outcome" at the end for what was built, decided and left open.
 
 ## Why
 
@@ -194,3 +195,91 @@ Settled with throwaway terminals labeled `lazycron-test` on the live core
   `~/.lazycron/config.yml` (`herdr.space_id`).
 - Open: herdr's OSC 7501 wire format is not documented in `hc --skill`, so
   plain (non-agent) scripts do not report `done`; Claude Code jobs do.
+
+## Outcome
+
+All seven steps of the order of work are implemented on `agent-first-herdr`.
+
+1. **JSON / errors / exit codes.** Global `--json` (default when stdout is not
+   a TTY, `--json=false` forces text), `--server` and `--cron-file` on every
+   command. Errors `{"error":{kind,message,hint}}`; exit codes 1 failure
+   (`job_failed` for failed runs), 2 usage, 3 not_found, 4 conflict,
+   5 unavailable, 6 timeout (added for `wait --timeout`).
+2. **Job commands.** `ls get add edit rm enable disable apply export`, all
+   mutating ones with `--dry-run`; `add` is idempotent (by `--id`, else by
+   name) and conflicts exit 4; `apply` is declarative (`--prune`, scoped by
+   the file's project) and `export | apply -` is a no-op.
+3. **herdr backend.** New `runner` package; history entries gain `run_id,
+   started_at, exit_code, signal, runner, trigger, terminal, terminal_name,
+   output_truncated, fallback_reason` (old entries get a run id from their file
+   name); in-progress markers in `~/.lazycron/runs/`; fallback to plain runs;
+   retention (`herdr.keep_runs`, default 5); remote servers via the server's
+   own `lazycron exec`, `hc` over SSH and `ssh -t` for attach.
+4. **Setup.** `lazycron setup [--server X]`, boot service files, linger,
+   crontab migration, install.sh herdr-core install (`--no-herdr`,
+   `LAZYCRON_NO_HERDR=1`), minimum version 0.1.18 (warning with the
+   `hc update --version` hint; setup never runs it).
+5. **Agent commands.** `run --no-wait`, `runs`, `logs` (live for running herdr
+   runs), `wait`, `kill`, `attach`, `events` (JSON lines), `doctor`,
+   `server add/ls/rm/test`, `agent-help`, `skill show/install`. A test keeps
+   `agent-help` in parity with the command tree.
+6. **TUI.** `a` attaches (jobs panel: the running run; history panel: the
+   run's kept terminal); `⟳` on jobs with a run in progress, `⧉` on history
+   entries whose terminal is kept; details show runner, exit code, fallback
+   and terminal state; one-time offer to install herdr-core when missing.
+7. **Docs.** README, `docs/herdr.md`, `docs/cli.md`, `docs/agents.md`.
+
+### Decided along the way
+
+- **Crontab format.** Plain runner: unchanged record line (no migration for
+  users without herdr). herdr runner:
+  `'<~/.lazycron/bin/lazycron>' exec '<id>' --name '<name>' || { <record line>; }`.
+  `exec` exits non-zero only if it could not start the job, so a missing or
+  broken lazycron binary still runs and records the job; it prints nothing
+  (no cron mail), needs neither crontab on PATH nor a valid config. Per-job
+  override `@runner:herdr|plain` in the name comment. `setup` rewrites lines
+  whose format does not match their runner; any write migrates legacy lines.
+- **Default runner** stays `plain` until `lazycron setup` switches it, so
+  existing installs behave exactly as before. Remote servers get their own
+  `servers[].runner`.
+- **Long jobs / `--timeout`.** `hc run --bg` + `hc wait --output` loop; the
+  result comes from the wrapper's exit file, never from `hc run`'s 124.
+- **Hold.** Finished runs stay live for `herdr.hold` (72h) in
+  `~/.lazycron/Cron` so herdr-app adopts them later and names the space
+  "Cron"; see Decisions above. `herdr.labels` adds labels or removes defaults
+  (`herdr.space: ""` keeps runs out of herdr-app).
+- **Service.** A oneshot unit that runs `hc server start` (the core then runs
+  itself as a transient systemd-run unit) rather than running the core
+  directly, so lazycron does not own the core's lifecycle.
+- **Events** are computed by polling run state (markers + history), so they
+  work for plain and herdr runs, locally and over SSH, without depending on
+  `hc events`.
+- **cron.RunJobNow** and the backends' `RunJob/WriteHistory` were replaced by
+  the run engine (`ExecJob`); manual runs from CLI and TUI are recorded
+  exactly like scheduled ones.
+
+### Verified
+
+- Unit and CLI tests for every new command and the herdr backend (fake `hc`
+  binary in `internal/fakehc`): exit codes, labels, hold, kill, fallback,
+  truncation, retention, `--once`, migration, idempotency, dry-runs.
+- End-to-end on ROG14 against the live herdr-core with a temp HOME and
+  `lazycron-test` labels (all terminals removed afterwards): manual runs,
+  a cron-fired line run under `env -i` the way cron runs it, `--no-wait` +
+  `kill`, retention, fallback with a bad `hc` path, `doctor`, `setup`
+  (`--dry-run`, and a real run limited to the temp HOME), and the TUI's
+  badges and attach/detach inside a test terminal.
+
+### Left open
+
+- **No cron on ROG14.** `crontab`/cronie is not installed, so no real crontab
+  round-trip was possible (a fake `crontab` + `env -i sh -c '<line>'` stood
+  in). Install and enable cronie before moving Hermes jobs
+  (`lazycron doctor` reports it).
+- **herdr-app naming on macOS** could only be verified from the source, not in
+  the app: check that the space appears as "Cron" for ROG14's runs.
+- **OSC 7501 for plain scripts.** The wire format is not documented in
+  `hc --skill`, so plain jobs report no `done` status; Claude Code jobs do.
+- **Remote lazycron install.** `setup --server` links an existing `lazycron`
+  on the server but does not install it there.
+- **macOS boot.** launchd agents start at login, not at boot.
