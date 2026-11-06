@@ -61,8 +61,13 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return errUnavailable("%v", err)
 		}
+		hcPath := ""
+		if cfg, err := config.Load(); err == nil && globalServer == "" {
+			hcPath = cfg.Herdr.Bin
+		}
 		res := setup.Run(host, setup.Options{
 			DryRun:       dryRun,
+			HCPath:       hcPath,
 			InstallHerdr: !setupOpts.noHerdr && os.Getenv("LAZYCRON_NO_HERDR") != "1",
 			Service:      !setupOpts.noService,
 			Linger:       !setupOpts.noLinger,
