@@ -15,6 +15,8 @@ type ServerConfig struct {
 	User     string `yaml:"user"`
 	KeyPath  string `yaml:"key_path,omitempty"`
 	UseAgent bool   `yaml:"use_agent,omitempty"`
+	// Runner overrides the default runner for jobs written to this server.
+	Runner string `yaml:"runner,omitempty"`
 }
 
 // PortOrDefault returns the SSH port, 22 when unset.

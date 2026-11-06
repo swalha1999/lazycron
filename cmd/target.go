@@ -82,6 +82,9 @@ func openRemoteBackend(name string) (backend.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
+	if srv.Runner != "" {
+		cron.DefaultRunner = srv.Runner
+	}
 	remote := newRemoteBackend(*srv)
 	if err := remote.EnsureRecordScript(); err != nil {
 		remote.Close()

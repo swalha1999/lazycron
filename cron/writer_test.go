@@ -17,7 +17,6 @@ func withFakeCrontab(t *testing.T, fake func(stdin string, args ...string) (stri
 	t.Cleanup(func() { runCrontab = original })
 }
 
-
 // withFakeLookPath replaces lookPath for the duration of a test.
 func withFakeLookPath(t *testing.T, fake func(file string) (string, error)) {
 	t.Helper()

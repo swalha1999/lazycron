@@ -28,6 +28,9 @@ func NewRemoteBackend(name string, client *sshclient.Client) *RemoteBackend {
 
 func (b *RemoteBackend) Name() string { return b.name }
 
+// Client returns the SSH client (for setup steps on the server).
+func (b *RemoteBackend) Client() *sshclient.Client { return b.client }
+
 // SetPassword sets the password on the underlying SSH client for runtime auth.
 func (b *RemoteBackend) SetPassword(pw string) {
 	b.client.SetPassword(pw)

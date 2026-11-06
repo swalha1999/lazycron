@@ -22,6 +22,13 @@ type Job struct {
 	OneShot  bool   // true if this job should run once and then self-disable
 	Project  string // optional project group for organizing jobs
 	Runner   string // per-job runner override ("plain", "herdr"); "" uses DefaultRunner
+	ExecLine bool   // parsed: the crontab line is a herdr exec line (not compared by DiffJob)
+}
+
+// NeedsRewrite reports whether writing the job back would change its line
+// format: legacy wrapper, or exec/record line not matching its runner.
+func (j Job) NeedsRewrite() bool {
+	return !j.Wrapped || j.ExecLine != (j.EffectiveRunner() == config.RunnerHerdr)
 }
 
 // RecordBinPath returns the path to ~/.lazycron/bin/record.
@@ -314,6 +321,7 @@ func parseJobLine(line, name string) (Job, bool) {
 			Command:  resolveScript(StripRecord(rawCmd)),
 			Enabled:  false,
 			Wrapped:  IsCurrentFormat(rawCmd),
+			ExecLine: IsExecLine(rawCmd),
 		}, true
 	}
 
@@ -333,6 +341,7 @@ func parseJobLine(line, name string) (Job, bool) {
 		Command:  resolveScript(StripRecord(rawCmd)),
 		Enabled:  true,
 		Wrapped:  IsCurrentFormat(rawCmd),
+		ExecLine: IsExecLine(rawCmd),
 	}, true
 }
 
