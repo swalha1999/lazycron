@@ -148,7 +148,49 @@ Settled with throwaway terminals labeled `lazycron-test` on the live core
   installed it *updates* it (`update --from`, restarting the core on macOS).
   Decision: lazycron uses the core installer, and only when herdr-core is
   missing, so it never updates or restarts an existing core.
-- **`herdr.space`.** herdr-core itself has no notion of spaces; the label is
-  a herdr-app convention (no herdr-app on this Linux box, no official doc
-  found). lazycron sets `herdr.space=<sp + 32 hex>` from config. How the app
-  names a space it creates from a label could not be verified here (open).
+- **herdr-app adoption (read from github.com/herdrdev/herdr-app, master:
+  `src/window.rs`, `src/model.rs`, `defaults/AGENTS.md`, `docs/commands.md`).**
+  - The app adopts *live* terminals labeled `herdr.space=<id>` on every
+    listing (`reconcile`), including other machines' terminals (the id is
+    qualified as `<machine>/<id>`). `adoptable()` requires
+    `state == "live"`; the app's own test
+    `a_finished_terminal_is_not_put_back_in_its_tab` asserts a finished one
+    is skipped. Also: "a program exiting closes its pane, even if Herdr was
+    closed". **So a 02:00 job that finishes before the app is open would
+    never be seen.**
+  - An unknown space id becomes a new space **unnamed**; an unnamed space is
+    "called after where its first terminal is": `folder_name()` of the first
+    terminal's live folder (`foreground.cwd` from the core, its git checkout
+    top if inside one). There is no label for a space name. The app has
+    `herdr-app do space.rename --id <id> --name <name>` (and `space.new
+    --name`), but that only reaches a window running on the same machine;
+    Muhammad views ROG14 from the macOS app, so lazycron cannot rely on it.
+
+## Decisions
+
+- **Runs stay live until seen ("hold").** In herdr mode the run terminal runs
+  a small wrapper: `cd $HOME; bash <script>`, write the exit code to
+  `~/.lazycron/runs/<run>.exit`, print `[lazycron] finished with exit N`,
+  then `cd ~/.lazycron/Cron` and sleep for the hold time (config
+  `herdr.hold`, default 72h; `0` ends the terminal with the job). The
+  terminal is therefore live when herdr-app next connects and gets adopted
+  into the Cron space, with the full screen to read; closing its pane ends
+  it. `lazycron exec` takes the job's result from the exit file (falling back
+  to the terminal's own exit code/signal if it was killed mid-run), so the
+  hold never delays history. Retention (`herdr.keep_runs`, default 5 per
+  job) kills and removes older *finished* run terminals, held or not;
+  running jobs are never touched. Verified: during the hold `hc get` reports
+  `foreground.cwd = .../Cron`.
+- **Space name "Cron".** Because held terminals sit in `~/.lazycron/Cron`
+  (not a git checkout), the space the app creates for the label is called
+  "Cron" without any app-side action. When `herdr-app` is installed on the
+  same machine and its window is running, `lazycron setup` and each herdr
+  run also call `herdr-app do space.rename --id <id> --name Cron`
+  (best effort), which makes the name stick even while a running job's
+  folder is elsewhere. Caveat: while the space's *first* terminal is a job
+  still running in another folder, the automatic name follows that folder
+  until it finishes.
+- The space id is `sp` + 32 hex, generated once and stored in
+  `~/.lazycron/config.yml` (`herdr.space_id`).
+- Open: herdr's OSC 7501 wire format is not documented in `hc --skill`, so
+  plain (non-agent) scripts do not report `done`; Claude Code jobs do.
