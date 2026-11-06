@@ -31,6 +31,10 @@ type HerdrConfig struct {
 	// Hold is how long a finished run terminal stays live so herdr-app can
 	// show it (Go duration, e.g. "72h"; "0" ends it with the job).
 	Hold string `yaml:"hold,omitempty"`
+	// Labels are extra labels for run terminals (e.g. herdr.tab). An empty
+	// value removes a default label, e.g. herdr.space: "" keeps runs out of
+	// herdr-app.
+	Labels map[string]string `yaml:"labels,omitempty"`
 	// Bin overrides the herdr-core binary (default: hc on PATH or ~/.local/bin).
 	Bin string `yaml:"bin,omitempty"`
 	// Prompted records that the TUI already showed the herdr-core notice.

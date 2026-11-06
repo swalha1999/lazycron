@@ -13,6 +13,8 @@ func NewExecutor(paths Paths, cfg *config.Config) *Executor {
 		SpaceID:  cfg.Herdr.SpaceID,
 		KeepRuns: cfg.Herdr.KeepRunsOrDefault(),
 		Hold:     config.DefaultHold,
+
+		ExtraLabels: cfg.Herdr.Labels,
 	}
 	if hold, err := cfg.Herdr.HoldDuration(); err == nil {
 		e.Hold = hold

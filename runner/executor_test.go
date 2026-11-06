@@ -279,3 +279,14 @@ func TestFindHCPrefersConfigured(t *testing.T) {
 		t.Fatal("missing configured binary must error")
 	}
 }
+
+func TestExtraLabelsAddAndRemove(t *testing.T) {
+	f := newFixture(t, true)
+	f.exec.ExtraLabels = map[string]string{"lazycron-test": "1", LabelSpace: ""}
+	f.script("lab", "true")
+	f.run(Request{JobID: "lab", JobName: "Lab", Runner: config.RunnerHerdr})
+	calls := f.calls()
+	if !strings.Contains(calls, "--label lazycron-test=1") || strings.Contains(calls, LabelSpace) {
+		t.Fatalf("labels not applied:\n%s", calls)
+	}
+}

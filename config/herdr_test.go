@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestDefaultsAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.DefaultRunner() != RunnerHerdr || back.Herdr != cfg.Herdr {
+	if back.DefaultRunner() != RunnerHerdr || !reflect.DeepEqual(back.Herdr, cfg.Herdr) {
 		t.Fatalf("round trip lost data: %+v", back)
 	}
 }

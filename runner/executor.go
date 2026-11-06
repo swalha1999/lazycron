@@ -27,6 +27,7 @@ type Executor struct {
 	HC            *HC
 	HCUnavailable string
 	SpaceID       string
+	ExtraLabels   map[string]string // added to run terminals; "" removes a default
 	KeepRuns      int
 	Hold          time.Duration
 

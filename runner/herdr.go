@@ -57,13 +57,9 @@ func (e *Executor) runHerdr(a *Active) (out outcome, started bool, fallback stri
 
 	a.TerminalName = terminalName(a.JobID, a.RunID)
 	addr, err := e.HC.Start(StartOptions{
-		Name: a.TerminalName,
-		Cwd:  homeDir(),
-		Labels: map[string]string{
-			LabelSpace: e.SpaceID,
-			LabelJob:   a.JobID,
-			LabelRun:   a.RunID,
-		},
+		Name:   a.TerminalName,
+		Cwd:    homeDir(),
+		Labels: e.runLabels(*a),
 		Argv: []string{"bash", "-c", holdWrapper, "lazycron-run",
 			e.Paths.ScriptPath(a.JobID), exitFile, e.Paths.Hold, strconv.Itoa(int(e.Hold.Seconds()))},
 	})
@@ -156,4 +152,19 @@ func stripTrailer(text string) string {
 func homeDir() string {
 	home, _ := os.UserHomeDir()
 	return home
+}
+
+// runLabels are the labels of a run's terminal: the herdr-app space, the job
+// and the run, then the configured extra labels (an empty value removes one).
+func (e *Executor) runLabels(a Active) map[string]string {
+	labels := map[string]string{LabelSpace: e.SpaceID, LabelJob: a.JobID, LabelRun: a.RunID}
+	for k, v := range e.ExtraLabels {
+		labels[k] = v
+	}
+	for k, v := range labels {
+		if v == "" {
+			delete(labels, k)
+		}
+	}
+	return labels
 }
