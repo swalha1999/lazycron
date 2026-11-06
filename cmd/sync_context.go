@@ -61,7 +61,7 @@ func loadSyncContext(serverFlag, projectFlag string) (*syncContext, error) {
 		return nil, err
 	}
 	if len(incoming) == 0 {
-		fmt.Printf("No .ts files found in %s\n", jobsDir)
+		fmt.Fprintf(humanOut, "No .ts files found in %s\n", jobsDir)
 		return nil, nil
 	}
 

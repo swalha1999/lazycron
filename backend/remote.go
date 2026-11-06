@@ -119,10 +119,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	}
 
 	// Format crontab, replacing local paths with remote paths.
-	crontabContent := cron.FormatCrontab(jobs)
-	crontabContent = strings.ReplaceAll(crontabContent, cron.ScriptsDir(), remoteScriptsDir)
-	remoteRecordBin := remoteHome + "/.lazycron/bin/record"
-	crontabContent = strings.ReplaceAll(crontabContent, cron.RecordBinPath(), remoteRecordBin)
+	crontabContent := cron.RelocateCrontab(cron.FormatCrontab(jobs), remoteScriptsDir, remoteHome+"/.lazycron/bin")
 
 	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
 		shellQuote(crontabContent)))

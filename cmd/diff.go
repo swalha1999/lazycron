@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -17,14 +18,13 @@ var diffCmd = &cobra.Command{
 }
 
 var (
-	diffServer   string
 	diffProject  string
 	diffQuiet    bool
 	diffExitCode bool
 )
 
 func init() {
-	diffCmd.Flags().StringVarP(&diffServer, "server", "s", "", "target server name from config")
+	diffCmd.Flags().StringVarP(&globalServer, "server", "s", "", "target server name from config")
 	diffCmd.Flags().StringVar(&diffProject, "project", "", "project name (overrides .lazycron/config.yaml)")
 	diffCmd.Flags().BoolVarP(&diffQuiet, "quiet", "q", false, "only show changes, hide unchanged jobs")
 	diffCmd.Flags().BoolVar(&diffExitCode, "exit-code", false, "exit with code 1 if there are changes")
@@ -32,7 +32,7 @@ func init() {
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
-	sctx, err := loadSyncContext(diffServer, diffProject)
+	sctx, err := loadSyncContext(globalServer, diffProject)
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,9 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	defer sctx.Backend.Close()
 
 	changes := computeDiff(sctx.ExistingJobs, sctx.IncomingJobs)
-	printDiff(changes, diffQuiet)
+	if err := renderDiff(cmd, changes, diffQuiet); err != nil {
+		return err
+	}
 
 	if diffExitCode && hasChanges(changes) {
 		os.Exit(1)
@@ -58,7 +60,13 @@ const (
 	diffNew diffKind = iota
 	diffUpdated
 	diffUnchanged
+	diffDeleted
 )
+
+// String returns the kind's JSON name.
+func (k diffKind) String() string {
+	return [...]string{"new", "updated", "unchanged", "deleted"}[k]
+}
 
 // diffEntry holds the diff information for a single job.
 type diffEntry struct {
@@ -106,40 +114,78 @@ func computeDiff(existing, incoming []cron.Job) []diffEntry {
 	return entries
 }
 
-func printDiff(entries []diffEntry, quiet bool) {
-	var added, updated, unchanged int
-	var lines []string
+// diffEntryView is the JSON shape of one diff entry.
+type diffEntryView struct {
+	Kind    string           `json:"kind"`
+	ID      string           `json:"id"`
+	Name    string           `json:"name"`
+	Changes []cron.FieldDiff `json:"changes,omitempty"`
+}
 
+// diffSummary is the JSON shape of a whole diff.
+type diffSummary struct {
+	Entries   []diffEntryView `json:"entries"`
+	New       int             `json:"new"`
+	Updated   int             `json:"updated"`
+	Deleted   int             `json:"deleted"`
+	Unchanged int             `json:"unchanged"`
+	Changed   bool            `json:"changed"`
+}
+
+func summarizeDiff(entries []diffEntry) diffSummary {
+	sum := diffSummary{Entries: make([]diffEntryView, 0, len(entries))}
+	for _, e := range entries {
+		sum.Entries = append(sum.Entries, diffEntryView{Kind: e.Kind.String(), ID: e.Job.ID, Name: e.Name, Changes: e.Changes})
+		switch e.Kind {
+		case diffNew:
+			sum.New++
+		case diffUpdated:
+			sum.Updated++
+		case diffDeleted:
+			sum.Deleted++
+		case diffUnchanged:
+			sum.Unchanged++
+		}
+	}
+	sum.Changed = sum.New+sum.Updated+sum.Deleted > 0
+	return sum
+}
+
+// renderDiff prints a diff as JSON or as the +/~/- text listing.
+func renderDiff(cmd *cobra.Command, entries []diffEntry, quiet bool) error {
+	return render(cmd, summarizeDiff(entries), func(w io.Writer) error {
+		printDiff(w, entries, quiet)
+		return nil
+	})
+}
+
+func printDiff(w io.Writer, entries []diffEntry, quiet bool) {
 	for _, e := range entries {
 		switch e.Kind {
 		case diffNew:
-			added++
-			lines = append(lines, fmt.Sprintf("+ %-20s %q   %s", e.Name, e.Job.Schedule, e.Job.Command))
+			fmt.Fprintf(w, "+ %-20s %q   %s\n", e.Name, e.Job.Schedule, e.Job.Command)
 		case diffUpdated:
-			updated++
 			parts := make([]string, 0, len(e.Changes))
 			for _, c := range e.Changes {
 				parts = append(parts, fmt.Sprintf("%s: %s → %s", c.Field, c.Old, c.New))
 			}
-			lines = append(lines, fmt.Sprintf("~ %-20s %s", e.Name, strings.Join(parts, ", ")))
+			fmt.Fprintf(w, "~ %-20s %s\n", e.Name, strings.Join(parts, ", "))
+		case diffDeleted:
+			fmt.Fprintf(w, "- %-20s %q   %s\n", e.Name, e.Job.Schedule, e.Job.Command)
 		case diffUnchanged:
-			unchanged++
 			if !quiet {
-				lines = append(lines, fmt.Sprintf("  %-20s (unchanged)", e.Name))
+				fmt.Fprintf(w, "  %-20s (unchanged)\n", e.Name)
 			}
 		}
 	}
 
-	for _, l := range lines {
-		fmt.Println(l)
+	sum := summarizeDiff(entries)
+	total := sum.New + sum.Updated + sum.Deleted
+	if total == 0 {
+		fmt.Fprintf(w, "\nNo changes (%d unchanged)\n", sum.Unchanged)
+		return
 	}
-
-	total := added + updated
-	if total == 0 && unchanged > 0 {
-		fmt.Printf("\nNo changes (%d unchanged)\n", unchanged)
-	} else {
-		fmt.Printf("\n%d changes (%d new, %d updated, %d unchanged)\n", total, added, updated, unchanged)
-	}
+	fmt.Fprintf(w, "\n%d changes (%d new, %d updated, %d deleted, %d unchanged)\n", total, sum.New, sum.Updated, sum.Deleted, sum.Unchanged)
 }
 
 func hasChanges(entries []diffEntry) bool {

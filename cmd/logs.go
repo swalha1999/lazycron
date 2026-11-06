@@ -18,13 +18,12 @@ var logsCmd = &cobra.Command{
 }
 
 var (
-	logsServer string
 	logsCount  int
 	logsOutput bool
 )
 
 func init() {
-	logsCmd.Flags().StringVarP(&logsServer, "server", "s", "", "target server name from config")
+	logsCmd.Flags().StringVarP(&globalServer, "server", "s", "", "target server name from config")
 	logsCmd.Flags().IntVarP(&logsCount, "n", "n", 10, "number of entries to show")
 	logsCmd.Flags().BoolVarP(&logsOutput, "output", "o", false, "show full output for the last run")
 	rootCmd.AddCommand(logsCmd)
@@ -33,7 +32,7 @@ func init() {
 func runLogs(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	b, err := resolveBackend(logsServer)
+	b, err := resolveBackend(globalServer)
 	if err != nil {
 		return err
 	}

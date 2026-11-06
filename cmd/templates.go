@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,8 @@ var templatesCmd = &cobra.Command{
 }
 
 var templatesListCmd = &cobra.Command{
-	Use:   "list",
+	Use:     "ls",
+	Aliases: []string{"list"},
 	Short: "List available templates",
 	RunE:  runTemplatesList,
 }
@@ -43,10 +45,19 @@ func init() {
 	rootCmd.AddCommand(templatesCmd)
 }
 
+// templateView is the JSON shape of a template.
+type templateView struct {
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Type        string `json:"type"`
+	Schedule    string `json:"schedule"`
+	Description string `json:"description"`
+}
+
 func runTemplatesList(cmd *cobra.Command, args []string) error {
 	templates, err := template.LoadAll()
 	if err != nil {
-		return fmt.Errorf("failed to load templates: %w", err)
+		return errFailure("load templates: %v", err)
 	}
 
 	if filterCategory != "" {
@@ -60,25 +71,27 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 		templates = filtered
 	}
 
-	if len(templates) == 0 {
-		fmt.Println("No templates found.")
-		return nil
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "CATEGORY\tNAME\tSCHEDULE\tDESCRIPTION")
-	fmt.Fprintln(w, "--------\t----\t--------\t-----------")
-
+	views := make([]templateView, 0, len(templates))
 	for _, t := range templates {
-		desc := t.Description
-		if len(desc) > 50 {
-			desc = desc[:47] + "..."
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			template.CategoryLabel(t.Category), t.Name, t.Schedule, desc)
+		views = append(views, templateView{
+			Name: t.Name, Category: string(t.Category), Type: string(t.Type),
+			Schedule: t.Schedule, Description: t.Description,
+		})
 	}
-
-	return w.Flush()
+	return render(cmd, map[string]any{"templates": views}, func(w io.Writer) error {
+		if len(templates) == 0 {
+			fmt.Fprintln(w, "No templates found.")
+			return nil
+		}
+		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "CATEGORY\tNAME\tSCHEDULE\tDESCRIPTION")
+		fmt.Fprintln(tw, "--------\t----\t--------\t-----------")
+		for _, t := range templates {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+				template.CategoryLabel(t.Category), t.Name, t.Schedule, truncate(t.Description, 50))
+		}
+		return tw.Flush()
+	})
 }
 
 func runTemplatesApply(cmd *cobra.Command, args []string) error {
@@ -98,11 +111,17 @@ func runTemplatesApply(cmd *cobra.Command, args []string) error {
 	}
 
 	if tmpl == nil {
-		return fmt.Errorf("template %q not found", name)
+		return errNotFound("template %q not found", name).withHint("list templates with `lazycron templates ls`")
 	}
 
 	if tmpl.Type == template.TypeSandcastle {
-		return applySandcastleTemplate(tmpl)
+		if err := applySandcastleTemplate(tmpl); err != nil {
+			return err
+		}
+		if wantJSON(cmd) {
+			return writeJSON(cmd.OutOrStdout(), map[string]any{"template": tmpl.Name, "file": filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts")})
+		}
+		return nil
 	}
 	return applyYAMLTemplate(tmpl)
 }
@@ -140,10 +159,10 @@ func applySandcastleTemplate(tmpl *template.Template) error {
 		return fmt.Errorf("write %s: %w", dest, err)
 	}
 
-	fmt.Printf("Created %s\n", filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts"))
-	fmt.Printf("Schedule: %s   Name: %s\n", tmpl.Schedule, tmpl.Name)
-	fmt.Println()
-	fmt.Println("Run `lazycron sync` to install the cron job.")
+	fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts"))
+	fmt.Fprintf(humanOut, "Schedule: %s   Name: %s\n", tmpl.Schedule, tmpl.Name)
+	fmt.Fprintln(humanOut)
+	fmt.Fprintln(humanOut, "Run `lazycron sync` to install the cron job.")
 	return nil
 }
 
@@ -154,9 +173,9 @@ func applyYAMLTemplate(tmpl *template.Template) error {
 		return err
 	}
 
-	fmt.Printf("Applying template: %s\n", tmpl.Name)
-	fmt.Printf("Description: %s\n", tmpl.Description)
-	fmt.Println()
+	fmt.Fprintf(humanOut, "Applying template: %s\n", tmpl.Name)
+	fmt.Fprintf(humanOut, "Description: %s\n", tmpl.Description)
+	fmt.Fprintln(humanOut)
 
 	reader := bufio.NewReader(os.Stdin)
 	values := make(map[string]string)
@@ -166,7 +185,7 @@ func applyYAMLTemplate(tmpl *template.Template) error {
 		if v.Default != "" {
 			prompt += fmt.Sprintf(" [%s]", v.Default)
 		}
-		fmt.Printf("%s: ", prompt)
+		fmt.Fprintf(humanOut, "%s: ", prompt)
 
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
@@ -178,7 +197,7 @@ func applyYAMLTemplate(tmpl *template.Template) error {
 	resolvedCmd, resolvedSchedule := tmpl.Apply(values)
 	cronExpr := cron.HumanToCron(resolvedSchedule)
 
-	fmt.Printf("Job name [%s]: ", tmpl.Name)
+	fmt.Fprintf(humanOut, "Job name [%s]: ", tmpl.Name)
 	jobName, _ := reader.ReadString('\n')
 	jobName = strings.TrimSpace(jobName)
 	if jobName == "" {
@@ -204,8 +223,8 @@ func applyYAMLTemplate(tmpl *template.Template) error {
 		return fmt.Errorf("failed to write crontab: %w", err)
 	}
 
-	fmt.Printf("\nCreated job '%s'\n", job.Name)
-	fmt.Printf("  Schedule: %s\n", job.Schedule)
-	fmt.Printf("  Command:  %s\n", job.Command)
+	fmt.Fprintf(humanOut, "\nCreated job '%s'\n", job.Name)
+	fmt.Fprintf(humanOut, "  Schedule: %s\n", job.Schedule)
+	fmt.Fprintf(humanOut, "  Command:  %s\n", job.Command)
 	return nil
 }

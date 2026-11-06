@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -53,6 +54,17 @@ func FormatCrontab(jobs []Job) string {
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// RelocateCrontab rewrites the local lazycron paths in formatted crontab
+// content for another location: scriptsDir replaces ~/.lazycron/scripts and,
+// when non-empty, binDir replaces ~/.lazycron/bin (record and lazycron links).
+func RelocateCrontab(content, scriptsDir, binDir string) string {
+	content = strings.ReplaceAll(content, ScriptsDir(), scriptsDir)
+	if binDir != "" {
+		content = strings.ReplaceAll(content, filepath.Dir(RecordBinPath()), binDir)
+	}
+	return content
 }
 
 // WriteCrontab writes jobs to crontab via `crontab -`.

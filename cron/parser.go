@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/swalha1999/lazycron/config"
 )
 
 // Job represents a single cron job entry.
@@ -19,6 +21,7 @@ type Job struct {
 	TagColor string // hex color for the tag, e.g. "#f38ba8"
 	OneShot  bool   // true if this job should run once and then self-disable
 	Project  string // optional project group for organizing jobs
+	Runner   string // per-job runner override ("plain", "herdr"); "" uses DefaultRunner
 }
 
 // RecordBinPath returns the path to ~/.lazycron/bin/record.
@@ -50,6 +53,10 @@ func WrapWithRecordOnce(command, jobID, jobName string) string {
 // StripRecord removes the record wrapper from a raw crontab command,
 // returning the user's original command.
 func StripRecord(command string) string {
+	if IsExecLine(command) {
+		return StripRecord(execLineFallback(command))
+	}
+
 	// Current format: __lc_out=$({ cmd; } 2>&1); __lc_ec=$?; echo "$__lc_out" | record "name" "$__lc_ec"
 	if strings.HasPrefix(command, wrapPrefix) {
 		if endIdx := strings.Index(command, wrapEndMarker); endIdx != -1 {
@@ -83,6 +90,9 @@ func StripRecord(command string) string {
 // IsCurrentFormat reports whether a raw crontab command uses the current
 // record wrapper format (as opposed to a legacy or missing wrapper).
 func IsCurrentFormat(rawCommand string) bool {
+	if IsExecLine(rawCommand) {
+		return IsCurrentFormat(execLineFallback(rawCommand))
+	}
 	return strings.HasPrefix(rawCommand, wrapPrefix)
 }
 
@@ -91,6 +101,9 @@ func IsCurrentFormat(rawCommand string) bool {
 func (j Job) CrontabLine() string {
 	var b strings.Builder
 	nameComment := j.Name + " @id:" + j.ID
+	if j.Runner != "" {
+		nameComment += runnerMarker + j.Runner
+	}
 	if j.OneShot {
 		nameComment += " @once"
 	}
@@ -118,6 +131,9 @@ func (j Job) CrontabLine() string {
 		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)
 	} else {
 		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
+	}
+	if j.EffectiveRunner() == config.RunnerHerdr {
+		wrapped = ExecLine(j, wrapped)
 	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
@@ -154,6 +170,8 @@ func Parse(output string) []Job {
 			name, tag, tagColor = extractTag(name)
 			id := ""
 			name, id = extractID(name)
+			runner := ""
+			name, runner = extractRunner(name)
 			if id == "" {
 				id = GenerateID()
 			}
@@ -170,6 +188,7 @@ func Parse(output string) []Job {
 					job.TagColor = tagColor
 					job.OneShot = oneShot
 					job.Project = project
+					job.Runner = runner
 					jobs = append(jobs, job)
 					i++
 					continue

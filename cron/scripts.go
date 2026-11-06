@@ -25,11 +25,15 @@ func ScriptPath(jobID string) string {
 
 // WriteScript writes a job's command to its script file.
 func WriteScript(jobID, command string) error {
-	dir := scriptsDir()
+	return WriteScriptIn(scriptsDir(), jobID, command)
+}
+
+// WriteScriptIn writes a job's command to its script file in dir.
+func WriteScriptIn(dir, jobID, command string) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(ScriptPath(jobID), []byte(BuildScriptContent(command)), 0700)
+	return os.WriteFile(filepath.Join(dir, jobID+".sh"), []byte(BuildScriptContent(command)), 0700)
 }
 
 // ScriptPreamble is the profile-sourcing block prepended to every script.
@@ -101,7 +105,11 @@ func DeleteScript(jobID string) error {
 
 // SyncScripts writes script files for all jobs and removes orphans.
 func SyncScripts(jobs []Job) error {
-	dir := scriptsDir()
+	return SyncScriptsIn(scriptsDir(), jobs)
+}
+
+// SyncScriptsIn writes script files for all jobs into dir and removes orphans.
+func SyncScriptsIn(dir string, jobs []Job) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -110,7 +118,7 @@ func SyncScripts(jobs []Job) error {
 	for _, j := range jobs {
 		filename := j.ID + ".sh"
 		active[filename] = true
-		if err := WriteScript(j.ID, j.Command); err != nil {
+		if err := WriteScriptIn(dir, j.ID, j.Command); err != nil {
 			return err
 		}
 	}
