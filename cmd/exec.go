@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/config"
@@ -13,7 +15,8 @@ var execCmd = &cobra.Command{
 	Short: "Run one job and record it (what crontab lines call; prefer `run`)",
 	Long: "Runs a job's script through herdr-core (or plainly, as a fallback), writes " +
 		"the history entry and applies --once. Crontab lines in herdr mode call this. " +
-		"It prints nothing unless --json is given, so cron sends no mail.",
+		"It prints nothing unless --json is given, so cron sends no mail. It exits non-zero " +
+		"only when it could not start the job; the crontab line then runs the job plainly.",
 	Args: cobra.ExactArgs(1),
 	RunE: runExec,
 }
@@ -50,14 +53,27 @@ func runExec(cmd *cobra.Command, args []string) error {
 		name = args[0]
 	}
 	job := cron.Job{ID: args[0], Name: name, Runner: execRunner}
-	return withBackend(func(b backend.Backend) error {
-		entry, err := b.ExecJob(job, backend.ExecRequest{RunID: execRunID, Trigger: execTrigger, Once: execOnce})
-		if err != nil {
-			return errFailure("%v", err)
-		}
-		if jsonForced(cmd) {
-			return writeJSON(cmd.OutOrStdout(), entry)
-		}
-		return nil
-	})
+	entry, err := execBackend().ExecJob(job, backend.ExecRequest{RunID: execRunID, Trigger: execTrigger, Once: execOnce})
+	switch {
+	case err != nil && entry.RunID == "":
+		return errFailure("could not start %s: %v", job.ID, err)
+	case err != nil:
+		// The job ran; only recording it failed. Exiting non-zero here would
+		// make the crontab line run the job a second time.
+		fmt.Fprintf(cmd.ErrOrStderr(), "lazycron exec: %s ran but %v\n", job.ID, err)
+	}
+	if jsonForced(cmd) {
+		return writeJSON(cmd.OutOrStdout(), entry)
+	}
+	return nil
+}
+
+// execBackend is the backend exec runs on. Unlike other commands it needs
+// neither crontab on PATH nor the record script: under cron it must start
+// the job whatever else is wrong.
+func execBackend() backend.Backend {
+	if cronFile != "" {
+		return backend.NewFileBackend(cronFile, cronFile+".history")
+	}
+	return backend.NewLocalBackend()
 }

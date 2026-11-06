@@ -61,7 +61,7 @@ func WrapWithRecordOnce(command, jobID, jobName string) string {
 // returning the user's original command.
 func StripRecord(command string) string {
 	if IsExecLine(command) {
-		return StripRecord(execLineFallback(command))
+		return StripRecord(execLineRecord(command))
 	}
 
 	// Current format: __lc_out=$({ cmd; } 2>&1); __lc_ec=$?; echo "$__lc_out" | record "name" "$__lc_ec"
@@ -98,7 +98,7 @@ func StripRecord(command string) string {
 // record wrapper format (as opposed to a legacy or missing wrapper).
 func IsCurrentFormat(rawCommand string) bool {
 	if IsExecLine(rawCommand) {
-		return IsCurrentFormat(execLineFallback(rawCommand))
+		return IsCurrentFormat(execLineRecord(rawCommand))
 	}
 	return strings.HasPrefix(rawCommand, wrapPrefix)
 }

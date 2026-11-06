@@ -24,7 +24,7 @@ func TestHerdrLineRoundTrip(t *testing.T) {
 	if !IsExecLine(raw) {
 		t.Fatalf("expected exec line, got %q", raw)
 	}
-	if !strings.Contains(raw, LazycronBinPath()+"' exec 'backup' --name 'Nightly '\\''backup'\\''' --once; else ") {
+	if !strings.HasPrefix(raw, "'"+LazycronBinPath()+"' exec 'backup' --name 'Nightly '\\''backup'\\''' --once || { __lc_out=") {
 		t.Fatalf("exec call not as expected: %q", raw)
 	}
 	if !IsCurrentFormat(raw) {

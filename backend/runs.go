@@ -26,8 +26,12 @@ func execLocally(b Backend, paths runner.Paths, job cron.Job, req ExecRequest) (
 		return history.Entry{}, err
 	}
 	cfg, err := config.Load()
-	if err != nil {
-		return history.Entry{}, fmt.Errorf("load config: %w", err)
+	switch {
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "lazycron: using default settings, config unreadable: %v\n", err)
+		cfg = &config.Config{}
+	case cfg.EnsureSpaceID():
+		_ = config.Save(cfg) // keep the herdr-app space stable across runs
 	}
 	e := runner.NewExecutor(paths, cfg)
 	e.DisableOnce = func(jobID string) error { return setJobEnabled(b, jobID, false) }

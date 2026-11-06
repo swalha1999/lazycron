@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/internal/fakehcbuild"
+	"github.com/swalha1999/lazycron/record"
 )
 
 // useHerdr configures the env for the herdr runner backed by a fake hc,
@@ -238,4 +240,61 @@ func mustFileBackend(env *testEnv) *backend.FileBackend {
 // startBackground starts a background run on b like `run --no-wait`.
 func startBackground(b backend.Backend, job cron.Job) error {
 	return b.StartJob(job, backend.ExecRequest{RunID: "", Trigger: "manual"})
+}
+
+func TestExecRunsEvenWithBrokenConfig(t *testing.T) {
+	env := newTestEnv(t)
+	env.mustRun(addArgs("cj", "CJ", "every hour", "echo still-ran")...)
+	cfgPath := filepath.Join(env.home, ".lazycron", "config.yml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, cfgPath, "servers: [this is: not: valid")
+	r := env.run("exec", "cj", "--runner", "plain")
+	if r.code != 0 {
+		t.Fatalf("exec must still run the job: exit %d %s", r.code, r.stderr)
+	}
+	if data, _ := os.ReadFile(cfgPath); string(data) != "servers: [this is: not: valid" {
+		t.Fatal("exec must not overwrite a broken config")
+	}
+	entries, _ := filepath.Glob(filepath.Join(env.cronFile+".history", "*.json"))
+	if len(entries) != 1 {
+		t.Fatalf("want 1 history entry, got %d", len(entries))
+	}
+}
+
+// TestExecLineFallsBackWithoutLazycron runs a real herdr-mode crontab line
+// with sh, as cron would, while ~/.lazycron/bin/lazycron does not exist: the
+// record branch must run the job and record it.
+func TestExecLineFallsBackWithoutLazycron(t *testing.T) {
+	env := newTestEnv(t)
+	env.useHerdr()
+	if err := record.InstallRecord(); err != nil {
+		t.Fatal(err)
+	}
+	env.mustRun(addArgs("fb", "Fallback", "every hour", "echo fell-back")...)
+	data, err := os.ReadFile(env.cronFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var line string
+	for _, l := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(l, "0 * * * * ") {
+			line = strings.TrimPrefix(l, "0 * * * * ")
+		}
+	}
+	if !cron.IsExecLine(line) {
+		t.Fatalf("not an exec line: %q", line)
+	}
+	out, err := exec.Command("sh", "-c", line).CombinedOutput()
+	if err != nil {
+		t.Fatalf("line failed: %v\n%s", err, out)
+	}
+	entries, _ := filepath.Glob(filepath.Join(env.home, ".lazycron", "history", "*_fb.json"))
+	if len(entries) != 1 {
+		t.Fatalf("record fallback wrote %d entries (output %q)", len(entries), out)
+	}
+	if content, _ := os.ReadFile(entries[0]); !strings.Contains(string(content), "fell-back") {
+		t.Fatalf("entry: %s", content)
+	}
 }

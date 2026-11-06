@@ -28,40 +28,41 @@ func LazycronBinPath() string {
 	return filepath.Join(home, ".lazycron", "bin", "lazycron")
 }
 
-// Markers of the herdr exec line:
+// The herdr exec line:
 //
-//	if [ -x '<bin>' ]; then '<bin>' exec '<id>' --name '<name>'; else <record line>; fi
+//	'<bin>' exec '<id>' --name '<name>' || { <record line>; }
 //
-// The else branch is the plain record line, so a job still runs (and is
-// recorded) if the lazycron binary is gone.
+// `lazycron exec` exits non-zero only when it could not start the job, so
+// the record line after || runs the job plainly (and records it) if the
+// lazycron binary is missing, crashes or rejects its arguments. A job never
+// silently does not run.
 const (
-	execLinePrefix = "if [ -x "
-	execLineElse   = "; else "
-	execLineSuffix = "; fi"
+	execLineCall     = "' exec '"
+	execLineFallback = " || { "
+	execLineSuffix   = "; }"
 )
 
 // ExecLine wraps a plain record line so cron runs the job through
 // `lazycron exec`, falling back to the record line.
 func ExecLine(j Job, recordLine string) string {
-	bin := ShellQuote(LazycronBinPath())
-	call := fmt.Sprintf("%s exec %s --name %s", bin, ShellQuote(j.ID), ShellQuote(j.Name))
+	call := fmt.Sprintf("%s exec %s --name %s", ShellQuote(LazycronBinPath()), ShellQuote(j.ID), ShellQuote(j.Name))
 	if j.OneShot {
 		call += " --once"
 	}
-	return fmt.Sprintf("%s%s ]; then %s%s%s%s", execLinePrefix, bin, call, execLineElse, recordLine, execLineSuffix)
+	return call + execLineFallback + recordLine + execLineSuffix
 }
 
 // IsExecLine reports whether a raw crontab command is a herdr exec line.
 func IsExecLine(rawCommand string) bool {
-	return strings.HasPrefix(rawCommand, execLinePrefix) &&
-		strings.HasSuffix(rawCommand, execLineSuffix) &&
-		strings.Contains(rawCommand, execLineElse) &&
-		strings.Contains(rawCommand, " exec ")
+	call := strings.Index(rawCommand, execLineCall)
+	fallback := strings.Index(rawCommand, execLineFallback)
+	return strings.HasPrefix(rawCommand, "'") && call > 0 && fallback > call &&
+		strings.HasSuffix(rawCommand, execLineSuffix)
 }
 
-// execLineFallback returns the record line inside an exec line.
-func execLineFallback(rawCommand string) string {
-	start := strings.Index(rawCommand, execLineElse) + len(execLineElse)
+// execLineRecord returns the record line inside an exec line.
+func execLineRecord(rawCommand string) string {
+	start := strings.Index(rawCommand, execLineFallback) + len(execLineFallback)
 	return rawCommand[start : len(rawCommand)-len(execLineSuffix)]
 }
 

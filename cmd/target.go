@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,10 @@ func loadGlobalSettings(cmd *cobra.Command, args []string) error {
 	humanOut = progress(cmd)
 	cfg, err := config.Load()
 	if err != nil {
+		if cmd == execCmd { // a broken config must not stop a scheduled job
+			fmt.Fprintf(cmd.ErrOrStderr(), "lazycron exec: ignoring ~/.lazycron/config.yml: %v\n", err)
+			return nil
+		}
 		return errFailure("load ~/.lazycron/config.yml: %v", err).withHint("fix or remove the file")
 	}
 	if !config.ValidRunner(cfg.Runner) {

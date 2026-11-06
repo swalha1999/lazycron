@@ -6,7 +6,8 @@ import (
 
 // NewExecutor builds an executor for this machine from ~/.lazycron/config.yml
 // settings. herdr-core is looked up here; when it is missing the executor
-// falls back to plain runs and records why.
+// falls back to plain runs and records why. Without a space id, run
+// terminals get no herdr.space label.
 func NewExecutor(paths Paths, cfg *config.Config) *Executor {
 	e := &Executor{
 		Paths:    paths,
@@ -23,10 +24,6 @@ func NewExecutor(paths Paths, cfg *config.Config) *Executor {
 		e.HCUnavailable = err.Error()
 	} else {
 		e.HC = &HC{Bin: bin, Cmd: LocalCommander{}}
-	}
-	if e.SpaceID == "" && cfg.EnsureSpaceID() {
-		e.SpaceID = cfg.Herdr.SpaceID
-		_ = config.Save(cfg) // best effort: keep the space stable across runs
 	}
 	e.NameSpace = func() { NameAppSpace(e.SpaceID, config.DefaultSpaceName) }
 	return e
