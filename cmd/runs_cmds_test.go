@@ -230,3 +230,12 @@ func TestAttachNeedsTTY(t *testing.T) {
 		t.Fatalf("exit %d %s", r.code, r.stderr)
 	}
 }
+
+func mustFileBackend(env *testEnv) *backend.FileBackend {
+	return backend.NewFileBackend(env.cronFile, env.cronFile+".history")
+}
+
+// startBackground starts a background run on b like `run --no-wait`.
+func startBackground(b backend.Backend, job cron.Job) error {
+	return b.StartJob(job, backend.ExecRequest{RunID: "", Trigger: "manual"})
+}

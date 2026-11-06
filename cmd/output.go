@@ -40,6 +40,15 @@ func writeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// jsonLine encodes v as one compact JSON line (for streams like events).
+func jsonLine(v any) ([]byte, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
 // render prints v as JSON in JSON mode, otherwise calls text to print a
 // human-readable form to stdout.
 func render(cmd *cobra.Command, v any, text func(w io.Writer) error) error {
