@@ -9,15 +9,6 @@ import (
 //go:embed record.sh
 var ScriptContent []byte
 
-// Entry is the JSON structure written to history files.
-type Entry struct {
-	JobID     string `json:"job_id,omitempty"`
-	JobName   string `json:"job_name"`
-	Timestamp string `json:"timestamp"`
-	Output    string `json:"output"`
-	Success   *bool  `json:"success,omitempty"`
-}
-
 // HistoryDir returns ~/.lazycron/history/
 func HistoryDir() string {
 	home, _ := os.UserHomeDir()
