@@ -50,7 +50,7 @@ A herdr-mode crontab line:
 
 ```
 # Nightly backup @id:backup
-0 2 * * * '/home/u/.lazycron/bin/lazycron' exec 'backup' --name 'Nightly backup' || { <plain record line>; }
+0 2 * * * '/home/u/.lazycron/bin/lazycron' exec 'backup' --name 'Nightly backup'
 ```
 
 `lazycron exec` then:
@@ -69,11 +69,13 @@ A herdr-mode crontab line:
 4. keeps the newest `herdr.keep_runs` finished run terminals of the job and
    ends and removes the older ones. Runs still in progress are never touched.
 
-`exec` prints nothing (no cron mail) and exits non-zero only when it could not
-start the job. The crontab line then falls back to the plain record wrapper,
-so a missing, crashing or incompatible lazycron binary still runs the job.
-If herdr-core is missing or cannot start the terminal, `exec` runs the job
-plainly itself and records `fallback_reason`.
+The line only calls `lazycron exec`; the job's command stays in
+`~/.lazycron/scripts/<id>.sh`. `exec` prints nothing (no cron mail) and exits
+non-zero only when it could not start the job, so lazycron must be installed
+where cron runs (`lazycron doctor` checks the link). If herdr-core is missing
+or cannot start the terminal, `exec` runs the job plainly itself and records
+`fallback_reason`. Crontabs written before v0.16 still carry a
+`|| { <plain record line>; }` fallback; `lazycron setup` rewrites them.
 
 ### Why runs are held open
 

@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,14 +25,14 @@ func TestHerdrLineRoundTrip(t *testing.T) {
 	if !IsExecLine(raw) {
 		t.Fatalf("expected exec line, got %q", raw)
 	}
-	if !strings.HasPrefix(raw, "'"+LazycronBinPath()+"' exec 'backup' --name 'Nightly '\\''backup'\\''' --once || { __lc_out=") {
-		t.Fatalf("exec call not as expected: %q", raw)
+	if raw != "'"+LazycronBinPath()+"' exec 'backup' --name 'Nightly '\\''backup'\\''' --once" {
+		t.Fatalf("exec line not clean: %q", raw)
 	}
 	if !IsCurrentFormat(raw) {
 		t.Fatal("exec line should count as current format")
 	}
-	if got := StripRecord(raw); got != "bash '"+ScriptPath("backup")+"'" {
-		t.Fatalf("StripRecord = %q", got)
+	if got := jobCommand(raw, ScriptsDir()); got != "bash '"+ScriptPath("backup")+"'" {
+		t.Fatalf("jobCommand = %q", got)
 	}
 
 	jobs := Parse(line)
@@ -77,16 +78,60 @@ func TestExtractRunnerIgnoresUnknown(t *testing.T) {
 }
 
 func TestRelocateCrontab(t *testing.T) {
-	withDefaultRunner(t, config.RunnerHerdr)
-	content := FormatCrontab([]Job{{ID: "x", Name: "X", Schedule: "* * * * *", Command: "true", Enabled: true}})
+	withDefaultRunner(t, config.RunnerPlain)
+	content := FormatCrontab([]Job{
+		{ID: "x", Name: "X", Schedule: "* * * * *", Command: "true", Enabled: true, Runner: config.RunnerHerdr},
+		{ID: "p", Name: "P", Schedule: "* * * * *", Command: "true", Enabled: true},
+	})
 	out := RelocateCrontab(content, "/r/.lazycron/scripts", "/r/.lazycron/bin")
 	if strings.Contains(out, ScriptsDir()) || strings.Contains(out, LazycronBinPath()) || strings.Contains(out, RecordBinPath()) {
 		t.Fatalf("local paths left: %s", out)
 	}
-	for _, want := range []string{"/r/.lazycron/scripts/x.sh", "/r/.lazycron/bin/lazycron", "/r/.lazycron/bin/record"} {
+	for _, want := range []string{"'/r/.lazycron/bin/lazycron' exec 'x'", "/r/.lazycron/scripts/p.sh", "/r/.lazycron/bin/record"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in %s", want, out)
 		}
+	}
+}
+
+func TestExecLineHasNoFallback(t *testing.T) {
+	withDefaultRunner(t, config.RunnerHerdr)
+	line := Job{ID: "x", Name: "X", Schedule: "* * * * *", Command: "true", Enabled: true}.CrontabLine()
+	if strings.Contains(line, "||") || strings.Contains(line, "record") || strings.Contains(line, ".sh") {
+		t.Fatalf("herdr line should only call lazycron exec: %s", line)
+	}
+}
+
+func TestLegacyExecLineParsesAndNeedsRewrite(t *testing.T) {
+	withDefaultRunner(t, config.RunnerHerdr)
+	legacy := "# Old @id:old\n0 * * * * '" + LazycronBinPath() + "' exec 'old' --name 'Old' || { " +
+		WrapWithRecord("bash '"+ScriptPath("old")+"'", "old", "Old") + "; }\n"
+	jobs := Parse(legacy)
+	if len(jobs) != 1 {
+		t.Fatalf("parsed %d jobs", len(jobs))
+	}
+	j := jobs[0]
+	if !j.ExecLine || j.Wrapped || !j.NeedsRewrite() {
+		t.Fatalf("legacy exec line should parse as an old format needing rewrite: %+v", j)
+	}
+	if j.ID != "old" || j.Name != "Old" {
+		t.Fatalf("legacy parse mismatch: %+v", j)
+	}
+	rewritten := Parse(j.CrontabLine())[0]
+	if rewritten.NeedsRewrite() || !rewritten.Wrapped {
+		t.Fatalf("rewritten line should be current: %+v", rewritten)
+	}
+}
+
+func TestParseInResolvesScriptsInGivenDir(t *testing.T) {
+	withDefaultRunner(t, config.RunnerHerdr)
+	dir := filepath.Join(t.TempDir(), ".lazycron", "scripts") // a server's or crontab file's scripts dir
+	if err := WriteScriptIn(dir, "s1", "echo from-dir"); err != nil {
+		t.Fatal(err)
+	}
+	line := Job{ID: "s1", Name: "S", Schedule: "* * * * *", Command: "x", Enabled: true}.CrontabLine()
+	if got := ParseIn(line, dir)[0].Command; got != "echo from-dir" {
+		t.Fatalf("Command = %q, want the script's command from %s", got, dir)
 	}
 }
 

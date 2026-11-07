@@ -32,7 +32,7 @@ func (s *stepRunner) lazycronInstall() {
 	installed := s.hostLazycron(link)
 	if installed == "" {
 		if !s.opts.InstallLazycron {
-			s.add(name, StatusWarning, "not installed; herdr-mode lines fall back to plain runs",
+			s.add(name, StatusWarning, "not installed; herdr-mode jobs will not run",
 				"install it with `"+lazycronInstallCmd+"`, then run `lazycron setup` again")
 			return
 		}

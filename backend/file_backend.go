@@ -55,7 +55,7 @@ func (b *FileBackend) ReadJobs() ([]cron.Job, error) {
 		}
 		return nil, err
 	}
-	return cron.Parse(string(data)), nil
+	return cron.ParseIn(string(data), b.ScriptsDir()), nil
 }
 
 func (b *FileBackend) WriteJobs(jobs []cron.Job) error {

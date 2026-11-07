@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,7 +11,6 @@ import (
 	"github.com/swalha1999/lazycron/backend"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/internal/fakehcbuild"
-	"github.com/swalha1999/lazycron/record"
 )
 
 // useHerdr configures the env for the herdr runner backed by a fake hc,
@@ -263,16 +261,12 @@ func TestExecRunsEvenWithBrokenConfig(t *testing.T) {
 	}
 }
 
-// TestExecLineFallsBackWithoutLazycron runs a real herdr-mode crontab line
-// with sh, as cron would, while ~/.lazycron/bin/lazycron does not exist: the
-// record branch must run the job and record it.
-func TestExecLineFallsBackWithoutLazycron(t *testing.T) {
+// TestExecLineIsClean checks that a herdr-mode crontab line only calls
+// lazycron exec, which runs and records the job itself.
+func TestExecLineIsClean(t *testing.T) {
 	env := newTestEnv(t)
 	env.useHerdr()
-	if err := record.InstallRecord(); err != nil {
-		t.Fatal(err)
-	}
-	env.mustRun(addArgs("fb", "Fallback", "every hour", "echo fell-back")...)
+	env.mustRun(addArgs("cl", "Clean", "every hour", "echo hi")...)
 	data, err := os.ReadFile(env.cronFile)
 	if err != nil {
 		t.Fatal(err)
@@ -283,18 +277,8 @@ func TestExecLineFallsBackWithoutLazycron(t *testing.T) {
 			line = strings.TrimPrefix(l, "0 * * * * ")
 		}
 	}
-	if !cron.IsExecLine(line) {
-		t.Fatalf("not an exec line: %q", line)
-	}
-	out, err := exec.Command("sh", "-c", line).CombinedOutput()
-	if err != nil {
-		t.Fatalf("line failed: %v\n%s", err, out)
-	}
-	entries, _ := filepath.Glob(filepath.Join(env.home, ".lazycron", "history", "*_fb.json"))
-	if len(entries) != 1 {
-		t.Fatalf("record fallback wrote %d entries (output %q)", len(entries), out)
-	}
-	if content, _ := os.ReadFile(entries[0]); !strings.Contains(string(content), "fell-back") {
-		t.Fatalf("entry: %s", content)
+	want := "'" + filepath.Join(env.home, ".lazycron", "bin", "lazycron") + "' exec 'cl' --name 'Clean'"
+	if line != want {
+		t.Fatalf("crontab line = %q, want %q", line, want)
 	}
 }
