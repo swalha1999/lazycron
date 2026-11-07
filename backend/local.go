@@ -1,9 +1,9 @@
 package backend
 
 import (
-	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/swalha1999/lazycron/cron"
@@ -77,24 +77,20 @@ func (b *LocalBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes
 	return nil
 }
 
-// CheckAgentDeps reports which of docker/node/npx are missing on $PATH.
+// CheckAgentDeps reports which of AgentDeps are missing on $PATH and in ~/.local/bin.
 func (b *LocalBackend) CheckAgentDeps() ([]string, error) {
+	home, _ := os.UserHomeDir()
 	var missing []string
-	for _, name := range []string{"docker", "node", "npx"} {
-		if _, err := exec.LookPath(name); err != nil {
-			missing = append(missing, name)
+	for _, name := range AgentDeps {
+		if _, err := exec.LookPath(name); err == nil {
+			continue
 		}
+		if info, err := os.Stat(filepath.Join(home, ".local", "bin", name)); err == nil && !info.IsDir() {
+			continue
+		}
+		missing = append(missing, name)
 	}
 	return missing, nil
-}
-
-// RunInProject runs command from the current working directory and streams
-// output. projectName is unused locally — included only for interface symmetry.
-func (b *LocalBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
 }
 
 // ProjectDir returns the current working directory — local jobs run in cwd.

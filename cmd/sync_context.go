@@ -12,21 +12,20 @@ import (
 
 // syncContext holds everything `sync` and `diff` need after the shared
 // pre-processing pipeline has run: paths resolved, project name picked,
-// TS-derived jobs loaded with their `cd <project-dir> && ` prefix applied,
+// agent jobs loaded with their `cd <project-dir> && ` prefix applied,
 // and the existing crontab read from the target.
 type syncContext struct {
-	Backend       backend.Backend
-	ProjectName   string
-	LazycronDir   string
-	SandcastleDir string
-	ProjectDir    string
-	IncomingJobs  []cron.Job // commands already cd-prefixed for the target
-	ExistingJobs  []cron.Job
+	Backend      backend.Backend
+	ProjectName  string
+	LazycronDir  string
+	ProjectDir   string
+	IncomingJobs []cron.Job // commands already cd-prefixed for the target
+	ExistingJobs []cron.Job
 }
 
 // loadSyncContext runs the pipeline shared by `sync` and `diff`: resolve
-// project paths, verify .sandcastle/jobs/ exists, load project config, parse
-// TS jobs, open the backend, and read the existing crontab. If there are no
+// project paths, verify .lazycron/jobs/ exists, load project config, parse
+// agent jobs, open the backend, and read the existing crontab. If there are no
 // .ts files to install it prints a notice and returns (nil, nil) so callers
 // can exit cleanly. On any error after the backend is opened the backend is
 // closed for the caller; on success the caller owns it and must defer Close.
@@ -36,18 +35,17 @@ func loadSyncContext(serverFlag, projectFlag string) (*syncContext, error) {
 		return nil, fmt.Errorf("get cwd: %w", err)
 	}
 
-	lazycronDir := filepath.Join(cwd, ".lazycron")
-	sandcastleDir := filepath.Join(cwd, ".sandcastle")
-	jobsDir := filepath.Join(sandcastleDir, "jobs")
+	lazycronDir := filepath.Join(cwd, agentsDirName)
+	jobsDir := filepath.Join(lazycronDir, "jobs")
 
 	// `!info.IsDir()` catches the case where someone has a regular file named
-	// `.sandcastle/jobs` — `os.Stat` would not error but the directory walk
+	// `.lazycron/jobs` — `os.Stat` would not error but the directory walk
 	// later would, with a less helpful message.
 	if info, err := os.Stat(jobsDir); err != nil || !info.IsDir() {
-		if _, scErr := os.Stat(sandcastleDir); scErr != nil {
-			return nil, fmt.Errorf("no .sandcastle/ directory found at %s — run `lazycron init --with-agents` first", sandcastleDir)
+		if hint := legacyDirHint(cwd); hint != "" {
+			return nil, fmt.Errorf("%s", hint)
 		}
-		return nil, fmt.Errorf("no .sandcastle/jobs/ directory found at %s — run `lazycron templates list` to browse agents and `lazycron templates apply <name>` to scaffold one", jobsDir)
+		return nil, fmt.Errorf("no .lazycron/jobs/ directory found at %s — run `lazycron init --with-agents`, or `lazycron templates apply <name>` for one agent", jobsDir)
 	}
 
 	pcfg, err := config.LoadProjectConfig(lazycronDir)
@@ -56,12 +54,12 @@ func loadSyncContext(serverFlag, projectFlag string) (*syncContext, error) {
 	}
 	projectName := config.ResolveProjectName(projectFlag, pcfg, cwd)
 
-	incoming, err := readSandcastleJobs(jobsDir, projectName)
+	incoming, err := readAgentJobs(jobsDir, projectName)
 	if err != nil {
 		return nil, err
 	}
 	if len(incoming) == 0 {
-		fmt.Fprintf(humanOut, "No .ts files found in %s\n", jobsDir)
+		fmt.Fprintf(humanOut, "No .md agent jobs found in %s\n", jobsDir)
 		return nil, nil
 	}
 
@@ -93,12 +91,11 @@ func loadSyncContext(serverFlag, projectFlag string) (*syncContext, error) {
 
 	closeOnError = false
 	return &syncContext{
-		Backend:       b,
-		ProjectName:   projectName,
-		LazycronDir:   lazycronDir,
-		SandcastleDir: sandcastleDir,
-		ProjectDir:    projectDir,
-		IncomingJobs:  incoming,
-		ExistingJobs:  existing,
+		Backend:      b,
+		ProjectName:  projectName,
+		LazycronDir:  lazycronDir,
+		ProjectDir:   projectDir,
+		IncomingJobs: incoming,
+		ExistingJobs: existing,
 	}, nil
 }

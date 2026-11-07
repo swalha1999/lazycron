@@ -1,6 +1,6 @@
-# Sandcastle Agents
+# Claude Agents
 
-Lazycron schedules sandboxed AI agents using [sandcastle](https://github.com/mattpocock/sandcastle). Each agent runs Claude Code in a Docker container with a per-run git worktree, so concurrent runs don't conflict and a confused agent can't reach outside its sandbox.
+Lazycron schedules real Claude Code agents. Each run is an interactive Claude Code session on the machine cron fires on, inside a herdr terminal you can watch live, read later, or take over. Every run gets a fresh git worktree, so runs never touch your checkout or each other. There is no container: agents use the machine's own `claude` login, `git`, `gh` and toolchains, so run them on a machine you dedicate to this.
 
 ## Lifecycle
 
@@ -8,149 +8,91 @@ Lazycron schedules sandboxed AI agents using [sandcastle](https://github.com/mat
 lazycron init --with-agents
         │
         ▼
-.lazycron/config.yaml + .sandcastle/{Dockerfile,.env,lib/ensureRepo.ts}
+.lazycron/config.yaml, context.md, jobs/{audit,improve,deps,worker,upstream-sync}.md
         │
-        │  lazycron templates apply <name>
-        ▼
-.sandcastle/jobs/<name>.ts
-        │
-        │  edit .sandcastle/.env (REPO_URL, ANTHROPIC_API_KEY, GH_TOKEN, …)
+        │  edit context.md and the jobs; preview with `lazycron agent <job> --dry-run`
         │
         │  lazycron sync [--server X]
         ▼
-1. Deps check (docker, node, npx)
-2. Tar + ship .lazycron/ and .sandcastle/ to remote (or skip if local)
-3. npx @ai-hero/sandcastle docker build-image
-4. Install crontab entry: `cd <project-dir> && npx tsx .sandcastle/jobs/<name>.ts`
+crontab entry per job: cd <project> && lazycron agent .lazycron/jobs/<job>.md --project <name>
         │
-        │  cron fires
+        │  cron fires (inside a herdr run terminal)
         ▼
-5. ensureRepo clones / fetches origin/main into ~/.lazycron-cache/repos/<name>/
-6. sandcastle.run() spawns Docker container with a unique-branch worktree
-7. Agent runs the prompt
-8. (For PR agents) host pushes branch and runs gh pr create
+1. git fetch origin; worktree at ~/.lazycron/worktrees/<project>/<job>-<time> from origin's default branch
+2. hc run: claude --permission-mode <mode> [--model M] "<prompt + context.md>" in terminal agent-<job>-<time>
+3. first-run prompts for the new folder (trust, permission mode) are answered
+4. hc wait follows the session:
+     done     → terminal closed, worktree removed, run succeeds
+     blocked  → terminal and worktree kept, run fails with the terminal to attach to
+     error    → session stopped, run fails
+     timeout  → session stopped, run fails
 ```
 
-## Required Environment
+The agent does the GitHub work itself with `gh` (issues, branches, pushes, PRs). The wrapping prompt tells it never to push to or merge the default branch.
 
-Both the local machine running `lazycron sync` and the target machine where cron fires need:
+## Requirements on the machine that runs agents
 
-- **Docker** — runs the agent sandbox
-- **Node 20+** — runs `npx @ai-hero/sandcastle ...` and the agent TS file
-- **`gh` CLI** + a GitHub token (in `.sandcastle/.env` as `GH_TOKEN`) for any agent that calls `gh issue create` or `gh pr create`
-- **Git** — for the repo cache and per-run worktrees
+- **Claude Code** logged in (`claude auth status`), and `lazycron doctor` reporting ok
+- **herdr-core** (`lazycron setup` installs and starts it)
+- **git** and **gh** logged in with push access to the repos
+- The toolchains your repos build with (node/pnpm, go, cargo, zig, ...). Agents get your PATH plus `~/.local/bin` and mise shims.
 
-`lazycron sync` checks `docker`/`node`/`npx` before doing anything destructive. Missing tools produce an explicit error pointing at install pages.
+## Job file
 
-## TS File Anatomy
+`.lazycron/jobs/<id>.md`. The file name is the job id (`a-z 0-9 _ -`); sync scopes it by project, e.g. `my-repo-worker`.
 
-```typescript
-// description: One-line summary shown in `lazycron templates list`
-export const cron = "0 9 * * 1-5";
-export const name = "Worker Agent";
-export const tag = "BP";          // optional
-export const tagColor = "#f38ba8"; // optional
-
-import { run, claudeCode } from "@ai-hero/sandcastle";
-import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { ensureRepo } from "../lib/ensureRepo";
-import { execSync } from "node:child_process";
-
-const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
-
-// 1. Make sure a fresh copy of main is locally available.
-const repoDir = ensureRepo({
-  url: process.env.REPO_URL!,
-  name: process.env.PROJECT_NAME ?? "myproject",
-  defaultBranch: process.env.BASE_BRANCH ?? "main",
-});
-process.chdir(repoDir);
-
-// 2. Cheap preconditions: bail before paying for an agent run.
-if (Number(sh("gh pr list --state open --json number -q 'length'")) >= 3) {
-  console.log("Too many open PRs, skipping");
-  process.exit(0);
-}
-
-// 3. Build a unique branch name so concurrent runs do not collide.
-const issue = sh("gh issue list -l bug --state open --json number --jq '.[0].number'");
-const branch = `fix/issue-${issue}-${Date.now()}`;
-
-// 4. Run the agent inside the sandbox.
-const result = await run({
-  agent: claudeCode("claude-opus-4-7"),
-  sandbox: docker(),
-  branchStrategy: { type: "branch", branch },
-  prompt: `Read issue #${issue} via 'gh issue view ${issue}'. Fix it. Commit.`,
-  maxIterations: 1,
-});
-
-// 5. Host-side push and PR — keeps GitHub auth out of the sandbox.
-if (result.commits.length > 0) {
-  sh(`git push origin ${branch}`);
-  sh(`gh pr create --head ${branch} --title "Fix #${issue}" --body "Closes #${issue}"`);
-}
+```markdown
+---
+name: Worker                   # required
+cron: every 4 hours            # required: cron expression or phrase
+description: Implements issues # optional, shown in `templates ls`
+model: opus                    # optional: claude --model
+permission_mode: auto          # optional (default auto): auto, acceptEdits, bypassPermissions, ...
+base: main                     # optional: branch to start from (default: origin's default branch)
+timeout: 3h                    # optional (default 2h)
+tag: WK                        # optional TUI tag
+tag_color: "#f38ba8"           # optional
+---
+The prompt. Everything after the front matter is sent to Claude as the task.
 ```
 
-### Two patterns for the host/sandbox split
+`auto` is the default permission mode: the agent runs without prompting and risky actions are checked by Claude Code's classifier. Use `bypassPermissions` only on a machine where that is acceptable.
 
-- **PR agents** (e.g. `worker-agent`): the agent works on a fresh branch inside the sandbox and opens the PR from there. The sandbox needs `GH_TOKEN` (passed via `agentSandboxConfig()`) so it can run `gh pr create`.
-- **Issue-only agents** (e.g. `audit-agents`): the agent calls `gh issue create` directly inside the sandbox. The container needs `GH_TOKEN`, supplied via `docker({ env: { GH_TOKEN: process.env.GH_TOKEN ?? "" } })`.
+## context.md
 
-## Concurrency
+Per-repo notes added to every job's prompt: what the project is, how to install, build and test it, what to focus on, what never to touch, and for forks which upstream to sync from. Short and concrete beats long.
 
-Sandcastle's `branchStrategy: { type: "branch", branch }` creates a separate `git worktree` on every call. Two cron firings of the same agent at overlapping times get separate working directories and separate branches, as long as the branch names are unique. The bundled templates use `Date.now()` in the branch name to guarantee uniqueness.
+## Bundled jobs and labels
 
-For agents that don't push branches (issue-only), `branchStrategy: { type: "merge-to-head" }` lets sandcastle invent a unique temp branch per run; you never pick the name yourself.
+| Job | Output |
+|---|---|
+| `audit` | Up to 3 issues labeled `lazycron` + a kind (`security`, `bug`, `performance`, `tech-debt`); skips when 8 are open |
+| `improve` | One PR labeled `lazycron:improve` at a time |
+| `deps` | One PR from `lazycron/deps`, refreshed each run |
+| `worker` | PR closing the issue it took; `lazycron:ready` issues go first, claimed with `lazycron:taken`, `lazycron:blocked` when it needs you |
+| `upstream-sync` | PR from `lazycron/sync-upstream` for forks; stands down when the repo isn't a fork |
 
-## Project Layout (after init + apply)
+Label an issue `lazycron:ready` to hand it to the worker; remove `lazycron:blocked` to let it try again.
 
-```
-my-repo/
-├── .lazycron/
-│   └── config.yaml          # name: my-repo
-├── .sandcastle/
-│   ├── Dockerfile           # built by `npx @ai-hero/sandcastle docker build-image`
-│   ├── .env                 # ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN, …
-│   ├── .env.example
-│   ├── lib/
-│   │   └── ensureRepo.ts    # bundled by `lazycron init --with-agents`
-│   └── jobs/
-│       ├── audit-agents.ts
-│       └── worker-agent.ts
-└── …rest of your repo
+## Watching and taking over
+
+```sh
+hc ls                          # live terminals, agents included (agent-<job>-<time>)
+hc attach agent-worker-1107040000   # watch or type; ctrl+\ detaches
+lazycron runs my-repo-worker   # run history; a blocked run says which terminal to attach to
+lazycron logs my-repo-worker -o
 ```
 
-After `lazycron sync --server X`, the same layout (minus your source code) lives at `~/.lazycron/projects/<name>/` on the remote machine. The repo cache (where `ensureRepo` clones to) lives at `~/.lazycron-cache/repos/<name>/` and is **not** synced — it's created on first run.
+herdr-app shows the same terminals.
 
-## Watching and steering agent runs
+## Running one now
 
-Agent jobs installed by `sync` follow the machine's default runner. With the
-herdr runner (`lazycron setup`, see [herdr.md](herdr.md)) every firing runs in
-a herdr-core terminal: watch it live, answer a blocked agent with
-`lazycron attach <run>` (or from herdr-app's "Cron" space), and read it after
-the fact even if it finished at night. Without herdr-core they run as plain
-cron jobs.
-
-## Agents managing lazycron
-
-Agents (Claude Code and others) can drive lazycron itself through the CLI: it
-prints JSON when piped, reports errors as `{"error":{kind,message,hint}}` with
-stable exit codes, and every change is idempotent with `--dry-run`. Give an
-agent `lazycron agent-help`, or install it as a Claude Code skill with
-`lazycron skill install`. Typical loop:
-
-```bash
-lazycron apply jobs.yml --dry-run && lazycron apply jobs.yml
-run=$(lazycron run nightly-report --no-wait | jq -r .id)
-lazycron wait "$run" --timeout 30m || lazycron logs "$run"
+```sh
+lazycron agent .lazycron/jobs/audit.md --dry-run   # resolve repo/base/worktree, print the full prompt
+lazycron agent .lazycron/jobs/audit.md             # start it and wait
+lazycron run my-repo-audit                         # the synced cron job, through the lazycron runner
 ```
 
-See [cli.md](cli.md) for the full reference.
+## Writing your own
 
-## Caveats
-
-- **`lazycron pull` is one-way for sandcastle jobs.** The metadata parser cannot reverse a TS file from a crontab line, so `pull` writes read-only `.lazycron/_pulled/<id>.crontab` stubs for inspection — not source files.
-- **Docker layer cache lives on the target.** First sync to a fresh remote takes minutes; later syncs are seconds.
-- **`.env` is synced by default.** If you have multiple environments (staging vs prod) with different secrets, use `--no-env` and ssh in to manage env files server-side.
-- **Single project per repo.** The project name is derived once and used for the remote dir + repo cache. Multiple projects in one repo is not supported in v1.
+Copy a bundled job and change the prompt. Keep it to one outcome per run, say where results go (an issue, a PR branch name, a label), and say when to stand down so idle runs are cheap.

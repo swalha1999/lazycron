@@ -9,19 +9,18 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/swalha1999/lazycron/agent"
 	"github.com/swalha1999/lazycron/cron"
-	"github.com/swalha1999/lazycron/template"
 )
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync sandcastle agent jobs to crontab and (optionally) a remote machine",
-	Long: "Reads .sandcastle/jobs/*.ts in the current directory, derives cron entries " +
-		"from each file's `export const cron`/`export const name` metadata, and installs " +
-		"them on the local crontab or — with --server — on a remote machine. When --server " +
-		"is set, also tars and ships .lazycron/ and .sandcastle/ to the remote, builds the " +
-		"sandcastle Docker image there, and rewrites each job's command to run inside the " +
-		"project's remote directory.",
+	Short: "Install .lazycron/jobs/*.md agent jobs into the crontab (local or a server)",
+	Long: "Reads .lazycron/jobs/*.md in the current directory and installs one cron entry per job, " +
+		"from each file's `name`/`cron` front matter. Each entry runs `lazycron agent <job>`, which " +
+		"starts a real Claude Code session in a herdr terminal on that machine. With --server, also " +
+		"ships .lazycron/ to ~/.lazycron/projects/<project>/ there; the agent clones REPO_URL from " +
+		".lazycron/.env because the server has no checkout.",
 	RunE: runSync,
 }
 
@@ -29,19 +28,15 @@ var (
 	syncProject     string
 	syncNoEnv       bool
 	syncNoFiles     bool
-	syncNoBuild     bool
-	syncNoInstall   bool
 	syncSkipDepsChk bool
 )
 
 func init() {
 	syncCmd.Flags().StringVarP(&globalServer, "server", "s", "", "target server name from config")
 	syncCmd.Flags().StringVar(&syncProject, "project", "", "project name (overrides .lazycron/config.yaml; defaults to cwd basename)")
-	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env or .sandcastle/.env to the remote")
-	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ or .sandcastle/ files (crontab only)")
-	syncCmd.Flags().BoolVar(&syncNoBuild, "no-build", false, "do NOT run `npx @ai-hero/sandcastle docker build-image` after transferring files")
-	syncCmd.Flags().BoolVar(&syncNoInstall, "no-install", false, "do NOT run `npm install --prefix .sandcastle` before building the image")
-	syncCmd.Flags().BoolVar(&syncSkipDepsChk, "skip-deps-check", false, "skip the docker/node/npx presence check on the target")
+	syncCmd.Flags().BoolVar(&syncNoEnv, "no-env", false, "do NOT sync .lazycron/.env to the remote")
+	syncCmd.Flags().BoolVar(&syncNoFiles, "no-files", false, "do NOT transfer .lazycron/ files (crontab only)")
+	syncCmd.Flags().BoolVar(&syncSkipDepsChk, "skip-deps-check", false, "skip the claude/git/gh/herdr-core presence check on the target")
 	rootCmd.AddCommand(syncCmd)
 }
 
@@ -55,14 +50,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	defer sctx.Backend.Close()
 
-	// Ensure .sandcastle/.env has PROJECT_NAME. The agent reads this to align
-	// its cache dir (~/.lazycron-cache/repos/<name>) and sandcastle Docker image
-	// tag with the lazycron project — missing it lands on a hard-coded default
-	// and silently runs the wrong cached repo / image.
-	if err := ensureSandcastleEnvProjectName(sctx.SandcastleDir, sctx.ProjectName); err != nil {
-		return fmt.Errorf("update .sandcastle/.env: %w", err)
-	}
-
 	// Deps check on the target (where cron will fire).
 	if !syncSkipDepsChk {
 		missing, err := sctx.Backend.CheckAgentDeps()
@@ -75,9 +62,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 				target = globalServer
 			}
 			return fmt.Errorf(
-				"sandcastle agents need {docker, node, npx} on %s but the following are missing: %s. "+
-					"Install Docker (https://docker.com) and Node 20+ (https://nodejs.org). "+
-					"Use --skip-deps-check to override.",
+				"agents need {claude, git, gh, herdr-core} on %s but these are missing: %s. "+
+					"Install them (and run `lazycron setup` for herdr-core), or use --skip-deps-check.",
 				target, strings.Join(missing, ", "),
 			)
 		}
@@ -85,40 +71,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Transfer files (only if remote and --no-files not set).
 	if globalServer != "" && !syncNoFiles {
-		excludesLazycron := []string{}
-		excludesSandcastle := []string{"./node_modules", "./logs"}
+		var excludes []string
 		if syncNoEnv {
-			excludesLazycron = append(excludesLazycron, "./.env")
-			excludesSandcastle = append(excludesSandcastle, "./.env")
+			excludes = append(excludes, "./.env")
 		}
-
-		if _, err := os.Stat(sctx.LazycronDir); err == nil {
-			fmt.Fprintf(humanOut, "Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", globalServer, sctx.ProjectName)
-			if err := sctx.Backend.CopyProjectFiles(sctx.LazycronDir, sctx.ProjectName+"/.lazycron", excludesLazycron); err != nil {
-				return fmt.Errorf("copy .lazycron/: %w", err)
-			}
-		}
-		fmt.Fprintf(humanOut, "Transferring .sandcastle/ to %s:~/.lazycron/projects/%s/.sandcastle/\n", globalServer, sctx.ProjectName)
-		if err := sctx.Backend.CopyProjectFiles(sctx.SandcastleDir, sctx.ProjectName+"/.sandcastle", excludesSandcastle); err != nil {
-			return fmt.Errorf("copy .sandcastle/: %w", err)
-		}
-	}
-
-	// Install .sandcastle/ npm deps (sandcastle + tsx). Cron commands invoke
-	// .sandcastle/node_modules/.bin/tsx directly, so this must complete
-	// before any cron firing.
-	if !syncNoInstall {
-		fmt.Fprintln(humanOut, "Installing .sandcastle/ dependencies (npm install)...")
-		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npm install --prefix .sandcastle --no-audit --no-fund --silent", humanOut, humanOut); err != nil {
-			return fmt.Errorf("npm install in .sandcastle/: %w", err)
-		}
-	}
-
-	// Build the sandcastle image (cheap when layers cached; explicit so cron firings can't fail on missing image).
-	if !syncNoBuild {
-		fmt.Fprintln(humanOut, "Building sandcastle image...")
-		if err := sctx.Backend.RunInProject(sctx.ProjectName, "npx -y @ai-hero/sandcastle@0.5.7 docker build-image", humanOut, humanOut); err != nil {
-			return fmt.Errorf("build sandcastle image: %w", err)
+		fmt.Fprintf(humanOut, "Transferring .lazycron/ to %s:~/.lazycron/projects/%s/.lazycron/\n", globalServer, sctx.ProjectName)
+		if err := sctx.Backend.CopyProjectFiles(sctx.LazycronDir, sctx.ProjectName+"/"+agentsDirName, excludes); err != nil {
+			return fmt.Errorf("copy .lazycron/: %w", err)
 		}
 	}
 
@@ -137,12 +96,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// readSandcastleJobs walks .sandcastle/jobs/*.ts, parses metadata from each
-// file, and returns one cron.Job per file. Files that fail to parse are
-// reported with their filenames and stop the sync (better than silently
-// shipping a partial set).
-func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
-	files, err := filepath.Glob(filepath.Join(jobsDir, "*.ts"))
+// agentCommand is the crontab command for one job. $HOME expands when the job
+// runs, so the same line works locally and on a server.
+func agentCommand(bareID, projectName string) string {
+	return fmt.Sprintf(`"$HOME/.lazycron/bin/lazycron" agent %s/jobs/%s.md --project %s`,
+		agentsDirName, bareID, cron.ShellQuote(projectName))
+}
+
+// readAgentJobs walks .lazycron/jobs/*.md, parses each job's front matter,
+// and returns one cron.Job per file. Files that fail to parse are reported
+// with their filenames and stop the sync (better than silently shipping a
+// partial set).
+func readAgentJobs(jobsDir, projectName string) ([]cron.Job, error) {
+	files, err := filepath.Glob(filepath.Join(jobsDir, "*.md"))
 	if err != nil {
 		return nil, err
 	}
@@ -150,28 +116,28 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 
 	var jobs []cron.Job
 	for _, f := range files {
-		bareID := strings.TrimSuffix(filepath.Base(f), ".ts")
+		bareID := strings.TrimSuffix(filepath.Base(f), ".md")
 		if err := cron.ValidateID(bareID); err != nil {
-			return nil, fmt.Errorf("invalid sandcastle job filename %s: %w", filepath.Base(f), err)
+			return nil, fmt.Errorf("invalid agent job filename %s: %w", filepath.Base(f), err)
 		}
 
 		data, err := os.ReadFile(f)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", filepath.Base(f), err)
 		}
-		meta, err := template.ParseSandcastleMeta(data)
+		job, err := agent.ParseJob(data)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", filepath.Base(f), err)
 		}
 
-		cronExpr := cron.HumanToCron(meta.Cron)
+		cronExpr := cron.HumanToCron(job.Cron)
 		if err := cron.ValidateCron(cronExpr); err != nil {
-			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), meta.Cron, err)
+			return nil, fmt.Errorf("%s: invalid schedule %q: %w", filepath.Base(f), job.Cron, err)
 		}
 
 		// Namespace the ID by project so two repos with the same filename
-		// (e.g. both have a worker-agent.ts) don't share a script path or
-		// crontab entry on a shared remote.
+		// (e.g. both have a worker.md) don't share a script path or crontab
+		// entry on a shared machine.
 		id := cron.ScopedID(projectName, bareID)
 		if err := cron.ValidateID(id); err != nil {
 			return nil, fmt.Errorf("scoped job ID %q invalid (project=%q, file=%s): %w", id, projectName, filepath.Base(f), err)
@@ -179,58 +145,17 @@ func readSandcastleJobs(jobsDir, projectName string) ([]cron.Job, error) {
 
 		jobs = append(jobs, cron.Job{
 			ID:       id,
-			Name:     meta.Name,
+			Name:     job.Name,
 			Schedule: cronExpr,
-			Command:  fmt.Sprintf(".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/%s.ts", bareID),
+			Command:  agentCommand(bareID, projectName),
 			Enabled:  true,
 			Wrapped:  true,
-			Tag:      meta.Tag,
-			TagColor: meta.TagColor,
+			Tag:      job.Tag,
+			TagColor: job.TagColor,
 			Project:  projectName,
 		})
 	}
 	return jobs, nil
-}
-
-// ensureSandcastleEnvProjectName makes sure .sandcastle/.env contains a
-// PROJECT_NAME entry pointing at projectName. Existing values are left
-// untouched; a missing key (or missing file) is added. Idempotent.
-func ensureSandcastleEnvProjectName(sandcastleDir, projectName string) error {
-	if projectName == "" {
-		return nil
-	}
-	envPath := filepath.Join(sandcastleDir, ".env")
-	data, err := os.ReadFile(envPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "PROJECT_NAME=") {
-			return nil
-		}
-	}
-
-	if err := os.MkdirAll(sandcastleDir, 0o755); err != nil {
-		return err
-	}
-
-	prefix := ""
-	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
-		prefix = "\n"
-	}
-	addition := prefix + "PROJECT_NAME=" + projectName + "\n"
-	f, err := os.OpenFile(envPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.WriteString(addition); err != nil {
-		return err
-	}
-	fmt.Fprintf(humanOut, "Added PROJECT_NAME=%s to %s\n", projectName, filepath.Join(".sandcastle", ".env"))
-	return nil
 }
 
 // mergeJobs merges incoming jobs into existing jobs by ID.

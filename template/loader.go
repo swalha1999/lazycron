@@ -51,17 +51,17 @@ func loadFromEmbedDir(base string, entries []os.DirEntry) ([]Template, error) {
 				continue
 			}
 			templates = append(templates, *t)
-		case ".ts":
+		case ".md":
 			data, err := builtin.FS.ReadFile(path)
 			if err != nil {
 				continue
 			}
-			filename := strings.TrimSuffix(entry.Name(), ".ts")
-			t, err := ParseSandcastleTS(data, filename)
+			filename := strings.TrimSuffix(entry.Name(), ".md")
+			t, err := ParseAgent(data, filename)
 			if err != nil {
 				continue
 			}
-			t.SandcastleSource = path
+			t.Source = path
 			templates = append(templates, *t)
 		}
 	}

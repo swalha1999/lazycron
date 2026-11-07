@@ -23,19 +23,6 @@ func chdirTemp(t *testing.T) string {
 	return dir
 }
 
-// stubInit replaces scaffoldSandcastleConfig + writeEnsureRepoLib for tests, restoring on cleanup.
-func stubInit(t *testing.T, scaffold func(string, string) error, write func(string) error) {
-	t.Helper()
-	origScaffold := scaffoldSandcastleConfig
-	origWrite := writeEnsureRepoLib
-	scaffoldSandcastleConfig = scaffold
-	writeEnsureRepoLib = write
-	t.Cleanup(func() {
-		scaffoldSandcastleConfig = origScaffold
-		writeEnsureRepoLib = origWrite
-	})
-}
-
 func resetInitFlags(t *testing.T) {
 	t.Helper()
 	prevAgents, prevName := initWithAgents, initName
@@ -45,7 +32,7 @@ func resetInitFlags(t *testing.T) {
 	})
 }
 
-func TestRunInit_AddsSandcastleToGitignore(t *testing.T) {
+func TestRunInit_AddsLazycronToGitignoreAndConfig(t *testing.T) {
 	dir := chdirTemp(t)
 	resetInitFlags(t)
 	initName = "my-proj"
@@ -58,12 +45,18 @@ func TestRunInit_AddsSandcastleToGitignore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gi), ".sandcastle") {
-		t.Errorf("expected .gitignore to include .sandcastle, got: %s", string(gi))
+	if !strings.Contains(string(gi), ".lazycron") {
+		t.Errorf("expected .gitignore to include .lazycron, got: %s", string(gi))
 	}
-
-	if _, err := os.Stat(filepath.Join(dir, ".lazycron")); !os.IsNotExist(err) {
-		t.Errorf("expected no .lazycron/ to be created, got err=%v", err)
+	cfg, err := os.ReadFile(filepath.Join(dir, ".lazycron", "config.yaml"))
+	if err != nil || !strings.Contains(string(cfg), "my-proj") {
+		t.Errorf("config.yaml = %q, %v; want it to name my-proj", cfg, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lazycron", "jobs")); !os.IsNotExist(err) {
+		t.Errorf("expected no jobs/ without --with-agents, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".sandcastle")); !os.IsNotExist(err) {
+		t.Errorf("init must not create .sandcastle/, got err=%v", err)
 	}
 }
 
@@ -79,65 +72,52 @@ func TestRunInit_IsIdempotent(t *testing.T) {
 	}
 
 	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if got := strings.Count(string(data), ".sandcastle"); got != 1 {
-		t.Errorf("expected .sandcastle to appear exactly once in .gitignore, got %d times", got)
+	if got := strings.Count(string(data), ".lazycron"); got != 1 {
+		t.Errorf("expected .lazycron to appear exactly once in .gitignore, got %d times", got)
 	}
 }
 
-func TestRunInit_WithAgents_StubbedHooks(t *testing.T) {
+func TestRunInit_WithAgents_WritesJobsAndKeepsEdits(t *testing.T) {
 	dir := chdirTemp(t)
 	resetInitFlags(t)
 	initWithAgents = true
-	initName = "agents-test"
-
-	scaffoldCalls := 0
-	writeCalls := 0
-	resolvedDir, _ := filepath.EvalSymlinks(dir)
-	stubInit(t,
-		func(cwd, projectName string) error {
-			scaffoldCalls++
-			if cwd != resolvedDir && cwd != dir {
-				t.Errorf("scaffold called with cwd %q, want %q (or %q)", cwd, resolvedDir, dir)
-			}
-			if projectName != "agents-test" {
-				t.Errorf("scaffold called with projectName %q, want %q", projectName, "agents-test")
-			}
-			return os.MkdirAll(filepath.Join(cwd, ".sandcastle"), 0o755)
-		},
-		func(cwd string) error {
-			writeCalls++
-			return os.MkdirAll(filepath.Join(cwd, ".sandcastle", "lib"), 0o755)
-		},
-	)
 
 	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
-	if scaffoldCalls != 1 {
-		t.Errorf("scaffoldSandcastleConfig calls = %d, want 1", scaffoldCalls)
+	for _, f := range []string{"audit.md", "improve.md", "deps.md", "worker.md", "upstream-sync.md"} {
+		if _, err := os.Stat(filepath.Join(dir, ".lazycron", "jobs", f)); err != nil {
+			t.Errorf("missing job %s: %v", f, err)
+		}
 	}
-	if writeCalls != 1 {
-		t.Errorf("writeEnsureRepoLib calls = %d, want 1", writeCalls)
+	if _, err := os.Stat(filepath.Join(dir, ".lazycron", "context.md")); err != nil {
+		t.Errorf("missing context.md: %v", err)
 	}
 
-	gi, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if !strings.Contains(string(gi), ".sandcastle") {
-		t.Errorf("expected .gitignore to include .sandcastle, got: %s", string(gi))
+	edited := filepath.Join(dir, ".lazycron", "jobs", "audit.md")
+	if err := os.WriteFile(edited, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runInit(nil, nil); err != nil {
+		t.Fatalf("second runInit: %v", err)
+	}
+	if got, _ := os.ReadFile(edited); string(got) != "mine" {
+		t.Errorf("re-running init overwrote an edited job: %q", got)
 	}
 }
 
 func TestAppendGitignore_Idempotent(t *testing.T) {
 	dir := chdirTemp(t)
 
-	if err := appendGitignore(dir, ".sandcastle"); err != nil {
+	if err := appendGitignore(dir, ".lazycron"); err != nil {
 		t.Fatal(err)
 	}
-	if err := appendGitignore(dir, ".sandcastle"); err != nil {
+	if err := appendGitignore(dir, ".lazycron"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if got := strings.Count(string(data), ".sandcastle"); got != 1 {
-		t.Errorf("expected .sandcastle to appear exactly once, got %d times", got)
+	if got := strings.Count(string(data), ".lazycron"); got != 1 {
+		t.Errorf("expected .lazycron to appear exactly once, got %d times", got)
 	}
 }
 
@@ -145,11 +125,11 @@ func TestAppendGitignore_AddsNewlineWhenNeeded(t *testing.T) {
 	dir := chdirTemp(t)
 	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules"), 0o644)
 
-	if err := appendGitignore(dir, ".sandcastle"); err != nil {
+	if err := appendGitignore(dir, ".lazycron"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	want := "node_modules\n.sandcastle\n"
+	want := "node_modules\n.lazycron\n"
 	if string(data) != want {
 		t.Errorf("got %q, want %q", string(data), want)
 	}

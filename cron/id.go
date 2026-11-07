@@ -22,7 +22,7 @@ func GenerateID() string {
 // projects' agents (with the same source filename) from colliding when
 // they're synced to the same target — without this, both write to the
 // same script path and crontab entry, silently clobbering each other.
-// Falls back to bareID when project is empty so non-sandcastle jobs
+// Falls back to bareID when project is empty so non-agent jobs
 // (TUI-created, random-hex IDs) keep their existing identity.
 func ScopedID(project, bareID string) string {
 	if project == "" {

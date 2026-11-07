@@ -64,7 +64,7 @@ func TestWriteJobStub_BasicJob(t *testing.T) {
 		ID:       "fix-agent",
 		Name:     "Fix Agent",
 		Schedule: "0 9 * * 1-5",
-		Command:  "cd ~/.lazycron/projects/lazycron && .sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/fix-agent.ts",
+		Command:  "cd ~/.lazycron/projects/lazycron && \"$HOME/.lazycron/bin/lazycron\" agent .lazycron/jobs/fix-agent.md --project lazycron",
 		Enabled:  true,
 		Project:  "lazycron",
 		Tag:      "BP",
@@ -88,7 +88,7 @@ func TestWriteJobStub_BasicJob(t *testing.T) {
 		"# project: lazycron",
 		"# project_dir: ~/.lazycron/projects/lazycron",
 		"# tag: BP",
-		".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/fix-agent.ts",
+		"\"$HOME/.lazycron/bin/lazycron\" agent .lazycron/jobs/fix-agent.md --project lazycron",
 	}
 	for _, s := range wantSubstrings {
 		if !strings.Contains(got, s) {
