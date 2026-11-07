@@ -1,0 +1,3 @@
+# local only: secrets and `lazycron pull` snapshots
+.env
+_pulled/

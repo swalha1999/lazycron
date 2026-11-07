@@ -1,0 +1,8 @@
+- What it is: lazycron, a Go CLI + TUI for cron jobs (like lazygit), with herdr-core terminal runs and scheduled Claude agents. Open source; real users install it with `curl -fsSL https://get.lazycron.com | sh`, so a bug can break other people's crontabs.
+- Install deps: `go mod download` (Go version from go.mod).
+- Checks (what CI runs, all must pass): `go build ./...`, `go vet ./...`, `go test -race -timeout 5m ./...`.
+- Format only the files you change with `gofmt -w <file>`. Some existing files are not gofmt-clean; don't reformat them.
+- Follow CLAUDE.md (clean, DRY, one responsibility per file, short functions).
+- Focus on: anything that could corrupt or lose a user's crontab (parsing, writing, migrations of old line formats), remote/SSH safety, the agent runner (`agent/`, `cmd/agent.go`), and docs that disagree with the code.
+- Tests: add or update tests with every behaviour change. `e2e/` and `internal/fakehc` fake herdr-core; tests must never touch the real crontab or real hc.
+- Never touch: `.github/workflows/release.yml`, `install.sh` behaviour, git tags or releases. Never run `lazycron setup`, `lazycron sync` or `crontab` against this machine.
