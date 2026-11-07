@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,9 +20,9 @@ var (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a lazycron project (.lazycron/ + .gitignore)",
-	Long: "Adds .lazycron to .gitignore in the current directory and records the project name in " +
-		".lazycron/config.yaml. With --with-agents, also writes the built-in Claude agent jobs " +
+	Short: "Initialize a lazycron project in .lazycron/ (meant to be committed)",
+	Long: "Records the project name in .lazycron/config.yaml and writes .lazycron/.gitignore so " +
+		"only local files (.env, _pulled/) stay out of git; commit the rest. With --with-agents, also writes the built-in Claude agent jobs " +
 		"(audit, improve, deps, worker, upstream sync) to .lazycron/jobs/*.md, ready for `lazycron sync`. " +
 		"Agents run locally as real Claude Code sessions in herdr terminals.",
 	RunE: runInit,
@@ -46,8 +45,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		name = filepath.Base(cwd)
 	}
 
-	if err := appendGitignore(cwd, agentsDirName); err != nil {
-		return fmt.Errorf("update .gitignore: %w", err)
+	if err := writeIfMissing(filepath.Join(cwd, agentsDirName, ".gitignore"), lazycronGitignore); err != nil {
+		return fmt.Errorf("write .lazycron/.gitignore: %w", err)
 	}
 	if err := ensureProjectConfig(cwd, name); err != nil {
 		return err
@@ -99,6 +98,10 @@ func scaffoldAgents(cwd string) error {
 	return writeIfMissing(filepath.Join(cwd, agentsDirName, "context.md"), contextTemplate(detectRepoURL(cwd)))
 }
 
+// lazycronGitignore keeps machine-local files out of git; jobs, context.md
+// and config.yaml are meant to be committed with the repo.
+const lazycronGitignore = "# local only: secrets and `lazycron pull` snapshots\n.env\n_pulled/\n"
+
 // contextTemplate is the starter context.md: notes every agent run gets.
 func contextTemplate(repoURL string) string {
 	var b strings.Builder
@@ -137,34 +140,6 @@ func detectRepoURL(cwd string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// appendGitignore adds line to .gitignore if not already present, creating the
-// file if missing. Idempotent.
-func appendGitignore(cwd, line string) error {
-	path := filepath.Join(cwd, ".gitignore")
-	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-
-	for _, l := range strings.Split(string(existing), "\n") {
-		if strings.TrimSpace(l) == line {
-			return nil
-		}
-	}
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	prefix := ""
-	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
-		prefix = "\n"
-	}
-	_, err = f.WriteString(prefix + line + "\n")
-	return err
 }
 
 func isInteractive() bool {

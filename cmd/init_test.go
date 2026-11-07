@@ -32,7 +32,7 @@ func resetInitFlags(t *testing.T) {
 	})
 }
 
-func TestRunInit_AddsLazycronToGitignoreAndConfig(t *testing.T) {
+func TestRunInit_WritesConfigAndLocalGitignore(t *testing.T) {
 	dir := chdirTemp(t)
 	resetInitFlags(t)
 	initName = "my-proj"
@@ -41,12 +41,17 @@ func TestRunInit_AddsLazycronToGitignoreAndConfig(t *testing.T) {
 		t.Fatalf("runInit: %v", err)
 	}
 
-	gi, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if err != nil {
-		t.Fatalf("read .gitignore: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf("init must not touch the repo's .gitignore (.lazycron/ is committed), got err=%v", err)
 	}
-	if !strings.Contains(string(gi), ".lazycron") {
-		t.Errorf("expected .gitignore to include .lazycron, got: %s", string(gi))
+	gi, err := os.ReadFile(filepath.Join(dir, ".lazycron", ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .lazycron/.gitignore: %v", err)
+	}
+	for _, want := range []string{".env", "_pulled/"} {
+		if !strings.Contains(string(gi), want) {
+			t.Errorf(".lazycron/.gitignore should ignore %s, got: %s", want, gi)
+		}
 	}
 	cfg, err := os.ReadFile(filepath.Join(dir, ".lazycron", "config.yaml"))
 	if err != nil || !strings.Contains(string(cfg), "my-proj") {
@@ -71,9 +76,9 @@ func TestRunInit_IsIdempotent(t *testing.T) {
 		t.Fatalf("second runInit: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if got := strings.Count(string(data), ".lazycron"); got != 1 {
-		t.Errorf("expected .lazycron to appear exactly once in .gitignore, got %d times", got)
+	data, _ := os.ReadFile(filepath.Join(dir, ".lazycron", ".gitignore"))
+	if string(data) != lazycronGitignore {
+		t.Errorf(".lazycron/.gitignore changed on re-run: %q", data)
 	}
 }
 
@@ -103,34 +108,5 @@ func TestRunInit_WithAgents_WritesJobsAndKeepsEdits(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(edited); string(got) != "mine" {
 		t.Errorf("re-running init overwrote an edited job: %q", got)
-	}
-}
-
-func TestAppendGitignore_Idempotent(t *testing.T) {
-	dir := chdirTemp(t)
-
-	if err := appendGitignore(dir, ".lazycron"); err != nil {
-		t.Fatal(err)
-	}
-	if err := appendGitignore(dir, ".lazycron"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if got := strings.Count(string(data), ".lazycron"); got != 1 {
-		t.Errorf("expected .lazycron to appear exactly once, got %d times", got)
-	}
-}
-
-func TestAppendGitignore_AddsNewlineWhenNeeded(t *testing.T) {
-	dir := chdirTemp(t)
-	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("node_modules"), 0o644)
-
-	if err := appendGitignore(dir, ".lazycron"); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	want := "node_modules\n.lazycron\n"
-	if string(data) != want {
-		t.Errorf("got %q, want %q", string(data), want)
 	}
 }

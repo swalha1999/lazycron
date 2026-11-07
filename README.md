@@ -130,11 +130,12 @@ cd ~/code/my-repo
 lazycron init --with-agents
 ```
 
-This adds `.lazycron` to `.gitignore` and writes:
+This writes the following, meant to be committed with the repo (only `.env` and `_pulled/` are ignored, via `.lazycron/.gitignore`):
 
 ```
 my-repo/
 └── .lazycron/
+    ├── .gitignore         # .env, _pulled/
     ├── config.yaml        # project name
     ├── context.md         # notes every agent gets: how to build/test, focus, no-go areas
     └── jobs/

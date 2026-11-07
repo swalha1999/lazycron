@@ -95,7 +95,7 @@ the run id; they can `lazycron attach <run>` or open it in herdr-app.
 
 Scheduled agents are real interactive Claude Code sessions that run on this
 machine in a herdr terminal (no Docker). Each repo keeps its own in
-`.lazycron/` (gitignored by `init`):
+`.lazycron/`, committed with the repo (`init` ignores only `.env` and `_pulled/`):
 
 ```sh
 lazycron init --with-agents          # .lazycron/jobs/{audit,improve,deps,worker,upstream-sync}.md + context.md

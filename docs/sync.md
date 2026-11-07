@@ -73,4 +73,4 @@ and the first run clones it to `~/.lazycron/repos/<name>/`; later runs fetch.
 - **`lazycron diff`** previews crontab changes before sync writes them.
 - **Stagger schedules** across repos so agents don't all start at once.
 - **`lazycron run <id>`** fires a synced job now, through the same runner cron uses.
-- `.lazycron/` is gitignored by `init`; the jobs live with the repo on disk, not in its history.
+- **Commit `.lazycron/`** so job and prompt changes are reviewed like code. `init` writes `.lazycron/.gitignore` to keep `.env` and `_pulled/` out.
