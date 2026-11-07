@@ -91,7 +91,7 @@ func (d *doctor) lazycronLink() {
 		d.add("lazycron link", StatusOK, link+" -> "+out, "")
 		return
 	}
-	d.add("lazycron link", d.herdrProblem(), link+" is missing; herdr-mode lines fall back to plain runs", "run `lazycron setup`")
+	d.add("lazycron link", d.herdrProblem(), link+" is missing; herdr-mode jobs will not run", "run `lazycron setup`")
 }
 
 func (d *doctor) herdrCore(configured string) string {

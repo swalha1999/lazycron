@@ -16,7 +16,7 @@ var execCmd = &cobra.Command{
 	Long: "Runs a job's script through herdr-core (or plainly, as a fallback), writes " +
 		"the history entry and applies --once. Crontab lines in herdr mode call this. " +
 		"It prints nothing unless --json is given, so cron sends no mail. It exits non-zero " +
-		"only when it could not start the job; the crontab line then runs the job plainly.",
+		"only when it could not start the job.",
 	Args: cobra.ExactArgs(1),
 	RunE: runExec,
 }

@@ -67,7 +67,11 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read crontab: %w", err)
 	}
-	jobs := cron.Parse(output)
+	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return nil, err
+	}
+	jobs := cron.ParseIn(output, lcDir+"/scripts")
 
 	// Resolve script refs that couldn't be resolved locally (remote files).
 	// If resolution fails the Command field would otherwise stay as a script

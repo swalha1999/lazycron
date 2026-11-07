@@ -37,40 +37,61 @@ func LazycronBinPath() string {
 
 // The herdr exec line:
 //
-//	'<bin>' exec '<id>' --name '<name>' || { <record line>; }
+//	'<bin>' exec '<id>' --name '<name>' [--once]
 //
-// `lazycron exec` exits non-zero only when it could not start the job, so
-// the record line after || runs the job plainly (and records it) if the
-// lazycron binary is missing, crashes or rejects its arguments. A job never
-// silently does not run.
+// lazycron exec runs the job's script (~/.lazycron/scripts/<id>.sh) in herdr,
+// or plainly when herdr-core is unavailable, and records it. Lines written
+// before v0.16 appended ` || { <record line>; }` as a fallback for a missing
+// lazycron; they still parse, count as an old format, and `lazycron setup`
+// rewrites them.
 const (
-	execLineCall     = "' exec '"
-	execLineFallback = " || { "
-	execLineSuffix   = "; }"
+	execLineCall           = "' exec '"
+	legacyExecLineFallback = " || { "
+	legacyExecLineSuffix   = "; }"
 )
 
-// ExecLine wraps a plain record line so cron runs the job through
-// `lazycron exec`, falling back to the record line.
-func ExecLine(j Job, recordLine string) string {
+// ExecLine is the crontab command that runs j through `lazycron exec`.
+func ExecLine(j Job) string {
 	call := fmt.Sprintf("%s exec %s --name %s", ShellQuote(LazycronBinPath()), ShellQuote(j.ID), ShellQuote(j.Name))
 	if j.OneShot {
 		call += " --once"
 	}
-	return call + execLineFallback + recordLine + execLineSuffix
+	return call
 }
 
-// IsExecLine reports whether a raw crontab command is a herdr exec line.
+// IsExecLine reports whether a raw crontab command is a herdr exec line,
+// current or legacy.
 func IsExecLine(rawCommand string) bool {
-	call := strings.Index(rawCommand, execLineCall)
-	fallback := strings.Index(rawCommand, execLineFallback)
-	return strings.HasPrefix(rawCommand, "'") && call > 0 && fallback > call &&
-		strings.HasSuffix(rawCommand, execLineSuffix)
+	return strings.HasPrefix(rawCommand, "'") && strings.Index(rawCommand, execLineCall) > 0
 }
 
-// execLineRecord returns the record line inside an exec line.
+// isLegacyExecLine reports whether an exec line still carries the old
+// `|| { <record line>; }` fallback.
+func isLegacyExecLine(rawCommand string) bool {
+	fallback := strings.Index(rawCommand, legacyExecLineFallback)
+	return IsExecLine(rawCommand) && fallback > strings.Index(rawCommand, execLineCall) &&
+		strings.HasSuffix(rawCommand, legacyExecLineSuffix)
+}
+
+// execLineRecord returns the record line inside a legacy exec line.
 func execLineRecord(rawCommand string) string {
-	start := strings.Index(rawCommand, execLineFallback) + len(execLineFallback)
-	return rawCommand[start : len(rawCommand)-len(execLineSuffix)]
+	start := strings.Index(rawCommand, legacyExecLineFallback) + len(legacyExecLineFallback)
+	return rawCommand[start : len(rawCommand)-len(legacyExecLineSuffix)]
+}
+
+// execLineID returns the job id an exec line runs.
+func execLineID(rawCommand string) string {
+	rest := rawCommand[strings.Index(rawCommand, execLineCall)+len(execLineCall):]
+	if end := strings.Index(rest, "'"); end >= 0 {
+		return rest[:end]
+	}
+	return ""
+}
+
+// execLineCommand is the script reference a current exec line runs, with
+// the script in scriptsDir (which differs for servers and crontab files).
+func execLineCommand(rawCommand, scriptsDir string) string {
+	return "bash '" + filepath.Join(scriptsDir, execLineID(rawCommand)+".sh") + "'"
 }
 
 // runnerMarker tags a job's runner override in its name comment.

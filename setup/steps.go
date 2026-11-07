@@ -192,7 +192,7 @@ func (s *stepRunner) lazycronLink() {
 				s.add(name, StatusOK, link+" -> "+current, "")
 				return
 			}
-			s.add(name, StatusWarning, "lazycron is not installed on this host; herdr-mode lines fall back to plain runs",
+			s.add(name, StatusWarning, "lazycron is not installed on this host; herdr-mode jobs will not run",
 				"run `lazycron setup` again without --no-lazycron, or install it there")
 			return
 		}

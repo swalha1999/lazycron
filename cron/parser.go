@@ -60,7 +60,7 @@ func WrapWithRecordOnce(command, jobID, jobName string) string {
 // StripRecord removes the record wrapper from a raw crontab command,
 // returning the user's original command.
 func StripRecord(command string) string {
-	if IsExecLine(command) {
+	if isLegacyExecLine(command) {
 		return StripRecord(execLineRecord(command))
 	}
 
@@ -95,12 +95,23 @@ func StripRecord(command string) string {
 }
 
 // IsCurrentFormat reports whether a raw crontab command uses the current
-// record wrapper format (as opposed to a legacy or missing wrapper).
+// line format: a clean exec line, or the record wrapper for plain jobs.
+// Legacy exec lines (with the `||` fallback) and old wrappers are not.
 func IsCurrentFormat(rawCommand string) bool {
 	if IsExecLine(rawCommand) {
-		return IsCurrentFormat(execLineRecord(rawCommand))
+		return !isLegacyExecLine(rawCommand)
 	}
 	return strings.HasPrefix(rawCommand, wrapPrefix)
+}
+
+// jobCommand returns the job's command from a raw crontab command: the
+// script reference for exec lines (scripts live in scriptsDir), the user's
+// command for record-wrapped ones.
+func jobCommand(rawCommand, scriptsDir string) string {
+	if IsExecLine(rawCommand) && !isLegacyExecLine(rawCommand) {
+		return execLineCommand(rawCommand, scriptsDir)
+	}
+	return StripRecord(rawCommand)
 }
 
 // CrontabLine returns the crontab representation of a job,
@@ -138,15 +149,14 @@ func (j Job) CrontabLineFor(defaultRunner string) string {
 	// line directly, so the preamble's `2>/dev/null || true` cannot rescue
 	// a POSIX-mode parse abort. The run engine (runner package) runs
 	// scripts with bash for the same reason.
-	scriptCmd := "bash '" + ScriptPath(j.ID) + "'"
 	var wrapped string
-	if j.OneShot {
-		wrapped = WrapWithRecordOnce(scriptCmd, j.ID, j.Name)
-	} else {
-		wrapped = WrapWithRecord(scriptCmd, j.ID, j.Name)
-	}
-	if j.runnerWith(defaultRunner) == config.RunnerHerdr {
-		wrapped = ExecLine(j, wrapped)
+	switch {
+	case j.runnerWith(defaultRunner) == config.RunnerHerdr:
+		wrapped = ExecLine(j)
+	case j.OneShot:
+		wrapped = WrapWithRecordOnce("bash '"+ScriptPath(j.ID)+"'", j.ID, j.Name)
+	default:
+		wrapped = WrapWithRecord("bash '"+ScriptPath(j.ID)+"'", j.ID, j.Name)
 	}
 	if !j.Enabled {
 		fmt.Fprintf(&b, "#DISABLED %s %s", j.Schedule, wrapped)
@@ -158,6 +168,12 @@ func (j Job) CrontabLineFor(defaultRunner string) string {
 
 // Parse parses crontab -l output into a slice of Jobs.
 func Parse(output string) []Job {
+	return ParseIn(output, ScriptsDir())
+}
+
+// ParseIn is Parse for a crontab whose job scripts live in scriptsDir: a
+// server's ~/.lazycron/scripts, or the directory beside a crontab file.
+func ParseIn(output, scriptsDir string) []Job {
 	lines := strings.Split(output, "\n")
 	var jobs []Job
 	autoIndex := 1
@@ -195,7 +211,7 @@ func Parse(output string) []Job {
 					i++
 					continue
 				}
-				if job, ok := parseJobLine(jobLine, name); ok {
+				if job, ok := parseJobLine(jobLine, name, scriptsDir); ok {
 					job.ID = id
 					job.Tag = tag
 					job.TagColor = tagColor
@@ -211,7 +227,7 @@ func Parse(output string) []Job {
 		}
 
 		// Regular cron line or disabled line without a preceding name comment
-		if job, ok := parseJobLine(line, ""); ok {
+		if job, ok := parseJobLine(line, "", scriptsDir); ok {
 			if job.Name == "" {
 				job.Name = fmt.Sprintf("job-%d", autoIndex)
 				autoIndex++
@@ -313,7 +329,7 @@ func isNameComment(line string) bool {
 	return true
 }
 
-func parseJobLine(line, name string) (Job, bool) {
+func parseJobLine(line, name, scriptsDir string) (Job, bool) {
 	// Disabled job
 	if strings.HasPrefix(line, "#DISABLED ") {
 		rest := strings.TrimPrefix(line, "#DISABLED ")
@@ -324,7 +340,7 @@ func parseJobLine(line, name string) (Job, bool) {
 		return Job{
 			Name:     name,
 			Schedule: schedule,
-			Command:  resolveScript(StripRecord(rawCmd)),
+			Command:  resolveScript(jobCommand(rawCmd, scriptsDir)),
 			Enabled:  false,
 			Wrapped:  IsCurrentFormat(rawCmd),
 			ExecLine: IsExecLine(rawCmd),
@@ -344,7 +360,7 @@ func parseJobLine(line, name string) (Job, bool) {
 	return Job{
 		Name:     name,
 		Schedule: schedule,
-		Command:  resolveScript(StripRecord(rawCmd)),
+		Command:  resolveScript(jobCommand(rawCmd, scriptsDir)),
 		Enabled:  true,
 		Wrapped:  IsCurrentFormat(rawCmd),
 		ExecLine: IsExecLine(rawCmd),
