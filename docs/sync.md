@@ -1,130 +1,85 @@
-# Sync — Sandcastle Agents as Code
+# Sync — Agent Jobs as Code
 
-Lazycron `sync` reads sandcastle agent files from `.sandcastle/jobs/*.ts`, ships them (and `.lazycron/`) to your target machine, builds the sandcastle Docker image, and installs cron entries that run each agent on schedule. This makes scheduled AI agents version-controlled, code-reviewable, and deployable alongside your application — with sandbox isolation and per-run git worktrees so concurrent runs do not conflict.
+`lazycron sync` installs a repo's Claude agent jobs (`.lazycron/jobs/*.md`) into the crontab of this machine or a server. See [agents.md](agents.md) for what a run does.
 
 ## Quick Start
 
-1. Initialize the project:
-
 ```bash
-lazycron init --with-agents
+cd ~/code/my-repo
+lazycron init --with-agents      # .lazycron/{config.yaml,context.md,jobs/*.md}
+lazycron diff                    # what sync would change
+lazycron sync                    # install
+lazycron ls                      # my-repo-audit, my-repo-worker, ...
 ```
 
-This creates `.lazycron/config.yaml` (project metadata) and scaffolds `.sandcastle/` (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, and all bundled agent templates under `jobs/`). Defaults to a Claude Code + Docker + GitHub Issues setup — no interactive prompts.
-
-2. Apply an agent template:
+Add a single bundled job instead of all of them:
 
 ```bash
-lazycron templates apply worker-agent
-# Created .sandcastle/jobs/worker-agent.ts
-```
-
-The TS file declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions (e.g. `gh pr create`).
-
-3. Edit `.sandcastle/.env` to set `ANTHROPIC_API_KEY`, `REPO_URL`, and any agent-specific env vars.
-
-4. Sync:
-
-```bash
-lazycron sync                        # local crontab
-lazycron sync -s CronWorker          # remote server
+lazycron templates apply Worker
+# Created .lazycron/jobs/worker.md
 ```
 
 ## Sync Phases
 
-In order, every sync run does:
-
-1. **Resolve project name** from `--project` flag, then `.lazycron/config.yaml`, then the cwd basename.
-2. **Read TS jobs** from `.sandcastle/jobs/*.ts`. Each file's metadata (`export const cron`, `name`, optional `tag` and `tagColor`) becomes a cron entry. The command is auto-generated as `.sandcastle/node_modules/.bin/tsx .sandcastle/jobs/<name>.ts`.
-3. **Deps check** the target machine — refuses to continue if `docker`, `node`, or `npx` is missing. Override with `--skip-deps-check`.
-4. **Transfer files** (remote sync only): tar `.lazycron/` and `.sandcastle/` over SSH stdin into `~/.lazycron/projects/<name>/` on the remote. `.env` files are included by default; `--no-env` opts out.
-5. **Install npm deps** (`npm install --prefix .sandcastle`) on the target so `.sandcastle/node_modules/` contains the pinned `@ai-hero/sandcastle` and `tsx`. `--no-install` opts out.
-6. **Build the sandcastle image** (`npx @ai-hero/sandcastle docker build-image`) on the target. Cheap on rerun (Docker layer cache). `--no-build` opts out.
-7. **Inject `cd`**: each job's command is wrapped as `cd <project-dir> && .sandcastle/node_modules/.bin/tsx ...` so it runs inside the synced project directory. Local syncs `cd` into `cwd`; remote syncs `cd ~/.lazycron/projects/<name>/`.
-8. **Merge crontab**: existing entries with matching IDs are updated; non-agent entries (created via TUI or hand-written) are left untouched.
+1. **Resolve project name** from `--project`, then `.lazycron/config.yaml`, then the cwd basename.
+2. **Read jobs** from `.lazycron/jobs/*.md`. Each file's front matter (`name`, `cron`, optional `tag`/`tag_color`) becomes a cron entry whose command is `lazycron agent .lazycron/jobs/<id>.md --project <name>`. A file that doesn't parse stops the sync and names the file.
+3. **Deps check** on the target: `lazycron`, `claude`, `git`, `gh` and `herdr-core` must be installed (on PATH, or in `/usr/local/bin` or `~/.local/bin`). `--skip-deps-check` overrides.
+4. **Transfer files** (remote only): `.lazycron/` is copied to `~/.lazycron/projects/<name>/.lazycron/` on the server, `.env` included unless `--no-env`.
+5. **Inject `cd`**: each command runs from the project directory: the repo itself locally, `~/.lazycron/projects/<name>/` on a server.
+6. **Merge crontab**: entries with matching IDs are updated; everything else is left alone.
 
 ## Sync Targets
 
 ```bash
 lazycron sync                        # local crontab
 lazycron sync -s CronWorker          # remote (configured in ~/.lazycron/config.yml)
-lazycron sync --no-env               # skip .env transfer
-lazycron sync --no-files             # only update crontab; do not transfer
-lazycron sync --no-build             # do not build sandcastle image
-lazycron sync --skip-deps-check      # skip docker/node/npx check
-lazycron sync --project foo          # override project name
+lazycron sync --no-env               # don't ship .lazycron/.env
+lazycron sync --no-files             # only update the crontab
+lazycron sync --skip-deps-check      # skip the claude/git/gh/herdr-core check
+lazycron sync --project foo          # override the project name
 ```
 
 ## Sync Behavior
 
-Sync performs a **safe merge**:
+Sync is a **safe merge**:
 
 - **New job** (ID not in crontab) → added
 - **Existing job** (ID matches, fields changed) → updated
-- **Unchanged job** (ID matches, all fields identical) → skipped
-- **Jobs not in `.sandcastle/jobs/`** (created via TUI or hand-written) → left untouched
+- **Unchanged job** → skipped
+- **Jobs not from `.lazycron/jobs/`** (TUI, hand-written, other projects) → untouched
 
-Sync never deletes jobs. Running it twice with no `.ts` changes produces no crontab changes (idempotent).
-
-## TS Job Format
-
-Every file in `.sandcastle/jobs/*.ts` must declare two metadata exports as **double-quoted string literals**:
-
-```typescript
-export const cron = "0 9 * * 1-5";
-export const name = "Fix Agent";
-```
-
-Optional metadata:
-
-```typescript
-export const tag = "BP";
-export const tagColor = "#f38ba8";
-```
-
-The metadata parser is intentionally restrictive: only double-quoted literals are recognised. Backticks, single quotes, and computed expressions are not metadata. This keeps lazycron from executing user TS code at sync time.
-
-After the metadata, the file is regular TypeScript: imports, sandcastle.run(), post-run hooks, anything you like. Lazycron does not run the TS at sync time — it just reads the metadata.
+Sync never deletes jobs; remove a job you dropped with `lazycron rm <id>`. Running it twice with no changes changes nothing.
 
 ## Job IDs
 
-The filename (minus `.ts`) becomes the job's unique ID. Same rules as before:
+The file name minus `.md` is the job id, scoped by project (`worker.md` in project `my-repo` → `my-repo-worker`) so two repos can both have a `worker.md`.
 
 - **Allowed characters:** `a-z`, `0-9`, `-`, `_`
 - **Cannot** start or end with `-` or `_`
-- **Maximum length:** 64 characters
-- **Case:** lowercase only
+- **Maximum length:** 64 characters, project prefix included
 
-## Repo Provisioning at Run Time
-
-`lazycron sync` does **not** ship your source code — it ships `.lazycron/` and `.sandcastle/`. The agent's TS file is responsible for fetching the actual repo when it runs. Templates use the bundled `ensureRepo()` helper:
-
-```typescript
-import { ensureRepo } from "../lib/ensureRepo";
-
-const repoDir = ensureRepo({
-  url: process.env.REPO_URL!,
-  name: "myproject",
-  defaultBranch: "main",
-});
-process.chdir(repoDir);
-```
-
-`ensureRepo` clones once to `~/.lazycron-cache/repos/<name>/`, then `git fetch --prune && git reset --hard origin/main` on every run — so each run starts from a known-clean state, and concurrent runs share the cache. Sandcastle's `branchStrategy` creates a per-run worktree off this base.
-
-## Running Synced Jobs
-
-You can run any synced job immediately by its ID:
+## Preparing a Server
 
 ```bash
-lazycron run worker-agent
+lazycron server add --name box --host box.example --user me
+lazycron setup --server box          # herdr-core, lazycron, boot service, linger
 ```
+
+Cron on the server runs and records jobs through lazycron, so setup installs it globally there with the official installer (`curl -fsSL https://get.lazycron.com | sh`, into `/usr/local/bin`) when it's missing or older than yours, then links `~/.lazycron/bin/lazycron` to it. The installer needs write access to `/usr/local/bin` or passwordless sudo; otherwise run the one-liner on the server yourself and run setup again. `--no-lazycron` skips this. `claude` and `gh` (both logged in) you install on the server yourself.
+
+## Repo at Run Time
+
+Locally the project directory is the checkout, so the agent works on worktrees of your repo (fetched fresh from origin each run). On a server there is no checkout: put the clone URL in `.lazycron/.env`
+
+```
+REPO_URL=https://github.com/me/my-repo.git
+```
+
+and the first run clones it to `~/.lazycron/repos/<name>/`; later runs fetch.
 
 ## Tips
 
-- **Commit `.sandcastle/jobs/`** to your repository so agents are tracked alongside your code.
-- **Don't commit `.sandcastle/.env`** — `lazycron init --with-agents` adds it to `.gitignore`.
-- **Use `lazycron list`** after syncing to verify jobs look correct.
-- **One file per agent** — each `.ts` file defines exactly one cron job.
-- **Schedule offsets** — stagger agent times so concurrent docker builds don't fight (e.g. `0 6`, `0 7`, `0 8`).
 - **`lazycron diff`** previews crontab changes before sync writes them.
+- **Stagger schedules** across repos so agents don't all start at once.
+- **`lazycron run <id>`** fires a synced job now, through the same runner cron uses.
+- **Commit `.lazycron/`** so job and prompt changes are reviewed like code. `init` writes `.lazycron/.gitignore` to keep `.env` and `_pulled/` out.

@@ -28,15 +28,17 @@ var setupCmd = &cobra.Command{
 }
 
 var setupOpts struct {
-	noHerdr   bool
-	noService bool
-	noLinger  bool
-	runner    string
+	noHerdr    bool
+	noLazycron bool
+	noService  bool
+	noLinger   bool
+	runner     string
 }
 
 func init() {
 	f := setupCmd.Flags()
 	f.BoolVar(&setupOpts.noHerdr, "no-herdr", false, "do not install herdr-core (also LAZYCRON_NO_HERDR=1)")
+	f.BoolVar(&setupOpts.noLazycron, "no-lazycron", false, "with --server: do not install or update lazycron on the server")
 	f.BoolVar(&setupOpts.noService, "no-service", false, "do not install the boot service")
 	f.BoolVar(&setupOpts.noLinger, "no-linger", false, "do not enable systemd linger")
 	f.StringVar(&setupOpts.runner, "runner", "", "default runner to set: herdr (when herdr-core is ready) or plain")
@@ -72,6 +74,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			Service:      !setupOpts.noService,
 			Linger:       !setupOpts.noLinger,
 			LazycronPath: lazycronPath,
+
+			InstallLazycron: !setupOpts.noLazycron,
+			Version:         Version,
 		})
 		report := setupReport{Result: res, Server: serverLabel(), DryRun: dryRun}
 		report.Runner = chooseRunner(res.HerdrReady)

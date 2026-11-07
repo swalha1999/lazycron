@@ -50,7 +50,7 @@ it as a Claude Code skill (`~/.claude/skills/lazycron/SKILL.md`).
 | | `doctor` | exit 1 when a check failed |
 | Agents | `agent-help`, `skill show`, `skill install [--dir]` | |
 | Templates | `templates ls [-c category]`, `templates apply <name>` | |
-| Sandcastle | `init`, `sync`, `diff`, `pull` | see [sync.md](sync.md), [agents.md](agents.md) |
+| Claude agents | `init`, `agent`, `sync`, `diff`, `pull` | see [agents.md](agents.md), [sync.md](sync.md) |
 
 ## Jobs file
 

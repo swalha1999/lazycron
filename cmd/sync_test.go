@@ -9,20 +9,20 @@ import (
 	"github.com/swalha1999/lazycron/cron"
 )
 
-// --- readSandcastleJobs ---
+// --- readAgentJobs ---
 
-func TestReadSandcastleJobs_Valid(t *testing.T) {
+// agentJob returns a minimal agent job file with the given front matter lines.
+func agentJob(frontMatter string) string {
+	return "---\n" + frontMatter + "\n---\nDo the task.\n"
+}
+
+func TestReadAgentJobs_Valid(t *testing.T) {
 	dir := t.TempDir()
-	writeTS(t, dir, "fix-agent.ts", `export const cron = "0 9 * * 1-5";
-export const name = "Fix Agent";
-export const tag = "BP";
-export const tagColor = "#f38ba8";
-// rest of agent...
-`)
+	writeJobFile(t, dir, "fix-agent.md", agentJob("name: Fix Agent\ncron: \"0 9 * * 1-5\"\ntag: BP\ntag_color: \"#f38ba8\""))
 
-	jobs, err := readSandcastleJobs(dir, "myproject")
+	jobs, err := readAgentJobs(dir, "myproject")
 	if err != nil {
-		t.Fatalf("readSandcastleJobs: %v", err)
+		t.Fatalf("readAgentJobs: %v", err)
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("got %d jobs, want 1", len(jobs))
@@ -37,8 +37,9 @@ export const tagColor = "#f38ba8";
 	if j.Schedule != "0 9 * * 1-5" {
 		t.Errorf("Schedule = %q", j.Schedule)
 	}
-	if j.Command != ".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/fix-agent.ts" {
-		t.Errorf("Command = %q", j.Command)
+	want := `lazycron agent .lazycron/jobs/fix-agent.md --project 'myproject'`
+	if j.Command != want {
+		t.Errorf("Command = %q, want %q", j.Command, want)
 	}
 	if j.Project != "myproject" {
 		t.Errorf("Project = %q", j.Project)
@@ -48,16 +49,28 @@ export const tagColor = "#f38ba8";
 	}
 }
 
-func TestReadSandcastleJobs_MultipleSorted(t *testing.T) {
+func TestReadAgentJobs_HumanSchedule(t *testing.T) {
 	dir := t.TempDir()
-	writeTS(t, dir, "zebra.ts", `export const cron = "0 1 * * *";
-export const name = "Z";`)
-	writeTS(t, dir, "apple.ts", `export const cron = "0 2 * * *";
-export const name = "A";`)
+	writeJobFile(t, dir, "audit.md", agentJob("name: Audit\ncron: every sunday at 3am"))
 
-	jobs, err := readSandcastleJobs(dir, "p")
+	jobs, err := readAgentJobs(dir, "p")
 	if err != nil {
-		t.Fatalf("readSandcastleJobs: %v", err)
+		t.Fatalf("readAgentJobs: %v", err)
+	}
+	if jobs[0].Schedule != "0 3 * * 0" {
+		t.Errorf("Schedule = %q, want 0 3 * * 0", jobs[0].Schedule)
+	}
+}
+
+func TestReadAgentJobs_MultipleSortedAndIgnoresOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeJobFile(t, dir, "zebra.md", agentJob("name: Z\ncron: \"0 1 * * *\""))
+	writeJobFile(t, dir, "apple.md", agentJob("name: A\ncron: \"0 2 * * *\""))
+	writeJobFile(t, dir, "old.ts", `export const cron = "0 3 * * *";`)
+
+	jobs, err := readAgentJobs(dir, "p")
+	if err != nil {
+		t.Fatalf("readAgentJobs: %v", err)
 	}
 	if len(jobs) != 2 {
 		t.Fatalf("want 2 jobs, got %d", len(jobs))
@@ -67,67 +80,75 @@ export const name = "A";`)
 	}
 }
 
-func TestReadSandcastleJobs_MissingMetadataFails(t *testing.T) {
+func TestReadAgentJobs_MissingMetadataFails(t *testing.T) {
 	dir := t.TempDir()
-	writeTS(t, dir, "bad.ts", `// no exports here, just code
-console.log("hello");`)
+	writeJobFile(t, dir, "bad.md", "just a prompt, no front matter")
 
-	_, err := readSandcastleJobs(dir, "p")
+	_, err := readAgentJobs(dir, "p")
 	if err == nil {
-		t.Fatal("expected error for missing metadata, got nil")
+		t.Fatal("expected error for missing front matter, got nil")
 	}
-	if !strings.Contains(err.Error(), "bad.ts") {
+	if !strings.Contains(err.Error(), "bad.md") {
 		t.Errorf("error should reference filename, got: %v", err)
 	}
 }
 
-func TestReadSandcastleJobs_InvalidCronFails(t *testing.T) {
+func TestReadAgentJobs_InvalidCronFails(t *testing.T) {
 	dir := t.TempDir()
-	writeTS(t, dir, "broken-cron.ts", `export const cron = "not a cron expression";
-export const name = "Broken";`)
+	writeJobFile(t, dir, "broken-cron.md", agentJob("name: Broken\ncron: not a cron expression"))
 
-	_, err := readSandcastleJobs(dir, "p")
-	if err == nil {
+	if _, err := readAgentJobs(dir, "p"); err == nil {
 		t.Fatal("expected error for invalid cron, got nil")
 	}
 }
 
-func TestReadSandcastleJobs_EmptyDir(t *testing.T) {
-	dir := t.TempDir()
-	jobs, err := readSandcastleJobs(dir, "p")
+func TestReadAgentJobs_EmptyDir(t *testing.T) {
+	jobs, err := readAgentJobs(t.TempDir(), "p")
 	if err != nil {
-		t.Fatalf("readSandcastleJobs: %v", err)
+		t.Fatalf("readAgentJobs: %v", err)
 	}
 	if len(jobs) != 0 {
 		t.Errorf("expected 0 jobs, got %d", len(jobs))
 	}
 }
 
-// TestReadSandcastleJobs_CrossProjectScoping ensures two projects with
-// the same agent filename produce different IDs — the bug they had
-// before scoped IDs caused syncs from project B to silently overwrite
-// project A's entry on a shared remote.
-func TestReadSandcastleJobs_CrossProjectScoping(t *testing.T) {
-	dirA := t.TempDir()
-	dirB := t.TempDir()
-	writeTS(t, dirA, "worker-agent.ts", `export const cron = "0 9 * * 1-5";
-export const name = "Worker";`)
-	writeTS(t, dirB, "worker-agent.ts", `export const cron = "0 9 * * 1-5";
-export const name = "Worker";`)
+// TestReadAgentJobs_CrossProjectScoping ensures two projects with the same
+// job filename produce different IDs, so syncing project B never overwrites
+// project A's entry on a shared machine.
+func TestReadAgentJobs_CrossProjectScoping(t *testing.T) {
+	dirA, dirB := t.TempDir(), t.TempDir()
+	writeJobFile(t, dirA, "worker.md", agentJob("name: Worker\ncron: every 4 hours"))
+	writeJobFile(t, dirB, "worker.md", agentJob("name: Worker\ncron: every 4 hours"))
 
-	jobsA, err := readSandcastleJobs(dirA, "project-a")
+	jobsA, err := readAgentJobs(dirA, "project-a")
 	if err != nil {
-		t.Fatalf("readSandcastleJobs A: %v", err)
+		t.Fatalf("readAgentJobs A: %v", err)
 	}
-	jobsB, err := readSandcastleJobs(dirB, "project-b")
+	jobsB, err := readAgentJobs(dirB, "project-b")
 	if err != nil {
-		t.Fatalf("readSandcastleJobs B: %v", err)
+		t.Fatalf("readAgentJobs B: %v", err)
 	}
-	if jobsA[0].ID == jobsB[0].ID {
-		t.Errorf("project-scoped IDs collided: both = %q", jobsA[0].ID)
-	}
-	if jobsA[0].ID != "project-a-worker-agent" || jobsB[0].ID != "project-b-worker-agent" {
+	if jobsA[0].ID != "project-a-worker" || jobsB[0].ID != "project-b-worker" {
 		t.Errorf("unexpected scoped IDs: A=%q B=%q", jobsA[0].ID, jobsB[0].ID)
+	}
+}
+
+func TestLegacyDirHint(t *testing.T) {
+	dir := t.TempDir()
+	if legacyDirHint(dir) != "" {
+		t.Fatal("no hint expected without .sandcastle/")
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".sandcastle", "jobs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(legacyDirHint(dir), ".lazycron/jobs/") {
+		t.Errorf("expected a migration hint, got %q", legacyDirHint(dir))
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".lazycron", "jobs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if legacyDirHint(dir) != "" {
+		t.Error("no hint expected once .lazycron/jobs/ exists")
 	}
 }
 
@@ -248,7 +269,7 @@ func TestMergeJobs_MixedAddUpdateUnchanged(t *testing.T) {
 
 // --- helpers ---
 
-func writeTS(t *testing.T, dir, filename, content string) {
+func writeJobFile(t *testing.T, dir, filename, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
 		t.Fatal(err)

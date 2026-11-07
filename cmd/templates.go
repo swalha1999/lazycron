@@ -2,17 +2,16 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"github.com/swalha1999/lazycron/cron"
 	"github.com/swalha1999/lazycron/template"
-	"github.com/swalha1999/lazycron/template/builtin"
 )
 
 var templatesCmd = &cobra.Command{
@@ -114,54 +113,35 @@ func runTemplatesApply(cmd *cobra.Command, args []string) error {
 		return errNotFound("template %q not found", name).withHint("list templates with `lazycron templates ls`")
 	}
 
-	if tmpl.Type == template.TypeSandcastle {
-		if err := applySandcastleTemplate(tmpl); err != nil {
+	if tmpl.Type == template.TypeAgent {
+		if err := applyAgentTemplate(tmpl); err != nil {
 			return err
 		}
 		if wantJSON(cmd) {
-			return writeJSON(cmd.OutOrStdout(), map[string]any{"template": tmpl.Name, "file": filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts")})
+			return writeJSON(cmd.OutOrStdout(), map[string]any{"template": tmpl.Name, "file": agentJobPath(tmpl)})
 		}
 		return nil
 	}
 	return applyYAMLTemplate(tmpl)
 }
 
-// applySandcastleTemplate copies the embedded .ts file into
-// .sandcastle/jobs/<filename>.ts in the current directory. No variable
-// prompts; the .ts file reads what it needs from .sandcastle/.env at runtime.
-// Refuses if .sandcastle/ does not exist (the user hasn't run init yet).
-func applySandcastleTemplate(tmpl *template.Template) error {
+// applyAgentTemplate copies an agent job into .lazycron/jobs/ in the
+// current directory; `lazycron sync` then installs it.
+func applyAgentTemplate(tmpl *template.Template) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get cwd: %w", err)
 	}
-	sandcastleDir := filepath.Join(cwd, ".sandcastle")
-	if _, err := os.Stat(sandcastleDir); err != nil {
-		return fmt.Errorf("no .sandcastle/ directory found in %s — run `lazycron init --with-agents` first", cwd)
+	if hint := legacyDirHint(cwd); hint != "" {
+		return fmt.Errorf("%s", hint)
 	}
-
-	jobsDir := filepath.Join(sandcastleDir, "jobs")
-	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", jobsDir, err)
+	if err := writeAgentTemplate(cwd, tmpl); err != nil {
+		if errors.Is(err, errJobExists) {
+			return errConflict("%v", err).withHint("remove it first to re-apply the template")
+		}
+		return err
 	}
-
-	data, err := builtin.FS.ReadFile(tmpl.SandcastleSource)
-	if err != nil {
-		return fmt.Errorf("read embedded template: %w", err)
-	}
-
-	dest := filepath.Join(jobsDir, tmpl.Filename+".ts")
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("%s already exists; remove it first if you want to re-apply", dest)
-	}
-
-	if err := os.WriteFile(dest, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", dest, err)
-	}
-
-	fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "jobs", tmpl.Filename+".ts"))
-	fmt.Fprintf(humanOut, "Schedule: %s   Name: %s\n", tmpl.Schedule, tmpl.Name)
-	fmt.Fprintln(humanOut)
+	fmt.Fprintf(humanOut, "Schedule: %s   Name: %s\n\n", tmpl.Schedule, tmpl.Name)
 	fmt.Fprintln(humanOut, "Run `lazycron sync` to install the cron job.")
 	return nil
 }

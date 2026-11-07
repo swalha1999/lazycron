@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"io"
 	"os/exec"
 	"testing"
 	"time"
@@ -31,10 +30,7 @@ func (m *mockBackend) Close() error                                  { m.closed 
 func (m *mockBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error {
 	return nil
 }
-func (m *mockBackend) CheckAgentDeps() ([]string, error) { return nil, nil }
-func (m *mockBackend) RunInProject(projectName, command string, stdout, stderr io.Writer) error {
-	return nil
-}
+func (m *mockBackend) CheckAgentDeps() ([]string, error)             { return nil, nil }
 func (m *mockBackend) ProjectDir(projectName string) (string, error) { return "", nil }
 func (m *mockBackend) ExecJob(job cron.Job, req ExecRequest) (history.Entry, error) {
 	return history.Entry{}, nil

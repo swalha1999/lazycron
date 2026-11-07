@@ -119,92 +119,90 @@ lazycron templates apply "Claude Code Review"  # apply interactively
 
 You can also [create your own templates](docs/templates.md).
 
-## Sync — Sandcastle Agents as Code
+## Claude Agents
 
-Schedule sandboxed AI agents from your repo. Lazycron pairs with [sandcastle](https://github.com/mattpocock/sandcastle) to run Claude Code in Docker containers with per-run git worktrees, then ships everything to your target machine and installs cron entries.
+Schedule real Claude Code agents per repo. Each run is an interactive Claude Code session **on this machine**, in a herdr terminal you can watch live or take over, working in a fresh git worktree. No Docker, no sandbox image: the agent uses the machine's own `claude` login, `git`, `gh` and toolchains.
 
 ### Setup
 
 ```bash
+cd ~/code/my-repo
 lazycron init --with-agents
 ```
 
-This adds `.sandcastle` to `.gitignore` and scaffolds a `.sandcastle/` directory (Dockerfile, `.env.example`, `lib/ensureRepo.ts`, plus all bundled agent templates under `jobs/`). Defaults: Claude Code agent, Docker sandbox, GitHub Issues backlog. No prompts, no `npx sandcastle init` call.
+This writes the following, meant to be committed with the repo (only `.env` and `_pulled/` are ignored, via `.lazycron/.gitignore`):
 
-Apply an agent template:
-
-```bash
-lazycron templates apply worker-agent
-# Created .sandcastle/jobs/worker-agent.ts
+```
+my-repo/
+└── .lazycron/
+    ├── .gitignore         # .env, _pulled/
+    ├── config.yaml        # project name
+    ├── context.md         # notes every agent gets: how to build/test, focus, no-go areas
+    └── jobs/
+        ├── audit.md
+        ├── improve.md
+        ├── deps.md
+        ├── worker.md
+        └── upstream-sync.md
 ```
 
-Each `.sandcastle/jobs/*.ts` file is self-describing — it declares its cron schedule and name as `export const`s and contains the agent's prompt + post-run actions.
+Edit or delete jobs, fill in `context.md`, preview, then install:
+
+```bash
+lazycron agent .lazycron/jobs/audit.md --dry-run   # repo, worktree and the full prompt
+lazycron agent .lazycron/jobs/audit.md             # run it now and wait
+lazycron sync                                      # one cron entry per jobs/*.md
+```
 
 ### Bundled agents
 
-`init --with-agents` scaffolds these into `.sandcastle/jobs/`. Delete the ones you don't want before the first `sync`:
+| Job | Default schedule | What it does |
+|---|---|---|
+| `audit` | Sundays 3am | Files up to 3 verified issues (security, bugs, performance, debt), labeled `lazycron`; pauses at 8 open |
+| `improve` | Wednesdays 3am | One focused improvement as a PR (`lazycron:improve`), one open at a time |
+| `deps` | Daily 4am | CVE audit + patch/minor dependency bumps, checks run, one PR on `lazycron/deps` kept fresh |
+| `worker` | Every 4 hours | Takes the oldest `lazycron:ready` (you approved) then `lazycron` issue, claims it with `lazycron:taken`, opens a PR that closes it, or comments and marks it `lazycron:blocked` |
+| `upstream-sync` | Daily 5am | Forks only: merges upstream into a `lazycron/sync-upstream` PR, resolving conflicts while keeping fork changes |
 
-| Agent | What it does |
-|---|---|
-| `audit-agents` | Weekly cleanup scout — reads the codebase and files ONE high-impact cleanup issue (no code changes) |
-| `worker-agent` | Picks the lowest-numbered untaken open issue, claims it with `Taken`, implements it, opens a PR |
+`audit` fills the backlog, `worker` drains it. Agents never push to or merge the default branch; you review and merge.
 
-The two pair up: `audit-agents` fills the backlog, `worker-agent` drains it.
+### Job format
 
-### Custom agent patterns
+A job is Markdown: YAML front matter, then the prompt.
 
-The `ensureRepo` + Claude Code + Docker scaffold is general — write your own `.sandcastle/jobs/<name>.ts` for patterns beyond the bundled set:
+```markdown
+---
+name: Audit
+cron: every sunday at 3am      # cron expression or phrase
+model: opus                    # optional: claude --model
+permission_mode: auto          # optional (default auto): claude --permission-mode
+base: main                     # optional: default is origin's default branch
+timeout: 90m                   # optional (default 2h): the session is stopped after it
+tag: AU                        # optional, shown in the TUI
+---
+Audit this repository and file GitHub issues for ...
+```
 
-- **Dependency-watch agent** — track a critical dependency's releases and open issues for breaking changes.
-- **Cross-repo doc-sync agent** — keep a docs site or generated reference in step with code on a schedule.
+### How a run works
+
+`lazycron agent <job>` (what the cron entry calls) fetches origin, adds a worktree under `~/.lazycron/worktrees/<project>/`, and starts `claude` in a herdr terminal named `agent-<job>-<time>`, with the prompt plus `context.md`. It answers Claude's first-run prompts for that fresh folder (trust, permission mode) and follows the session with `hc wait`:
+
+- **done**: the terminal is closed and the worktree removed.
+- **blocked on a question**: the run fails, the terminal stays open and the worktree is kept. Attach with `hc attach <terminal>` or herdr-app and answer.
+- **error or timeout**: the session is stopped and the run fails.
 
 ### Sync
 
 ```bash
 lazycron sync                        # local crontab
 lazycron sync -s CronWorker          # remote server
-lazycron sync --no-env               # skip .env transfer
-lazycron sync --no-build             # skip docker build
-lazycron sync --skip-deps-check      # skip docker/node/npx check
+lazycron sync --no-env               # don't ship .lazycron/.env
+lazycron sync --skip-deps-check      # skip the claude/git/gh/herdr-core check
 ```
 
-`lazycron sync` checks docker/node/npx on the target, tars `.sandcastle/` over SSH, runs `npm install --prefix .sandcastle` to install pinned `@ai-hero/sandcastle` + `tsx`, then `npx @ai-hero/sandcastle docker build-image` on the target, and installs cron entries that `cd` into the synced project directory before launching each agent via the locally-installed `tsx`.
+Sync checks the target for `claude`, `git`, `gh` and `herdr-core`, and installs one cron entry per `.lazycron/jobs/*.md`. With `--server` it also copies `.lazycron/` to `~/.lazycron/projects/<project>/` there; set `REPO_URL` in `.lazycron/.env` so the agent can clone the repo on that machine.
 
-Sync is a **safe merge** — it only adds or updates jobs derived from `.sandcastle/jobs/*.ts`. Existing jobs created through the TUI are never deleted.
-
-Running sync again with no changes is idempotent:
-
-```
-$ lazycron sync
-Synced: 0 added, 0 updated, 2 unchanged
-```
-
-### TS Job Format
-
-Each `.sandcastle/jobs/*.ts` file declares two metadata exports as **double-quoted string literals**:
-
-```typescript
-export const cron = "0 9 * * 1-5";
-export const name = "Worker Agent";
-export const tag = "BP";          // optional
-export const tagColor = "#f38ba8"; // optional
-
-// rest of the file: imports, sandcastle.run, post-run hooks
-```
-
-Lazycron does **not** execute user TS at sync time — it only reads metadata. See [docs/agents.md](docs/agents.md) for the full agent lifecycle and [docs/sync.md](docs/sync.md) for the sync reference.
-
-### Project Layout
-
-```
-my-repo/
-└── .sandcastle/
-    ├── Dockerfile, .env, .env.example
-    ├── lib/ensureRepo.ts            # bundled helper for clone + fetch
-    └── jobs/
-        ├── audit-agents.ts
-        └── worker-agent.ts
-```
+Sync is a **safe merge**: it only adds or updates jobs derived from `.lazycron/jobs/*.md`. Jobs created through the TUI are never deleted. Running it again with no changes reports `0 added, 0 updated, N unchanged`. See [docs/agents.md](docs/agents.md) and [docs/sync.md](docs/sync.md).
 
 ## CLI
 
@@ -239,10 +237,11 @@ lazycron server ls | add | rm | test
 lazycron agent-help                      # one-read guide for agents
 lazycron skill install                   # install it as a Claude Code skill
 
-# sandcastle agents
+# Claude agents
 lazycron init [--with-agents]
+lazycron agent .lazycron/jobs/worker.md [--dry-run]
 lazycron sync [-s MyServer] | diff | pull
-lazycron templates ls | apply "worker-agent"
+lazycron templates ls | apply Worker
 ```
 
 Exit codes: `0` ok, `1` failure (including a failed run), `2` usage, `3` not found, `4` conflict, `5` unavailable, `6` timeout. See [docs/cli.md](docs/cli.md).
@@ -251,7 +250,8 @@ Exit codes: `0` ok, `1` failure (including a failed run), `2` usage, `3` not fou
 
 - macOS or Linux
 - `crontab` command available on PATH and a running cron daemon (`lazycron doctor` checks both)
-- Optional: [herdr-core](https://herdr.dev) 0.1.18+ for herdr runs
+- Optional: [herdr-core](https://herdr.dev) 0.1.18+ for herdr runs (required for Claude agents)
+- For Claude agents: [Claude Code](https://claude.com/claude-code) logged in, `git`, and `gh` logged in
 
 ## License
 

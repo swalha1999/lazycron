@@ -220,8 +220,8 @@ func TestStripProjectCd(t *testing.T) {
 	}{
 		{
 			name:        "tilde path",
-			input:       "cd ~/.lazycron/projects/foo && .sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/x.ts",
-			wantCmd:     ".sandcastle/node_modules/.bin/tsx --env-file-if-exists=.sandcastle/.env .sandcastle/jobs/x.ts",
+			input:       "cd ~/.lazycron/projects/foo && lazycron agent .lazycron/jobs/x.md --project foo",
+			wantCmd:     "lazycron agent .lazycron/jobs/x.md --project foo",
 			wantProject: "~/.lazycron/projects/foo",
 		},
 		{

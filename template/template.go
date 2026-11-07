@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/swalha1999/lazycron/agent"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,14 +60,14 @@ type Variable struct {
 }
 
 // TemplateType distinguishes how a template is applied.
-//   - TypeYAML: legacy/non-agent templates that write directly to crontab.
-//   - TypeSandcastle: agent templates (TS files) scaffolded into
-//     .sandcastle/jobs/ and installed by `lazycron sync`.
+//   - TypeYAML: plain job templates that write directly to crontab.
+//   - TypeAgent: Claude agent jobs (Markdown) copied into .lazycron/jobs/
+//     and installed by `lazycron sync`.
 type TemplateType string
 
 const (
-	TypeYAML       TemplateType = "yaml"
-	TypeSandcastle TemplateType = "sandcastle"
+	TypeYAML  TemplateType = "yaml"
+	TypeAgent TemplateType = "agent"
 )
 
 // Template represents a reusable cron job recipe.
@@ -84,12 +85,11 @@ type Template struct {
 	// Set by the loader from the source file extension; not user-authored.
 	Type TemplateType `yaml:"-"`
 
-	// SandcastleSource is the embedded path of the .ts file (for Type ==
-	// TypeSandcastle). Used by `templates apply` to read and copy the file.
-	SandcastleSource string `yaml:"-"`
+	// Source is the embedded path of an agent template's .md file. Used by
+	// `templates apply` and `init --with-agents` to copy it.
+	Source string `yaml:"-"`
 
-	// Filename is the basename (without extension) used for the scaffolded
-	// .ts file. Defaults to a slug of Name for sandcastle templates.
+	// Filename is the basename (without extension) of the agent job file.
 	Filename string `yaml:"-"`
 }
 
@@ -112,39 +112,23 @@ func Parse(data []byte) (*Template, error) {
 	return &t, nil
 }
 
-// ParseSandcastleTS builds a Template from a .ts file's metadata exports.
-// Description is populated from a leading `// description: ...` comment if
-// present. The Type is always TypeSandcastle.
-func ParseSandcastleTS(data []byte, filename string) (*Template, error) {
-	meta, err := ParseSandcastleMeta(data)
+// ParseAgent builds a Template from an agent job's front matter.
+func ParseAgent(data []byte, filename string) (*Template, error) {
+	job, err := agent.ParseJob(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse sandcastle template %s: %w", filename, err)
+		return nil, fmt.Errorf("parse agent template %s: %w", filename, err)
 	}
-	t := &Template{
-		Name:        meta.Name,
+	return &Template{
+		Name:        job.Name,
 		Category:    CategoryAI,
-		Description: extractTSDescription(data),
-		Schedule:    meta.Cron,
-		Command:     "npx tsx .sandcastle/jobs/" + filename + ".ts",
-		Tag:         meta.Tag,
-		TagColor:    meta.TagColor,
-		Type:        TypeSandcastle,
+		Description: job.Description,
+		Schedule:    job.Cron,
+		Command:     "lazycron agent .lazycron/jobs/" + filename + ".md",
+		Tag:         job.Tag,
+		TagColor:    job.TagColor,
+		Type:        TypeAgent,
 		Filename:    filename,
-	}
-	return t, nil
-}
-
-// extractTSDescription pulls a one-line description from a `// description: ...`
-// comment, if present in the first ~20 lines. Returns empty string otherwise.
-func extractTSDescription(data []byte) string {
-	lines := strings.SplitN(string(data), "\n", 21)
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "// description:") {
-			return strings.TrimSpace(strings.TrimPrefix(trimmed, "// description:"))
-		}
-	}
-	return ""
+	}, nil
 }
 
 // Apply substitutes variable values into the template's command and schedule,

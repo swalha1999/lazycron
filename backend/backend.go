@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"io"
 	"os/exec"
 
 	"github.com/swalha1999/lazycron/cron"
@@ -46,16 +45,8 @@ type Backend interface {
 	// On LocalBackend this is a no-op (the project already lives in cwd).
 	CopyProjectFiles(localDir, remoteSubpath string, excludes []string) error
 
-	// CheckAgentDeps reports which of {docker, node, npx} are missing on the
-	// target. An empty slice means all are present. err is non-nil only on
-	// transport failure (e.g. SSH down).
+	// CheckAgentDeps reports which of AgentDeps are missing on the target.
 	CheckAgentDeps() (missing []string, err error)
-
-	// RunInProject runs a shell command from within the project directory on
-	// the target. On LocalBackend this is exec.Command with Dir=cwd. On
-	// RemoteBackend it's `cd ~/.lazycron/projects/<name> && <cmd>`. Output
-	// is streamed to the caller-provided stdout/stderr writers.
-	RunInProject(projectName, command string, stdout, stderr io.Writer) error
 
 	// ProjectDir returns the absolute path to the project's working directory
 	// on the target — what cron entries `cd` into before invoking the agent.
@@ -65,3 +56,13 @@ type Backend interface {
 	// single-quoted and `~` does not expand inside single quotes).
 	ProjectDir(projectName string) (string, error)
 }
+
+// AgentDeps are the programs an agent job needs on the machine that runs it:
+// lazycron to run it, Claude Code, git and gh for the work, herdr-core for
+// the terminal. Each must be installed (on PATH, or in /usr/local/bin or
+// ~/.local/bin, where installers put them).
+var AgentDeps = []string{"lazycron", "claude", "git", "gh", "herdr-core"}
+
+// agentDepDirs are checked besides PATH: non-login shells (cron, ssh
+// commands) often lack them.
+var agentDepDirs = []string{"/usr/local/bin", "$HOME/.local/bin"}

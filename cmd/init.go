@@ -2,42 +2,35 @@ package cmd
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/swalha1999/lazycron/template"
-	"github.com/swalha1999/lazycron/template/builtin"
+	"github.com/swalha1999/lazycron/config"
 )
 
 var (
 	initWithAgents bool
 	initName       string
-	// scaffoldSandcastleConfig is a swappable seam so tests can stub the
-	// .sandcastle/ scaffold step.
-	scaffoldSandcastleConfig = realScaffoldSandcastleConfig
-	// writeEnsureRepoLib is the file-write step, swapped out in tests.
-	writeEnsureRepoLib = realWriteEnsureRepoLib
 )
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize a lazycron project (.sandcastle/ scaffold + .gitignore)",
-	Long: "Adds .sandcastle to .gitignore in the current directory. " +
-		"With --with-agents, also scaffolds a .sandcastle/ directory " +
-		"with a Claude Code + Docker + GitHub Issues setup ready for `lazycron sync`.",
+	Short: "Initialize a lazycron project in .lazycron/ (meant to be committed)",
+	Long: "Records the project name in .lazycron/config.yaml and writes .lazycron/.gitignore so " +
+		"only local files (.env, _pulled/) stay out of git; commit the rest. With --with-agents, also writes the built-in Claude agent jobs " +
+		"(audit, improve, deps, worker, upstream sync) to .lazycron/jobs/*.md, ready for `lazycron sync`. " +
+		"Agents run locally as real Claude Code sessions in herdr terminals.",
 	RunE: runInit,
 }
 
 func init() {
-	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also scaffold .sandcastle/ (Claude Code, Docker, GitHub Issues)")
-	initCmd.Flags().StringVar(&initName, "name", "", "project name baked into .sandcastle/.env (defaults to current directory's basename)")
+	initCmd.Flags().BoolVar(&initWithAgents, "with-agents", false, "also write the built-in Claude agent jobs to .lazycron/jobs/")
+	initCmd.Flags().StringVar(&initName, "name", "", "project name for .lazycron/config.yaml (defaults to the current directory's basename)")
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -52,101 +45,87 @@ func runInit(cmd *cobra.Command, args []string) error {
 		name = filepath.Base(cwd)
 	}
 
-	if err := appendGitignore(cwd, ".sandcastle"); err != nil {
-		return fmt.Errorf("update .gitignore: %w", err)
+	if err := writeIfMissing(filepath.Join(cwd, agentsDirName, ".gitignore"), lazycronGitignore); err != nil {
+		return fmt.Errorf("write .lazycron/.gitignore: %w", err)
+	}
+	if err := ensureProjectConfig(cwd, name); err != nil {
+		return err
 	}
 
 	withAgents := initWithAgents
 	if !withAgents && isInteractive() {
-		withAgents = promptYesNo("Set up sandcastle agents (.sandcastle/) as a sibling? [y/N] ")
+		withAgents = promptYesNo("Add the Claude agent jobs to .lazycron/jobs/? [y/N] ")
 	}
-
 	if withAgents {
-		if err := scaffoldSandcastle(cwd, name); err != nil {
+		if err := scaffoldAgents(cwd); err != nil {
 			return err
 		}
 	}
 
 	printNextSteps(withAgents)
-	if wantJSON(cmd) {
+	if cmd != nil && wantJSON(cmd) {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"project": name, "with_agents": withAgents})
 	}
 	return nil
 }
 
-// scaffoldSandcastle writes the full .sandcastle/ tree directly — no
-// `npx sandcastle init` invocation. This avoids sandcastle's interactive
-// prompts (sandbox provider, backlog manager, label, build-image) and
-// guarantees the same defaults every time: Claude Code agent, Docker
-// sandbox, GitHub Issues backlog. The Dockerfile, .env.example, and
-// in-folder .gitignore are pinned copies of @ai-hero/sandcastle@0.5.7's
-// blank-template output for that combination.
-func scaffoldSandcastle(cwd, projectName string) error {
-	if err := scaffoldSandcastleConfig(cwd, projectName); err != nil {
-		return fmt.Errorf("scaffold .sandcastle/: %w", err)
+// ensureProjectConfig writes .lazycron/config.yaml with the project name
+// unless the file already exists.
+func ensureProjectConfig(cwd, name string) error {
+	dir := filepath.Join(cwd, agentsDirName)
+	if _, err := os.Stat(config.ProjectConfigPath(dir)); err == nil {
+		return nil
 	}
-
-	if err := writeEnsureRepoLib(cwd); err != nil {
-		return fmt.Errorf("write ensureRepo.ts: %w", err)
+	if err := config.SaveProjectConfig(dir, &config.ProjectConfig{Name: name}); err != nil {
+		return err
 	}
-	fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "lib", "ensureRepo.ts"))
-
-	if err := applyAllSandcastleTemplates(cwd); err != nil {
-		return fmt.Errorf("apply sandcastle templates: %w", err)
-	}
+	fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(agentsDirName, "config.yaml"))
 	return nil
 }
 
-// realScaffoldSandcastleConfig writes the embedded Dockerfile, .env.example,
-// and .gitignore into .sandcastle/. Existing files are not overwritten so
-// re-running with --force preserves user edits.
-func realScaffoldSandcastleConfig(cwd, projectName string) error {
-	sandcastleDir := filepath.Join(cwd, ".sandcastle")
-	if err := os.MkdirAll(sandcastleDir, 0o755); err != nil {
+// scaffoldAgents writes every built-in agent job plus a context.md for
+// per-repo notes. Existing files are left alone so re-running keeps edits.
+func scaffoldAgents(cwd string) error {
+	templates, err := builtinAgentTemplates()
+	if err != nil {
 		return err
 	}
-
-	// Auto-detect REPO_URL from the git remote so the user doesn't have to
-	// fill it in by hand on first run. Empty string if cwd isn't a git repo
-	// or has no origin — .env still gets the empty `REPO_URL=` line.
-	repoURL := detectRepoURL(cwd)
-
-	files := []struct {
-		embed     string
-		dest      string
-		transform func([]byte) []byte
-	}{
-		{"sandcastle_init/Dockerfile", "Dockerfile", nil},
-		{"sandcastle_init/env.example", ".env.example", nil},
-		// Seed .env from .env.example so the template's requireEnv check
-		// surfaces "set REPO_URL in .sandcastle/.env" instead of "no such
-		// file" the first time the user runs an agent. Skipped if .env
-		// already exists. If we found a git remote, pre-fill REPO_URL.
-		// PROJECT_NAME is also pre-filled so the agent's cache dir and the
-		// sandcastle Docker image tag stay aligned with the lazycron project.
-		{"sandcastle_init/env.example", ".env", composeEnvTransforms(fillRepoURL(repoURL), fillProjectName(projectName))},
-		{"sandcastle_init/gitignore", ".gitignore", nil},
-		{"sandcastle_init/package.json", "package.json", nil},
+	for i := range templates {
+		if err := writeAgentTemplate(cwd, &templates[i]); err != nil && !errors.Is(err, errJobExists) {
+			return err
+		}
 	}
-	for _, f := range files {
-		dest := filepath.Join(sandcastleDir, f.dest)
-		if _, err := os.Stat(dest); err == nil {
-			continue
-		}
-		data, err := builtin.SandcastleInitFS.ReadFile(f.embed)
-		if err != nil {
-			return fmt.Errorf("read embedded %s: %w", f.embed, err)
-		}
-		if f.transform != nil {
-			data = f.transform(data)
-		}
-		if err := os.WriteFile(dest, data, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
-		}
-		fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", f.dest))
-	}
+	return writeIfMissing(filepath.Join(cwd, agentsDirName, "context.md"), contextTemplate(detectRepoURL(cwd)))
+}
+
+// lazycronGitignore keeps machine-local files out of git; jobs, context.md
+// and config.yaml are meant to be committed with the repo.
+const lazycronGitignore = "# local only: secrets and `lazycron pull` snapshots\n.env\n_pulled/\n"
+
+// contextTemplate is the starter context.md: notes every agent run gets.
+func contextTemplate(repoURL string) string {
+	var b strings.Builder
+	b.WriteString("<!-- Every lazycron agent in this repo reads this. Fill in what helps; delete the rest. -->\n")
 	if repoURL != "" {
-		fmt.Fprintf(humanOut, "Detected REPO_URL=%s from git remote (pre-filled in .sandcastle/.env)\n", repoURL)
+		fmt.Fprintf(&b, "<!-- origin: %s -->\n", repoURL)
+	}
+	b.WriteString("\n- What it is / who uses it:\n- Install deps:\n- Build / typecheck / lint / test:\n" +
+		"- Focus on:\n- Never touch:\n- Upstream (forks only, e.g. owner/repo@main):\n")
+	return b.String()
+}
+
+func writeIfMissing(path, content string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if rel, err := filepath.Rel(filepath.Dir(filepath.Dir(path)), path); err == nil {
+		fmt.Fprintf(humanOut, "Created %s\n", rel)
 	}
 	return nil
 }
@@ -161,129 +140,6 @@ func detectRepoURL(cwd string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// fillRepoURL returns a transform that replaces the `REPO_URL=` line in
-// .env contents with `REPO_URL=<url>`. No-op if url is empty.
-func fillRepoURL(url string) func([]byte) []byte {
-	if url == "" {
-		return nil
-	}
-	return func(data []byte) []byte {
-		// Only replace when the line is empty (REPO_URL=\n), so we don't
-		// accidentally clobber a value the user already set in env.example.
-		return bytes.Replace(data, []byte("REPO_URL=\n"), []byte("REPO_URL="+url+"\n"), 1)
-	}
-}
-
-// fillProjectName returns a transform that replaces the `PROJECT_NAME=` line
-// in .env contents with `PROJECT_NAME=<name>`. No-op if name is empty.
-func fillProjectName(name string) func([]byte) []byte {
-	if name == "" {
-		return nil
-	}
-	return func(data []byte) []byte {
-		return bytes.Replace(data, []byte("PROJECT_NAME=\n"), []byte("PROJECT_NAME="+name+"\n"), 1)
-	}
-}
-
-// composeEnvTransforms chains a sequence of optional transforms (any may be nil).
-func composeEnvTransforms(fns ...func([]byte) []byte) func([]byte) []byte {
-	var active []func([]byte) []byte
-	for _, fn := range fns {
-		if fn != nil {
-			active = append(active, fn)
-		}
-	}
-	if len(active) == 0 {
-		return nil
-	}
-	return func(data []byte) []byte {
-		for _, fn := range active {
-			data = fn(data)
-		}
-		return data
-	}
-}
-
-// applyAllSandcastleTemplates copies every bundled sandcastle agent template
-// (.ts files under template/builtin/templates/) into .sandcastle/jobs/.
-// Existing files are left untouched so re-running with --force does not
-// clobber user edits.
-func applyAllSandcastleTemplates(cwd string) error {
-	jobsDir := filepath.Join(cwd, ".sandcastle", "jobs")
-	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
-		return err
-	}
-
-	templates, err := template.LoadBuiltin()
-	if err != nil {
-		return err
-	}
-
-	created := 0
-	for _, t := range templates {
-		if t.Type != template.TypeSandcastle {
-			continue
-		}
-		dest := filepath.Join(jobsDir, t.Filename+".ts")
-		if _, err := os.Stat(dest); err == nil {
-			continue
-		}
-		data, err := builtin.FS.ReadFile(t.SandcastleSource)
-		if err != nil {
-			return fmt.Errorf("read embedded template %s: %w", t.Filename, err)
-		}
-		if err := os.WriteFile(dest, data, 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
-		}
-		fmt.Fprintf(humanOut, "Created %s\n", filepath.Join(".sandcastle", "jobs", t.Filename+".ts"))
-		created++
-	}
-	if created > 0 {
-		fmt.Fprintf(humanOut, "Applied %d sandcastle agent template(s) to .sandcastle/jobs/\n", created)
-	}
-	return nil
-}
-
-func realWriteEnsureRepoLib(cwd string) error {
-	libDir := filepath.Join(cwd, ".sandcastle", "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		return err
-	}
-	data, err := builtin.SandcastleLibFS.ReadFile("sandcastle_lib/ensureRepo.ts")
-	if err != nil {
-		return fmt.Errorf("read embedded ensureRepo.ts: %w", err)
-	}
-	return os.WriteFile(filepath.Join(libDir, "ensureRepo.ts"), data, 0o644)
-}
-
-// appendGitignore adds line to .gitignore if not already present, creating the
-// file if missing. Idempotent.
-func appendGitignore(cwd, line string) error {
-	path := filepath.Join(cwd, ".gitignore")
-	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-
-	for _, l := range strings.Split(string(existing), "\n") {
-		if strings.TrimSpace(l) == line {
-			return nil
-		}
-	}
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	prefix := ""
-	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
-		prefix = "\n"
-	}
-	_, err = f.WriteString(prefix + line + "\n")
-	return err
 }
 
 func isInteractive() bool {
@@ -309,12 +165,12 @@ func printNextSteps(withAgents bool) {
 	fmt.Fprintln(humanOut)
 	fmt.Fprintln(humanOut, "Next steps:")
 	if withAgents {
-		fmt.Fprintln(humanOut, "  1. Edit .sandcastle/.env (set ANTHROPIC_API_KEY, REPO_URL, GH_TOKEN)")
-		fmt.Fprintln(humanOut, "  2. Review/trim .sandcastle/jobs/*.ts — delete agents you don't want scheduled")
-		fmt.Fprintln(humanOut, "  3. lazycron sync             # local (builds Docker image, installs cron)")
-		fmt.Fprintln(humanOut, "     lazycron sync --server X  # remote, ships .sandcastle/ + builds image")
+		fmt.Fprintln(humanOut, "  1. Fill in .lazycron/context.md (how to build/test, what to focus on)")
+		fmt.Fprintln(humanOut, "  2. Edit or delete .lazycron/jobs/*.md — schedule, model and prompt per job")
+		fmt.Fprintln(humanOut, "  3. lazycron agent .lazycron/jobs/audit.md --dry-run   # see what an agent gets")
+		fmt.Fprintln(humanOut, "  4. lazycron sync                                       # install the cron entries")
 	} else {
-		fmt.Fprintln(humanOut, "  1. lazycron init --with-agents   # to add sandcastle agents later")
-		fmt.Fprintln(humanOut, "  2. lazycron templates list")
+		fmt.Fprintln(humanOut, "  1. lazycron init --with-agents   # add the Claude agent jobs")
+		fmt.Fprintln(humanOut, "  2. lazycron templates ls")
 	}
 }

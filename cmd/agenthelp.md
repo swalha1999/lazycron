@@ -91,6 +91,41 @@ Do not use `lazycron attach` (it needs a person at a TTY): read with `logs`,
 wait with `wait`. When a herdr run is blocked on a question, tell your user
 the run id; they can `lazycron attach <run>` or open it in herdr-app.
 
+## Claude agents
+
+Scheduled agents are real interactive Claude Code sessions that run on this
+machine in a herdr terminal (no Docker). Each repo keeps its own in
+`.lazycron/`, committed with the repo (`init` ignores only `.env` and `_pulled/`):
+
+```sh
+lazycron init --with-agents          # .lazycron/jobs/{audit,improve,deps,worker,upstream-sync}.md + context.md
+lazycron agent .lazycron/jobs/audit.md --dry-run   # repo, worktree and full prompt; starts nothing
+lazycron agent .lazycron/jobs/audit.md             # run one now and wait
+lazycron sync [--server N]           # one cron entry per jobs/*.md
+```
+
+A job file is YAML front matter + the prompt as the body:
+
+```markdown
+---
+name: Audit
+cron: every sunday at 3am      # cron expression or phrase
+model: opus                    # optional, claude --model
+permission_mode: auto          # optional (default auto), claude --permission-mode
+base: main                     # optional, default origin's default branch
+timeout: 90m                   # optional (default 2h), then the session is stopped
+---
+Audit this repository and file issues for ...
+```
+
+Each run fetches origin, makes a fresh worktree under
+`~/.lazycron/worktrees/<project>/`, and starts `claude` with the prompt (plus
+`.lazycron/context.md`, the per-repo notes) in a terminal named
+`agent-<job>-<time>`. When the agent finishes its turn the terminal is closed
+and the worktree removed. If it blocks on a question, the run fails, the
+terminal stays open and the worktree is kept: tell your user the terminal so
+they can `hc attach <t>` (or open it in herdr-app) and answer.
+
 ## Machine
 
 ```sh

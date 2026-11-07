@@ -42,6 +42,11 @@ type Options struct {
 	Linger       bool   // enable systemd linger (Linux)
 	HCPath       string // known herdr-core path (skips the lookup)
 	LazycronPath string // binary ~/.lazycron/bin/lazycron should point at ("" = look up `lazycron` on the host)
+
+	// For a server (LazycronPath empty): install lazycron globally with the
+	// official installer when it is missing or older than Version.
+	InstallLazycron bool
+	Version         string // this machine's lazycron version
 }
 
 // Result is what setup did, plus what later steps need.
@@ -67,6 +72,8 @@ type stepRunner struct {
 	h    Host
 	opts Options
 	res  Result
+
+	lazycronTarget string // lazycron the lazycronInstall step found or installed
 }
 
 func (s *stepRunner) add(name string, status Status, detail, hint string) {
@@ -93,6 +100,7 @@ func Run(h Host, opts Options) Result {
 	s := &stepRunner{h: h, opts: opts}
 	s.herdrCore()
 	s.hcVersion()
+	s.lazycronInstall()
 	s.lazycronLink()
 	if s.res.HCPath != "" {
 		s.service()
@@ -172,8 +180,11 @@ func (s *stepRunner) lastStatus() Status {
 
 func (s *stepRunner) lazycronLink() {
 	const name = "lazycron link"
-	link := path.Join(s.h.Home(), ".lazycron", "bin", "lazycron")
+	link := lazycronLinkPath(s.h)
 	target := s.opts.LazycronPath
+	if target == "" {
+		target = s.lazycronTarget
+	}
 	if target == "" {
 		out, err := s.h.Shell("command -v lazycron")
 		if err != nil || out == "" || out == link {
@@ -182,7 +193,7 @@ func (s *stepRunner) lazycronLink() {
 				return
 			}
 			s.add(name, StatusWarning, "lazycron is not installed on this host; herdr-mode lines fall back to plain runs",
-				"install lazycron there and run setup again")
+				"run `lazycron setup` again without --no-lazycron, or install it there")
 			return
 		}
 		target = out
@@ -198,6 +209,11 @@ func (s *stepRunner) lazycronLink() {
 		}
 		return nil
 	}, "")
+}
+
+// lazycronLinkPath is ~/.lazycron/bin/lazycron on host, the path cron lines call.
+func lazycronLinkPath(h Host) string {
+	return path.Join(h.Home(), ".lazycron", "bin", "lazycron")
 }
 
 func (s *stepRunner) service() {
