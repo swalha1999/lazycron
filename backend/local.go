@@ -77,23 +77,28 @@ func (b *LocalBackend) CopyProjectFiles(localDir, remoteSubpath string, excludes
 	return nil
 }
 
-// CheckAgentDeps reports which of AgentDeps are missing on $PATH and in ~/.local/bin.
+// CheckAgentDeps reports which of AgentDeps are not installed here.
 func (b *LocalBackend) CheckAgentDeps() ([]string, error) {
-	home, _ := os.UserHomeDir()
 	var missing []string
 	for _, name := range AgentDeps {
-		if _, err := exec.LookPath(name); err == nil {
-			continue
+		if !installedLocally(name) {
+			missing = append(missing, name)
 		}
-		if info, err := os.Stat(filepath.Join(home, ".local", "bin", name)); err == nil && !info.IsDir() {
-			continue
-		}
-		missing = append(missing, name)
-	}
-	if info, err := os.Stat(cron.LazycronBinPath()); err != nil || info.IsDir() {
-		missing = append(missing, MissingLazycron)
 	}
 	return missing, nil
+}
+
+func installedLocally(name string) bool {
+	if _, err := exec.LookPath(name); err == nil {
+		return true
+	}
+	for _, dir := range agentDepDirs {
+		info, err := os.Stat(filepath.Join(os.ExpandEnv(dir), name))
+		if err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ProjectDir returns the current working directory — local jobs run in cwd.

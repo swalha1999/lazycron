@@ -62,7 +62,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 				target = globalServer
 			}
 			return fmt.Errorf(
-				"agents need claude, git, gh, herdr-core and lazycron on %s but these are missing: %s. "+
+				"agents need lazycron, claude, git, gh and herdr-core installed on %s but these are missing: %s. "+
 					"`lazycron setup` (with --server for a server) installs lazycron and herdr-core; "+
 					"install the rest, or use --skip-deps-check.",
 				target, strings.Join(missing, ", "),
@@ -97,10 +97,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 	})
 }
 
-// agentCommand is the crontab command for one job. $HOME expands when the job
-// runs, so the same line works locally and on a server.
+// agentCommand is the job command for one agent. Job scripts rebuild the
+// login-shell PATH first, so the installed lazycron is found the same way
+// locally and on a server.
 func agentCommand(bareID, projectName string) string {
-	return fmt.Sprintf(`"$HOME/.lazycron/bin/lazycron" agent %s/jobs/%s.md --project %s`,
+	return fmt.Sprintf(`lazycron agent %s/jobs/%s.md --project %s`,
 		agentsDirName, bareID, cron.ShellQuote(projectName))
 }
 

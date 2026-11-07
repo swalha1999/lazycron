@@ -37,7 +37,7 @@ func TestReadAgentJobs_Valid(t *testing.T) {
 	if j.Schedule != "0 9 * * 1-5" {
 		t.Errorf("Schedule = %q", j.Schedule)
 	}
-	want := `"$HOME/.lazycron/bin/lazycron" agent .lazycron/jobs/fix-agent.md --project 'myproject'`
+	want := `lazycron agent .lazycron/jobs/fix-agent.md --project 'myproject'`
 	if j.Command != want {
 		t.Errorf("Command = %q, want %q", j.Command, want)
 	}

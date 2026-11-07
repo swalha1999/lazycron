@@ -254,21 +254,20 @@ func (b *RemoteBackend) CopyProjectFiles(localDir, remoteSubpath string, exclude
 	return b.client.UploadDirectory(localDir, remoteDir, excludes)
 }
 
-// CheckAgentDeps reports which of AgentDeps are absent on the remote, on its
-// PATH or in ~/.local/bin (non-login ssh shells often lack the latter).
+// CheckAgentDeps reports which of AgentDeps are not installed on the remote.
 func (b *RemoteBackend) CheckAgentDeps() ([]string, error) {
 	if err := b.client.Connect(); err != nil {
 		return nil, err
 	}
 	var missing []string
 	for _, name := range AgentDeps {
-		q := shellQuote(name)
-		if _, err := b.client.Run("command -v " + q + " >/dev/null 2>&1 || test -x \"$HOME/.local/bin/\"" + q); err != nil {
+		check := "command -v " + shellQuote(name) + " >/dev/null 2>&1"
+		for _, dir := range agentDepDirs {
+			check += ` || test -x "` + dir + `/"` + shellQuote(name)
+		}
+		if _, err := b.client.Run(check); err != nil {
 			missing = append(missing, name)
 		}
-	}
-	if _, err := b.client.Run(`test -x "$HOME/.lazycron/bin/lazycron"`); err != nil {
-		missing = append(missing, MissingLazycron)
 	}
 	return missing, nil
 }

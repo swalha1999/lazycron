@@ -64,7 +64,7 @@ func TestWriteJobStub_BasicJob(t *testing.T) {
 		ID:       "fix-agent",
 		Name:     "Fix Agent",
 		Schedule: "0 9 * * 1-5",
-		Command:  "cd ~/.lazycron/projects/lazycron && \"$HOME/.lazycron/bin/lazycron\" agent .lazycron/jobs/fix-agent.md --project lazycron",
+		Command:  "cd ~/.lazycron/projects/lazycron && lazycron agent .lazycron/jobs/fix-agent.md --project lazycron",
 		Enabled:  true,
 		Project:  "lazycron",
 		Tag:      "BP",
@@ -88,7 +88,7 @@ func TestWriteJobStub_BasicJob(t *testing.T) {
 		"# project: lazycron",
 		"# project_dir: ~/.lazycron/projects/lazycron",
 		"# tag: BP",
-		"\"$HOME/.lazycron/bin/lazycron\" agent .lazycron/jobs/fix-agent.md --project lazycron",
+		"lazycron agent .lazycron/jobs/fix-agent.md --project lazycron",
 	}
 	for _, s := range wantSubstrings {
 		if !strings.Contains(got, s) {

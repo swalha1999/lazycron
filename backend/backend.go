@@ -57,10 +57,12 @@ type Backend interface {
 	ProjectDir(projectName string) (string, error)
 }
 
-// AgentDeps are the programs `lazycron agent` needs on the machine that runs
-// it: Claude Code, git and gh for the work, herdr-core for the terminal.
-var AgentDeps = []string{"claude", "git", "gh", "herdr-core"}
+// AgentDeps are the programs an agent job needs on the machine that runs it:
+// lazycron to run it, Claude Code, git and gh for the work, herdr-core for
+// the terminal. Each must be installed (on PATH, or in /usr/local/bin or
+// ~/.local/bin, where installers put them).
+var AgentDeps = []string{"lazycron", "claude", "git", "gh", "herdr-core"}
 
-// MissingLazycron names the missing lazycron link in CheckAgentDeps results:
-// cron entries call ~/.lazycron/bin/lazycron, which `lazycron setup` installs.
-const MissingLazycron = "lazycron (~/.lazycron/bin/lazycron; run `lazycron setup`)"
+// agentDepDirs are checked besides PATH: non-login shells (cron, ssh
+// commands) often lack them.
+var agentDepDirs = []string{"/usr/local/bin", "$HOME/.local/bin"}

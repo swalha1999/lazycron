@@ -22,8 +22,8 @@ lazycron templates apply Worker
 ## Sync Phases
 
 1. **Resolve project name** from `--project`, then `.lazycron/config.yaml`, then the cwd basename.
-2. **Read jobs** from `.lazycron/jobs/*.md`. Each file's front matter (`name`, `cron`, optional `tag`/`tag_color`) becomes a cron entry whose command is `"$HOME/.lazycron/bin/lazycron" agent .lazycron/jobs/<id>.md --project <name>`. A file that doesn't parse stops the sync and names the file.
-3. **Deps check** on the target: `claude`, `git`, `gh` and `herdr-core` must be on PATH or in `~/.local/bin`, and `~/.lazycron/bin/lazycron` must exist (cron calls it). `--skip-deps-check` overrides.
+2. **Read jobs** from `.lazycron/jobs/*.md`. Each file's front matter (`name`, `cron`, optional `tag`/`tag_color`) becomes a cron entry whose command is `lazycron agent .lazycron/jobs/<id>.md --project <name>`. A file that doesn't parse stops the sync and names the file.
+3. **Deps check** on the target: `lazycron`, `claude`, `git`, `gh` and `herdr-core` must be installed (on PATH, or in `/usr/local/bin` or `~/.local/bin`). `--skip-deps-check` overrides.
 4. **Transfer files** (remote only): `.lazycron/` is copied to `~/.lazycron/projects/<name>/.lazycron/` on the server, `.env` included unless `--no-env`.
 5. **Inject `cd`**: each command runs from the project directory: the repo itself locally, `~/.lazycron/projects/<name>/` on a server.
 6. **Merge crontab**: entries with matching IDs are updated; everything else is left alone.
@@ -65,7 +65,7 @@ lazycron server add --name box --host box.example --user me
 lazycron setup --server box          # herdr-core, lazycron, boot service, linger
 ```
 
-Cron on the server runs and records jobs through `~/.lazycron/bin/lazycron`, so setup installs lazycron globally there with the official installer (`curl -fsSL https://get.lazycron.com | sh`, into `/usr/local/bin`) when it's missing or older than yours, then links `~/.lazycron/bin/lazycron` to it. The installer needs write access to `/usr/local/bin` or passwordless sudo; otherwise run the one-liner on the server yourself and run setup again. `--no-lazycron` skips this. `claude` and `gh` (both logged in) you install on the server yourself.
+Cron on the server runs and records jobs through lazycron, so setup installs it globally there with the official installer (`curl -fsSL https://get.lazycron.com | sh`, into `/usr/local/bin`) when it's missing or older than yours, then links `~/.lazycron/bin/lazycron` to it. The installer needs write access to `/usr/local/bin` or passwordless sudo; otherwise run the one-liner on the server yourself and run setup again. `--no-lazycron` skips this. `claude` and `gh` (both logged in) you install on the server yourself.
 
 ## Repo at Run Time
 

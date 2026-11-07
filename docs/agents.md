@@ -33,7 +33,7 @@ The agent does the GitHub work itself with `gh` (issues, branches, pushes, PRs).
 ## Requirements on the machine that runs agents
 
 - **Claude Code** logged in (`claude auth status`), and `lazycron doctor` reporting ok
-- **herdr-core** and **lazycron** at `~/.lazycron/bin/lazycron`: `lazycron setup` (or `lazycron setup --server X`) installs both; on a server lazycron is installed globally with `curl -fsSL https://get.lazycron.com | sh`
+- **lazycron** and **herdr-core** installed: `lazycron setup` (or `lazycron setup --server X`) installs both; on a server lazycron is installed globally with `curl -fsSL https://get.lazycron.com | sh`
 - **git** and **gh** logged in with push access to the repos
 - The toolchains your repos build with (node/pnpm, go, cargo, zig, ...). Agents get your PATH plus `~/.local/bin` and mise shims.
 
