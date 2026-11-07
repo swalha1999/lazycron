@@ -267,6 +267,9 @@ func (b *RemoteBackend) CheckAgentDeps() ([]string, error) {
 			missing = append(missing, name)
 		}
 	}
+	if _, err := b.client.Run(`test -x "$HOME/.lazycron/bin/lazycron"`); err != nil {
+		missing = append(missing, MissingLazycron)
+	}
 	return missing, nil
 }
 

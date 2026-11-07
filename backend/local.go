@@ -90,6 +90,9 @@ func (b *LocalBackend) CheckAgentDeps() ([]string, error) {
 		}
 		missing = append(missing, name)
 	}
+	if info, err := os.Stat(cron.LazycronBinPath()); err != nil || info.IsDir() {
+		missing = append(missing, MissingLazycron)
+	}
 	return missing, nil
 }
 

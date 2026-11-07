@@ -62,8 +62,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 				target = globalServer
 			}
 			return fmt.Errorf(
-				"agents need {claude, git, gh, herdr-core} on %s but these are missing: %s. "+
-					"Install them (and run `lazycron setup` for herdr-core), or use --skip-deps-check.",
+				"agents need claude, git, gh, herdr-core and lazycron on %s but these are missing: %s. "+
+					"`lazycron setup` (with --server for a server) installs lazycron and herdr-core; "+
+					"install the rest, or use --skip-deps-check.",
 				target, strings.Join(missing, ", "),
 			)
 		}

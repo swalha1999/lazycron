@@ -60,3 +60,7 @@ type Backend interface {
 // AgentDeps are the programs `lazycron agent` needs on the machine that runs
 // it: Claude Code, git and gh for the work, herdr-core for the terminal.
 var AgentDeps = []string{"claude", "git", "gh", "herdr-core"}
+
+// MissingLazycron names the missing lazycron link in CheckAgentDeps results:
+// cron entries call ~/.lazycron/bin/lazycron, which `lazycron setup` installs.
+const MissingLazycron = "lazycron (~/.lazycron/bin/lazycron; run `lazycron setup`)"
