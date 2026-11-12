@@ -47,22 +47,32 @@ func NewFileBackend(cronFile, historyDir string) *FileBackend {
 
 func (b *FileBackend) Name() string { return "file:" + b.cronFile }
 
-func (b *FileBackend) ReadJobs() ([]cron.Job, error) {
+// readCrontab returns the crontab file's content ("" when it does not exist).
+func (b *FileBackend) readCrontab() (string, error) {
 	data, err := os.ReadFile(b.cronFile)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	return string(data), err
+}
+
+func (b *FileBackend) ReadJobs() ([]cron.Job, error) {
+	content, err := b.readCrontab()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	return cron.ParseIn(string(data), b.ScriptsDir()), nil
+	return cron.ParseIn(content, b.ScriptsDir()), nil
 }
 
 func (b *FileBackend) WriteJobs(jobs []cron.Job) error {
+	existing, err := b.readCrontab()
+	if err != nil {
+		return err
+	}
 	if err := cron.SyncScriptsIn(b.ScriptsDir(), jobs); err != nil {
 		return fmt.Errorf("sync scripts: %w", err)
 	}
-	content := cron.RelocateCrontab(cron.FormatCrontab(jobs), b.ScriptsDir(), "")
+	content := cron.KeepForeignLines(existing, cron.RelocateCrontab(cron.FormatCrontab(jobs), b.ScriptsDir(), ""))
 	return os.WriteFile(b.cronFile, []byte(content), 0o644)
 }
 

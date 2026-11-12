@@ -62,10 +62,19 @@ func (b *RemoteBackend) lazycronDir() (string, error) {
 	return home + "/.lazycron", nil
 }
 
-func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
+// readCrontab returns the server's crontab ("" when it has none).
+func (b *RemoteBackend) readCrontab() (string, error) {
 	output, err := b.client.Run("crontab -l 2>/dev/null || true")
 	if err != nil {
-		return nil, fmt.Errorf("read crontab: %w", err)
+		return "", fmt.Errorf("read crontab: %w", err)
+	}
+	return output, nil
+}
+
+func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
+	output, err := b.readCrontab()
+	if err != nil {
+		return nil, err
 	}
 	lcDir, err := b.lazycronDir()
 	if err != nil {
@@ -96,6 +105,10 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 
 func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	lcDir, err := b.lazycronDir()
+	if err != nil {
+		return err
+	}
+	existing, err := b.readCrontab()
 	if err != nil {
 		return err
 	}
@@ -133,7 +146,7 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	if b.runner != "" {
 		defaultRunner = b.runner
 	}
-	crontabContent := cron.RelocateCrontab(cron.FormatCrontabFor(jobs, defaultRunner), remoteScriptsDir, remoteHome+"/.lazycron/bin")
+	crontabContent := remoteCrontab(existing, jobs, defaultRunner, remoteHome)
 
 	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
 		shellQuote(crontabContent)))
@@ -141,6 +154,14 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 		return fmt.Errorf("write crontab: %w", err)
 	}
 	return nil
+}
+
+// remoteCrontab formats jobs for a server's crontab: local lazycron paths
+// relocated under remoteHome, the existing crontab's foreign lines kept.
+func remoteCrontab(existing string, jobs []cron.Job, defaultRunner, remoteHome string) string {
+	lcDir := remoteHome + "/.lazycron"
+	content := cron.RelocateCrontab(cron.FormatCrontabFor(jobs, defaultRunner), lcDir+"/scripts", lcDir+"/bin")
+	return cron.KeepForeignLines(existing, content)
 }
 
 // RunJob runs a job script directly over SSH (servers without lazycron).

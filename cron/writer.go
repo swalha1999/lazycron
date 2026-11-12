@@ -65,13 +65,18 @@ func RelocateCrontab(content, scriptsDir, binDir string) string {
 	return content
 }
 
-// WriteCrontab writes jobs to crontab via `crontab -`.
+// WriteCrontab writes jobs to crontab via `crontab -`, keeping the current
+// crontab's foreign lines (env assignments, @reboot entries, comments).
 // It first syncs script files to ~/.lazycron/scripts/.
 func WriteCrontab(jobs []Job) error {
+	existing, err := ReadCrontab()
+	if err != nil {
+		return err
+	}
 	if err := SyncScripts(jobs); err != nil {
 		return fmt.Errorf("sync scripts: %w", err)
 	}
-	content := FormatCrontab(jobs)
+	content := KeepForeignLines(existing, FormatCrontab(jobs))
 	out, err := runCrontab(content, "-")
 	if err != nil {
 		return fmt.Errorf("crontab -: %s", strings.TrimSpace(out))
