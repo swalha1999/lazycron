@@ -19,6 +19,10 @@ type Options struct {
 	HC          HC
 	DryRun      bool // resolve everything and print the prompt; start nothing
 	Log         func(format string, args ...any)
+
+	SpaceID  string // herdr-app space when not run by `lazycron exec` (which labels its own)
+	RunsDir  string // where the session record for the run's history goes
+	KeepRuns int    // worktrees kept per job, the new one included (0: keep all)
 }
 
 // ErrBlocked means the agent is waiting on a person; its terminal is still open.
@@ -64,7 +68,9 @@ func Run(o Options) error {
 	prompt := BuildPrompt(job, PromptContext{
 		JobName: job.Name, Repo: RepoLabel(repo), Base: ref, Worktree: wt, Notes: string(notes),
 	})
-	argv := []string{"env", "PATH=" + os.Getenv("PATH"), claude, "--permission-mode", job.PermissionModeOrDefault()}
+	sessionID := newSessionID()
+	argv := []string{"env", "PATH=" + os.Getenv("PATH"), claude, "--permission-mode", job.PermissionModeOrDefault(),
+		"--session-id", sessionID, "--name", job.Name + " " + time.Now().Format("2006-01-02 15:04")}
 	if job.Model != "" {
 		argv = append(argv, "--model", job.Model)
 	}
@@ -77,15 +83,32 @@ func Run(o Options) error {
 		return nil
 	}
 
+	pruneWorktrees(repo, filepath.Dir(wt), jobID, o.KeepRuns, o.Log)
 	if err := AddWorktree(repo, wt, ref); err != nil {
 		return err
+	}
+	run := currentRun(o.HC)
+	labels := map[string]string{labelProject: o.ProjectName, labelJob: jobID, labelAgent: "claude", labelSpace: o.SpaceID}
+	if run.JobID != "" {
+		labels[labelJob] = run.JobID
+	}
+	if run.RunID != "" {
+		labels[labelRun] = run.RunID
+	}
+	if run.SpaceID != "" {
+		labels[labelSpace] = run.SpaceID
+	}
+	for k, v := range labels {
+		if v == "" {
+			delete(labels, k)
+		}
 	}
 	sess := &Session{
 		HC:      o.HC,
 		Name:    terminalName(jobID, stamp),
 		Dir:     wt,
 		Argv:    argv,
-		Labels:  map[string]string{"lazycron.project": o.ProjectName, "lazycron.job": jobID},
+		Labels:  labels,
 		Timeout: timeout,
 		Poll:    5 * time.Minute,
 		Log:     o.Log,
@@ -95,25 +118,31 @@ func Run(o Options) error {
 		_ = RemoveWorktree(repo, wt)
 		return err
 	}
+	rec := SessionRecord{Terminal: addr, SessionID: sessionID, Dir: wt, Repo: repo, Status: "working"}
+	_ = writeRecord(o.RunsDir, run.RunID, rec)
 	o.Log("agent %q started in terminal %s (watch: hc attach %s)", job.Name, addr, addr)
+	o.Log("claude session %s in %s", sessionID, wt)
 
 	out, err := sess.Wait(addr)
 	if err != nil {
 		return err
 	}
+	rec.Status = out.Status
+	_ = writeRecord(o.RunsDir, run.RunID, rec)
+	continueHint := "continue it with `lazycron resume " + run.RunID + "`"
+	if run.RunID == "" {
+		continueHint = fmt.Sprintf("continue it with `hc attach %s`, or `claude --resume %s` in %s", addr, sessionID, wt)
+	}
 	switch out.Status {
 	case "blocked":
-		o.Log("agent is waiting for input; worktree kept at %s", wt)
-		return fmt.Errorf("%w: answer it with `hc attach %s` or in herdr-app", ErrBlocked, addr)
+		o.Log("agent is waiting for input")
+		return fmt.Errorf("%w: answer it in herdr-app or with `hc attach %s`", ErrBlocked, addr)
 	case "done":
-		o.Log("agent finished")
+		o.Log("agent finished; its session stays open: %s", continueHint)
 	case "exited":
-		o.Log("claude exited with code %d", out.ExitCode)
+		o.Log("claude exited with code %d; %s", out.ExitCode, continueHint)
 	default:
-		o.Log("agent stopped: %s", out.Status)
-	}
-	if err := RemoveWorktree(repo, wt); err != nil {
-		o.Log("warning: could not remove worktree %s: %v", wt, err)
+		o.Log("agent stopped: %s; %s", out.Status, continueHint)
 	}
 	switch {
 	case out.Status == "exited" && out.ExitCode != 0:

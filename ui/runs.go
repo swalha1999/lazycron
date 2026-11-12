@@ -19,12 +19,16 @@ import (
 type runState struct {
 	active map[string]runner.Active // newest in-progress run per job id
 	live   map[string]bool          // herdr terminal address -> program still running
+	agents map[string]string        // in-progress run id -> its live Claude session terminal
 }
+
+// agentLabel marks the terminal of an agent run's Claude session.
+const agentLabel = "lazycron.agent"
 
 // loadRunState reads in-progress runs and, when any run has a herdr
 // terminal, the terminals' states (one `hc ls --all`).
 func loadRunState(b backend.Backend, entries []history.Entry) runState {
-	s := runState{active: map[string]runner.Active{}, live: map[string]bool{}}
+	s := runState{active: map[string]runner.Active{}, live: map[string]bool{}, agents: map[string]string{}}
 	active, _ := b.ActiveRuns()
 	needTerminals := false
 	for _, a := range active { // newest first
@@ -53,7 +57,40 @@ func loadRunState(b backend.Backend, entries []history.Entry) runState {
 	for _, t := range terms {
 		s.live[t.Address] = t.Live()
 	}
+	for _, a := range s.active {
+		if a.Terminal == "" {
+			continue
+		}
+		agents, err := hc.List(map[string]string{runner.LabelRun: a.RunID, agentLabel: "claude"})
+		if err != nil {
+			continue
+		}
+		for _, t := range agents {
+			if t.Live() {
+				s.agents[a.RunID] = t.Address
+			}
+		}
+	}
 	return s
+}
+
+// runTerminal is the terminal to show for a run: its Claude session while
+// that is still there, otherwise the run's own terminal.
+func (s runState) runTerminal(e history.Entry) string {
+	if e.Agent != nil {
+		if kept, _ := s.terminalKept(e.Agent.Terminal); kept {
+			return e.Agent.Terminal
+		}
+	}
+	return e.Terminal
+}
+
+// activeTerminal is the terminal to attach to for a run in progress.
+func (s runState) activeTerminal(a runner.Active) string {
+	if t := s.agents[a.RunID]; t != "" {
+		return t
+	}
+	return a.Terminal
 }
 
 // running returns the job's run in progress, if any.
@@ -102,15 +139,17 @@ func (m Model) attachTarget() (string, string) {
 		if idx := m.currentJobIndex(); idx >= 0 && !m.isOnHeader() {
 			job := m.jobs[idx]
 			if a, ok := m.runs.running(job.ID); ok && a.Terminal != "" {
-				return a.Terminal, job.Name
+				return m.runs.activeTerminal(a), job.Name
 			}
 			return "", job.Name
 		}
 	case panelHistory:
 		if m.historySelected >= 0 && m.historySelected < len(m.history) {
 			e := m.history[m.historySelected]
-			if kept, _ := m.runs.terminalKept(e.Terminal); kept {
-				return e.Terminal, e.JobName
+			if t := m.runs.runTerminal(e); t != "" {
+				if kept, _ := m.runs.terminalKept(t); kept {
+					return t, e.JobName
+				}
 			}
 			return "", e.JobName
 		}

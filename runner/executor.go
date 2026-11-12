@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -92,8 +93,10 @@ func (e *Executor) Run(req Request) (history.Entry, error) {
 	}
 
 	entry := e.entry(active, out, fallback)
+	entry.Agent = readAgentFile(e.Paths.AgentFile(active.RunID))
 	err := history.WriteRunEntry(e.Paths.History, entry)
 	RemoveActive(e.Paths.Runs, active.RunID)
+	_ = os.Remove(e.Paths.AgentFile(active.RunID))
 	if err != nil {
 		return entry, fmt.Errorf("write history: %w", err)
 	}
@@ -144,4 +147,17 @@ func (e *Executor) entry(a Active, o outcome, fallback string) history.Entry {
 		OutputTruncated: o.outputTruncated,
 		FallbackReason:  fallback,
 	}
+}
+
+// readAgentFile returns the agent session a run recorded, or nil.
+func readAgentFile(path string) *history.AgentSession {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var a history.AgentSession
+	if json.Unmarshal(data, &a) != nil {
+		return nil
+	}
+	return &a
 }

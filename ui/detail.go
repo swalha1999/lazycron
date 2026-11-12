@@ -236,6 +236,18 @@ func renderRunRows(b *strings.Builder, entry *history.Entry, runs runState) {
 		}
 		row("Terminal", detailValueStyle.Render(entry.Terminal)+" "+state)
 	}
+	if a := entry.Agent; a != nil && a.SessionID != "" {
+		kept, _ := runs.terminalKept(a.Terminal)
+		state := mutedItemStyle.Render("closed; ") + helpKeyStyle.Render("lazycron resume "+entry.RunID) + mutedItemStyle.Render(" reopens it")
+		if kept {
+			state = terminalBadgeStyle.Render("open in "+a.Terminal) + "  " + mutedItemStyle.Render("press ") + helpKeyStyle.Render("a") + mutedItemStyle.Render(" to continue it")
+		}
+		row("Claude", state)
+		row("Session", mutedItemStyle.Render(a.SessionID))
+		if a.Dir != "" {
+			row("Worktree", mutedItemStyle.Render(a.Dir))
+		}
+	}
 	if entry.RunID != "" {
 		row("Run", mutedItemStyle.Render(entry.RunID))
 	}

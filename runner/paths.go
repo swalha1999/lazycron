@@ -44,3 +44,9 @@ func (p Paths) ScriptPath(jobID string) string {
 func (p Paths) ExitFile(runID string) string {
 	return filepath.Join(p.Runs, runID+".exit")
 }
+
+// AgentFile returns where `lazycron agent` describes the Claude session a
+// run started; the run's history entry picks it up.
+func (p Paths) AgentFile(runID string) string {
+	return filepath.Join(p.Runs, runID+".agent.json")
+}
