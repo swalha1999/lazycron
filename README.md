@@ -190,6 +190,7 @@ Audit this repository and file GitHub issues for ...
 - **done**: the terminal is closed and the worktree removed.
 - **blocked on a question**: the run fails, the terminal stays open and the worktree is kept. Attach with `hc attach <terminal>` or herdr-app and answer.
 - **error or timeout**: the session is stopped and the run fails.
+- **lost track of it** (`hc wait` keeps failing, e.g. herdr-core restarted): brief failures are retried within the timeout; after 4 in a row the session is stopped, the worktree removed and the run fails naming the terminal.
 
 ### Sync
 

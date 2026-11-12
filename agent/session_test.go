@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,9 +10,11 @@ import (
 
 // fakeHC replays scripted `hc wait` results and records every call.
 type fakeHC struct {
-	waits  []string // JSON for successive `hc wait` calls
-	screen string   // what `hc read` returns
-	calls  []string
+	waits    []string // JSON for successive `hc wait` calls
+	screen   string   // what `hc read` returns
+	waitErrs int      // how many `hc wait` calls fail before the scripted ones
+	killErr  error    // what `hc kill` returns
+	calls    []string
 }
 
 func (f *fakeHC) Run(args ...string) ([]byte, error) {
@@ -19,6 +23,10 @@ func (f *fakeHC) Run(args ...string) ([]byte, error) {
 	case "run":
 		return []byte(`{"address":"t9","state":"live"}`), nil
 	case "wait":
+		if f.waitErrs > 0 {
+			f.waitErrs--
+			return nil, errors.New("hc wait: connection refused")
+		}
 		if len(f.waits) == 0 {
 			return []byte(`{"ended":false,"reason":"timeout","turn":1}`), nil
 		}
@@ -27,6 +35,8 @@ func (f *fakeHC) Run(args ...string) ([]byte, error) {
 		return []byte(w), nil
 	case "read":
 		return []byte(f.screen), nil
+	case "kill":
+		return nil, f.killErr
 	}
 	return nil, nil
 }
@@ -175,5 +185,44 @@ func TestSessionWait_PollsFasterBeforeFirstTurn(t *testing.T) {
 	}
 	if waits[0] != "wait t9 --json --timeout 15" || waits[2] != "wait t9 --json --timeout 300" {
 		t.Errorf("wait calls = %v", waits)
+	}
+}
+
+func TestSessionWait_RetriesTransientWaitFailures(t *testing.T) {
+	hc := &fakeHC{waitErrs: maxWaitFailures - 1, waits: []string{
+		`{"ended":true,"reason":"status","status":"done","turn":1}`,
+	}}
+	s := newSession(hc)
+	var slept []time.Duration
+	s.sleep = func(d time.Duration) { slept = append(slept, d) }
+	out, err := s.Wait("t9")
+	if err != nil || out.Status != "done" {
+		t.Fatalf("Wait = %+v, %v", out, err)
+	}
+	want := []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
+	if fmt.Sprint(slept) != fmt.Sprint(want) {
+		t.Errorf("backoff = %v, want %v", slept, want)
+	}
+}
+
+func TestSessionWait_GivesUpAfterRepeatedWaitFailures(t *testing.T) {
+	hc := &fakeHC{waitErrs: maxWaitFailures}
+	out, err := newSession(hc).Wait("t9")
+	if err == nil || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("Wait = %+v, %v; want the hc wait error", out, err)
+	}
+	if out.Terminal != "t9" {
+		t.Errorf("outcome should name the terminal: %+v", out)
+	}
+}
+
+func TestSessionWait_TimeoutStillEnforcedWhileRetrying(t *testing.T) {
+	hc := &fakeHC{waitErrs: 1000}
+	s := newSession(hc)
+	s.Timeout = 20 * time.Millisecond
+	s.sleep = time.Sleep
+	out, err := s.Wait("t9")
+	if err != nil || out.Status != "timeout" || !hc.called("kill t9") {
+		t.Errorf("Wait = %+v, %v; calls %v", out, err, hc.calls)
 	}
 }

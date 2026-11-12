@@ -26,6 +26,8 @@ crontab entry per job: cd <project> && lazycron agent .lazycron/jobs/<job>.md --
      blocked  → terminal and worktree kept, run fails with the terminal to attach to
      error    → session stopped, run fails
      timeout  → session stopped, run fails
+     hc wait keeps failing (4 in a row, retried with backoff)
+              → session stopped, worktree removed, run fails naming the terminal
 ```
 
 The agent does the GitHub work itself with `gh` (issues, branches, pushes, PRs). The wrapping prompt tells it never to push to or merge the default branch.

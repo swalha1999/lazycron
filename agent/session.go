@@ -116,53 +116,92 @@ func (s *Session) Start() (string, error) {
 	return started.Address, nil
 }
 
-// Wait follows the agent until it is done, blocked, errors, exits or runs out of time.
+// Wait follows the agent until it is done, blocked, errors, exits or runs out
+// of time. A failing `hc wait` is retried (still within the timeout) and only
+// returned as an error after maxWaitFailures failures in a row.
 func (s *Session) Wait(addr string) (Outcome, error) {
 	if s.sleep == nil {
 		s.sleep = time.Sleep
 	}
 	s.deadline = time.Now().Add(s.Timeout)
-	turn := 0
+	turn, failures := 0, 0
 	for {
 		if time.Now().After(s.deadline) {
 			_, _ = s.HC.Run("kill", addr)
 			return Outcome{Terminal: addr, Status: "timeout"}, nil
 		}
-		out, err := s.HC.Run("wait", addr, "--json", "--timeout", s.pollSeconds(turn))
+		w, err := s.poll(addr, turn)
 		if err != nil {
-			return Outcome{Terminal: addr}, err
+			if failures++; failures >= maxWaitFailures {
+				return Outcome{Terminal: addr}, fmt.Errorf("%w (failed %d times in a row)", err, failures)
+			}
+			s.Log("hc wait failed, retrying: %v", err)
+			s.backoff(failures)
+			continue
 		}
-		var w waitResult
-		if err := json.Unmarshal(out, &w); err != nil {
-			return Outcome{Terminal: addr}, fmt.Errorf("hc wait: %w", err)
-		}
+		failures = 0
 		turn = w.Turn
 		st := classify(w)
 		// Before the first turn a startup prompt can look like work, idle or blocked.
 		if turn == 0 && st != stateExited && s.answerStartupPrompt(addr) {
 			continue
 		}
-		switch st {
-		case stateWorking:
-			continue
-		case stateStarting:
-			s.sleep(2 * time.Second) // still starting up; don't spin
-		case stateDone:
-			_, _ = s.HC.Run("kill", addr)
-			return Outcome{Terminal: addr, Status: "done"}, nil
-		case stateBlocked:
-			return Outcome{Terminal: addr, Status: "blocked"}, nil
-		case stateError:
-			_, _ = s.HC.Run("kill", addr)
-			return Outcome{Terminal: addr, Status: "error"}, nil
-		case stateExited:
-			code := 0
-			if w.ExitCode != nil {
-				code = *w.ExitCode
-			}
-			return Outcome{Terminal: addr, Status: "exited", ExitCode: code}, nil
+		if out, ended := s.settle(addr, st, w); ended {
+			return out, nil
 		}
 	}
+}
+
+// maxWaitFailures is how many `hc wait` failures in a row end a session's
+// supervision; fewer are treated as transient (e.g. herdr-core restarting).
+const maxWaitFailures = 4
+
+// waitRetryDelay is the pause after the first failed `hc wait`; it doubles
+// after each further failure.
+const waitRetryDelay = 2 * time.Second
+
+// poll runs one `hc wait` and decodes its result.
+func (s *Session) poll(addr string, turn int) (waitResult, error) {
+	var w waitResult
+	out, err := s.HC.Run("wait", addr, "--json", "--timeout", s.pollSeconds(turn))
+	if err != nil {
+		return w, err
+	}
+	if err := json.Unmarshal(out, &w); err != nil {
+		return w, fmt.Errorf("hc wait: %w", err)
+	}
+	return w, nil
+}
+
+// backoff pauses before retrying a failed `hc wait`, never past the deadline.
+func (s *Session) backoff(failures int) {
+	d := min(waitRetryDelay<<(failures-1), time.Until(s.deadline))
+	if d > 0 {
+		s.sleep(d)
+	}
+}
+
+// settle acts on a wait state and reports whether the session has ended.
+func (s *Session) settle(addr string, st state, w waitResult) (Outcome, bool) {
+	switch st {
+	case stateStarting:
+		s.sleep(2 * time.Second) // still starting up; don't spin
+	case stateDone:
+		_, _ = s.HC.Run("kill", addr)
+		return Outcome{Terminal: addr, Status: "done"}, true
+	case stateBlocked:
+		return Outcome{Terminal: addr, Status: "blocked"}, true
+	case stateError:
+		_, _ = s.HC.Run("kill", addr)
+		return Outcome{Terminal: addr, Status: "error"}, true
+	case stateExited:
+		code := 0
+		if w.ExitCode != nil {
+			code = *w.ExitCode
+		}
+		return Outcome{Terminal: addr, Status: "exited", ExitCode: code}, true
+	}
+	return Outcome{}, false
 }
 
 // startupPoll is how often a session that hasn't finished a turn is checked

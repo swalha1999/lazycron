@@ -90,38 +90,7 @@ func Run(o Options) error {
 		Poll:    5 * time.Minute,
 		Log:     o.Log,
 	}
-	addr, err := sess.Start()
-	if err != nil {
-		_ = RemoveWorktree(repo, wt)
-		return err
-	}
-	o.Log("agent %q started in terminal %s (watch: hc attach %s)", job.Name, addr, addr)
-
-	out, err := sess.Wait(addr)
-	if err != nil {
-		return err
-	}
-	switch out.Status {
-	case "blocked":
-		o.Log("agent is waiting for input; worktree kept at %s", wt)
-		return fmt.Errorf("%w: answer it with `hc attach %s` or in herdr-app", ErrBlocked, addr)
-	case "done":
-		o.Log("agent finished")
-	case "exited":
-		o.Log("claude exited with code %d", out.ExitCode)
-	default:
-		o.Log("agent stopped: %s", out.Status)
-	}
-	if err := RemoveWorktree(repo, wt); err != nil {
-		o.Log("warning: could not remove worktree %s: %v", wt, err)
-	}
-	switch {
-	case out.Status == "exited" && out.ExitCode != 0:
-		return fmt.Errorf("claude exited with code %d", out.ExitCode)
-	case out.Status == "error", out.Status == "timeout":
-		return fmt.Errorf("agent %s (read the session with `hc read %s`)", out.Status, addr)
-	}
-	return nil
+	return supervise(sess, workspace{repo: repo, dir: wt}, job.Name)
 }
 
 var unsafeName = regexp.MustCompile(`[^a-z0-9_-]+`)
