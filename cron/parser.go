@@ -45,16 +45,17 @@ const wrapEndMarker = `; } 2>&1); __lc_ec=$?;`
 
 // WrapWithRecord wraps a command so its output and exit code are captured
 // and piped through the record binary for history tracking.
+// The id and name are single-quoted so the shell never expands $(...),
+// backticks or $VAR in them.
 func WrapWithRecord(command, jobID, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec"`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
+	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %s %s "$__lc_ec"`,
+		wrapPrefix, command, wrapEndMarker, RecordBinPath(), ShellQuote(jobID), ShellQuote(jobName))
 }
 
 // WrapWithRecordOnce wraps a command like WrapWithRecord but appends --once
 // so the record script auto-disables the crontab entry after execution.
 func WrapWithRecordOnce(command, jobID, jobName string) string {
-	return fmt.Sprintf(`%s%s%s echo "$__lc_out" | %s %q %q "$__lc_ec" --once`,
-		wrapPrefix, command, wrapEndMarker, RecordBinPath(), jobID, jobName)
+	return WrapWithRecord(command, jobID, jobName) + " --once"
 }
 
 // StripRecord removes the record wrapper from a raw crontab command,
