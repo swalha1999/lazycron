@@ -14,13 +14,13 @@ import (
 const finishedMarker = "[lazycron] finished:"
 
 // holdWrapper runs inside the herdr terminal. It runs the job from $HOME
-// (like cron), writes the exit code for `lazycron exec`, then — when a hold
+// (like cron) with the run's environment ($5, $6: see Paths.runEnv), writes the exit code for `lazycron exec`, then — when a hold
 // is set — keeps the terminal live in the hold folder so herdr-app, which
 // only adopts live terminals, can still show the run later. The folder's
 // name ("Cron") is what herdr-app calls the space it creates.
 const holdWrapper = `script=$1 exitfile=$2 holddir=$3 hold=$4
 cd "$HOME" 2>/dev/null
-bash "$script"
+env "$5" "$6" bash "$script"
 ec=$?
 printf '%s\n' "$ec" > "$exitfile.tmp" && mv -f "$exitfile.tmp" "$exitfile"
 if [ "$hold" -gt 0 ] 2>/dev/null; then
@@ -56,12 +56,14 @@ func (e *Executor) runHerdr(a *Active) (out outcome, fallback string) {
 	_ = os.Remove(exitFile)
 
 	a.TerminalName = terminalName(a.JobID, a.RunID)
+	env := e.Paths.runEnv(a.RunID)
 	addr, err := e.HC.Start(StartOptions{
 		Name:   a.TerminalName,
 		Cwd:    homeDir(),
 		Labels: e.runLabels(*a),
 		Argv: []string{"bash", "-c", holdWrapper, "lazycron-run",
-			e.Paths.ScriptPath(a.JobID), exitFile, e.Paths.Hold, strconv.Itoa(int(e.Hold.Seconds()))},
+			e.Paths.ScriptPath(a.JobID), exitFile, e.Paths.Hold, strconv.Itoa(int(e.Hold.Seconds())),
+			env[0], env[1]},
 	})
 	if err != nil {
 		a.TerminalName = ""

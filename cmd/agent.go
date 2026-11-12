@@ -58,7 +58,12 @@ func runAgent(cmd *cobra.Command, args []string) error {
 			opts.SpaceID = cfg.Herdr.SpaceID
 			opts.KeepRuns = cfg.Herdr.KeepRunsOrDefault()
 		}
-		opts.RunsDir = runner.LocalPaths().Runs
+		// The run around us says where its runs dir is (--cron-file runs keep
+		// theirs beside the file); a hand-started agent uses ~/.lazycron.
+		opts.RunsDir = os.Getenv(runner.EnvRunsDir)
+		if opts.RunsDir == "" {
+			opts.RunsDir = runner.LocalPaths().Runs
+		}
 		hc, err := runner.FindHC(configured)
 		if err != nil {
 			return errUnavailable("%v", err).withHint("agents run in herdr terminals; run `lazycron setup`")
