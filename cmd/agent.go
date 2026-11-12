@@ -22,8 +22,9 @@ var agentCmd = &cobra.Command{
 	Short: "Run one Claude agent job now, in a herdr terminal (what synced cron entries call)",
 	Long: "Runs a .lazycron/jobs/<id>.md agent job: makes a fresh git worktree from origin's default " +
 		"branch, starts an interactive Claude Code session in a herdr terminal you can watch or take " +
-		"over, and waits until it is done. A session that blocks on a question is left open and the " +
-		"run fails with the terminal to attach to.",
+		"over, and waits until it is done. The session stays open afterwards (in herdr-app's Cron " +
+		"space) so you can read or continue it; `lazycron resume <run>` reopens it, also after its " +
+		"terminal was closed. A session that blocks on a question fails the run.",
 	Args: cobra.ExactArgs(1),
 	RunE: runAgent,
 }
@@ -54,7 +55,10 @@ func runAgent(cmd *cobra.Command, args []string) error {
 		configured := ""
 		if cfg, err := config.Load(); err == nil {
 			configured = cfg.Herdr.Bin
+			opts.SpaceID = cfg.Herdr.SpaceID
+			opts.KeepRuns = cfg.Herdr.KeepRunsOrDefault()
 		}
+		opts.RunsDir = runner.LocalPaths().Runs
 		hc, err := runner.FindHC(configured)
 		if err != nil {
 			return errUnavailable("%v", err).withHint("agents run in herdr terminals; run `lazycron setup`")

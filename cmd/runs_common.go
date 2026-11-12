@@ -21,22 +21,24 @@ const (
 
 // runView is the stable JSON shape of a run.
 type runView struct {
-	ID              string  `json:"id"`
-	JobID           string  `json:"job_id"`
-	JobName         string  `json:"job_name"`
-	State           string  `json:"state"`
-	Runner          string  `json:"runner,omitempty"`
-	Trigger         string  `json:"trigger,omitempty"`
-	StartedAt       string  `json:"started_at,omitempty"`
-	FinishedAt      string  `json:"finished_at,omitempty"`
-	DurationMS      *int64  `json:"duration_ms,omitempty"`
-	ExitCode        *int    `json:"exit_code,omitempty"`
-	Signal          int     `json:"signal,omitempty"`
-	Terminal        string  `json:"terminal,omitempty"`
-	TerminalName    string  `json:"terminal_name,omitempty"`
-	OutputTruncated bool    `json:"output_truncated,omitempty"`
-	FallbackReason  string  `json:"fallback_reason,omitempty"`
-	Output          *string `json:"output,omitempty"`
+	ID              string `json:"id"`
+	JobID           string `json:"job_id"`
+	JobName         string `json:"job_name"`
+	State           string `json:"state"`
+	Runner          string `json:"runner,omitempty"`
+	Trigger         string `json:"trigger,omitempty"`
+	StartedAt       string `json:"started_at,omitempty"`
+	FinishedAt      string `json:"finished_at,omitempty"`
+	DurationMS      *int64 `json:"duration_ms,omitempty"`
+	ExitCode        *int   `json:"exit_code,omitempty"`
+	Signal          int    `json:"signal,omitempty"`
+	Terminal        string `json:"terminal,omitempty"`
+	TerminalName    string `json:"terminal_name,omitempty"`
+	OutputTruncated bool   `json:"output_truncated,omitempty"`
+	FallbackReason  string `json:"fallback_reason,omitempty"`
+	// Agent is the Claude session an agent run started.
+	Agent  *history.AgentSession `json:"agent,omitempty"`
+	Output *string               `json:"output,omitempty"`
 }
 
 // finished reports whether the run has ended (it will not change any more).
@@ -49,7 +51,7 @@ func runFromEntry(e history.Entry) runView {
 		ID: e.RunID, JobID: e.JobID, JobName: e.JobName, Runner: e.Runner, Trigger: e.Trigger,
 		StartedAt: e.StartedAt, FinishedAt: e.Timestamp, ExitCode: e.ExitCode, Signal: e.Signal,
 		Terminal: e.Terminal, TerminalName: e.TerminalName, OutputTruncated: e.OutputTruncated,
-		FallbackReason: e.FallbackReason,
+		FallbackReason: e.FallbackReason, Agent: e.Agent,
 	}
 	switch {
 	case e.Success == nil:

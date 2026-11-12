@@ -49,7 +49,7 @@ func renderHistoryList(entries []history.Entry, selected, width, height int, foc
 		}
 
 		line := fmt.Sprintf("%-*s  %s", maxNameWidth, name, mutedItemStyle.Render(ago))
-		if badge := runs.terminalBadge(entry.Terminal); badge != "" {
+		if badge := runs.terminalBadge(runs.runTerminal(entry)); badge != "" {
 			line += " " + badge
 		}
 

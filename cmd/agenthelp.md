@@ -121,10 +121,15 @@ Audit this repository and file issues for ...
 Each run fetches origin, makes a fresh worktree under
 `~/.lazycron/worktrees/<project>/`, and starts `claude` with the prompt (plus
 `.lazycron/context.md`, the per-repo notes) in a terminal named
-`agent-<job>-<time>`. When the agent finishes its turn the terminal is closed
-and the worktree removed. If it blocks on a question, the run fails, the
-terminal stays open and the worktree is kept: tell your user the terminal so
-they can `hc attach <t>` (or open it in herdr-app) and answer.
+`agent-<job>-<time>`, with its own Claude `--session-id`. The session stays
+open after the agent finishes (herdr-app's Cron space), and the run's history
+entry records it under `agent` (terminal, session_id, dir). If it blocks on a
+question, the run fails: tell your user so they can answer it in herdr-app.
+Your user continues any agent run's session with `lazycron resume <run-or-job>`
+(a TTY; it reopens a closed one with `claude --resume`). `lazycron resume
+<run> --no-attach` starts or finds it without attaching and prints its
+terminal, which you can read with `hc read <t>`. Retention keeps the sessions
+and worktrees of the newest `herdr.keep_runs` runs per job.
 
 ## Machine
 

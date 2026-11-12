@@ -96,7 +96,8 @@ type Session struct {
 }
 
 // Start launches the agent in a herdr terminal and returns its address. The
-// terminal outlives this process so a blocked agent stays open for a person.
+// terminal outlives this process so a person can watch, answer or continue
+// the session after the run is over; run retention closes it later.
 func (s *Session) Start() (string, error) {
 	args := []string{"run", "--bg", "--json", "--outlive-parent", "--name", s.Name, "--cwd", s.Dir}
 	for _, k := range sortedKeys(s.Labels) {
@@ -148,12 +149,11 @@ func (s *Session) Wait(addr string) (Outcome, error) {
 		case stateStarting:
 			s.sleep(2 * time.Second) // still starting up; don't spin
 		case stateDone:
-			_, _ = s.HC.Run("kill", addr)
+			// Left open: the session can be read or continued later.
 			return Outcome{Terminal: addr, Status: "done"}, nil
 		case stateBlocked:
 			return Outcome{Terminal: addr, Status: "blocked"}, nil
 		case stateError:
-			_, _ = s.HC.Run("kill", addr)
 			return Outcome{Terminal: addr, Status: "error"}, nil
 		case stateExited:
 			code := 0

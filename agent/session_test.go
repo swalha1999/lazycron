@@ -82,7 +82,7 @@ func TestSessionStart_PassesLabelsSortedAndArgvLast(t *testing.T) {
 	}
 }
 
-func TestSessionWait_DoneKillsTerminal(t *testing.T) {
+func TestSessionWait_DoneLeavesTerminalOpen(t *testing.T) {
 	hc := &fakeHC{waits: []string{
 		`{"ended":false,"reason":"timeout","turn":0}`,
 		`{"ended":true,"reason":"status","status":"working","turn":0}`,
@@ -92,8 +92,8 @@ func TestSessionWait_DoneKillsTerminal(t *testing.T) {
 	if err != nil || out.Status != "done" {
 		t.Fatalf("Wait = %+v, %v", out, err)
 	}
-	if !hc.called("kill t9") {
-		t.Error("a finished session should be closed")
+	if hc.called("kill") {
+		t.Error("a finished session stays open so it can be continued")
 	}
 }
 
