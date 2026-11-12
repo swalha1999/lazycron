@@ -40,21 +40,23 @@ func (e *Executor) prune(jobID string) {
 }
 
 // PruneCandidates returns the terminals of finished runs beyond the newest
-// keep runs. Runs are ordered by run id, which starts with the start time.
+// keep runs. A run is as new as its newest terminal.
 func PruneCandidates(finished []Terminal, keep int) []Terminal {
 	var runs []string
 	byRun := map[string][]Terminal{}
+	newest := map[string]int64{}
 	for _, t := range finished {
 		run := t.Labels[LabelRun]
 		if _, ok := byRun[run]; !ok {
 			runs = append(runs, run)
 		}
 		byRun[run] = append(byRun[run], t)
+		newest[run] = max(newest[run], t.CreatedMS)
 	}
 	if len(runs) <= keep {
 		return nil
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(runs)))
+	sort.SliceStable(runs, func(i, j int) bool { return newest[runs[i]] > newest[runs[j]] })
 	var out []Terminal
 	for _, run := range runs[keep:] {
 		out = append(out, byRun[run]...)

@@ -5,15 +5,16 @@ import (
 	"testing"
 )
 
-func term(addr, run string) Terminal {
-	return Terminal{Address: addr, Labels: map[string]string{LabelRun: run}}
+func term(addr, run string, created int64) Terminal {
+	return Terminal{Address: addr, CreatedMS: created, Labels: map[string]string{LabelRun: run}}
 }
 
 func TestPruneCandidatesKeepsWholeRuns(t *testing.T) {
 	finished := []Terminal{
-		term("t1", "2026-11-12T04-00-00_job_aaaa"), term("t2", "2026-11-12T04-00-00_job_aaaa"),
-		term("t3", "2026-11-12T08-00-00_job_bbbb"), term("t4", "2026-11-12T08-00-00_job_bbbb"),
-		term("t5", "2026-11-12T12-00-00_job_cccc"),
+		// Same-second run ids: order comes from when the terminals were made.
+		term("t1", "2026-11-12T04-00-00_job_ffff", 100), term("t2", "2026-11-12T04-00-00_job_ffff", 101),
+		term("t3", "2026-11-12T04-00-00_job_0000", 200), term("t4", "2026-11-12T04-00-00_job_0000", 201),
+		term("t5", "2026-11-12T04-00-00_job_8888", 300),
 	}
 	got := PruneCandidates(finished, 2)
 	var addrs []string
