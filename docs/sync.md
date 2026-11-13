@@ -47,6 +47,7 @@ Sync is a **safe merge**:
 - **Existing job** (ID matches, fields changed) → updated
 - **Unchanged job** → skipped
 - **Jobs not from `.lazycron/jobs/`** (TUI, hand-written, other projects) → untouched
+- **Other crontab lines** (`MAILTO=`/`PATH=`/`CRON_TZ=` settings, `@reboot`/`@daily` entries, unrelated comments) → kept verbatim, moved to the top of the crontab
 
 Sync never deletes jobs; remove a job you dropped with `lazycron rm <id>`. Running it twice with no changes changes nothing.
 

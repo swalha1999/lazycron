@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/swalha1999/lazycron/config"
@@ -174,71 +175,63 @@ func Parse(output string) []Job {
 // ParseIn is Parse for a crontab whose job scripts live in scriptsDir: a
 // server's ~/.lazycron/scripts, or the directory beside a crontab file.
 func ParseIn(output, scriptsDir string) []Job {
+	return parseCrontab(output, scriptsDir).jobs
+}
+
+// parsedCrontab is a crontab split into the jobs lazycron manages and the
+// foreign lines it does not (env assignments, @reboot entries, comments).
+type parsedCrontab struct {
+	jobs    []Job
+	foreign []string // verbatim, in original order
+}
+
+func parseCrontab(output, scriptsDir string) parsedCrontab {
 	lines := strings.Split(output, "\n")
-	var jobs []Job
+	var doc parsedCrontab
 	autoIndex := 1
 
-	i := 0
-	for i < len(lines) {
+	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-
-		// Skip empty lines
 		if line == "" {
-			i++
 			continue
 		}
 
-		// Check if this is a name comment: # job-name [TAG:color]
-		if isNameComment(line) {
-			name := strings.TrimSpace(strings.TrimPrefix(line, "#"))
-			var oneShot bool
-			name, oneShot = extractOnce(name)
-			project := ""
-			name, project = extractProject(name)
-			tag, tagColor := "", ""
-			name, tag, tagColor = extractTag(name)
-			id := ""
-			name, id = extractID(name)
-			runner := ""
-			name, runner = extractRunner(name)
-			if id == "" {
-				id = GenerateID()
+		// A name comment (# job-name [TAG:color]) names the job line after it.
+		if isNameComment(line) && i+1 < len(lines) {
+			if job, ok := parseJobLine(strings.TrimSpace(lines[i+1]), "", scriptsDir); ok {
+				doc.jobs = append(doc.jobs, applyNameComment(job, line))
+				i++
+				continue
 			}
-			i++
-			if i < len(lines) {
-				jobLine := strings.TrimSpace(lines[i])
-				if jobLine == "" {
-					i++
-					continue
-				}
-				if job, ok := parseJobLine(jobLine, name, scriptsDir); ok {
-					job.ID = id
-					job.Tag = tag
-					job.TagColor = tagColor
-					job.OneShot = oneShot
-					job.Project = project
-					job.Runner = runner
-					jobs = append(jobs, job)
-					i++
-					continue
-				}
-			}
-			continue
 		}
 
 		// Regular cron line or disabled line without a preceding name comment
 		if job, ok := parseJobLine(line, "", scriptsDir); ok {
-			if job.Name == "" {
-				job.Name = fmt.Sprintf("job-%d", autoIndex)
-				autoIndex++
-			}
+			job.Name = fmt.Sprintf("job-%d", autoIndex)
+			autoIndex++
 			job.ID = GenerateID()
-			jobs = append(jobs, job)
+			doc.jobs = append(doc.jobs, job)
+			continue
 		}
-		i++
+
+		doc.foreign = append(doc.foreign, lines[i])
 	}
 
-	return jobs
+	return doc
+}
+
+// applyNameComment sets the name, id and markers from a name comment line.
+func applyNameComment(job Job, comment string) Job {
+	name := strings.TrimSpace(strings.TrimPrefix(comment, "#"))
+	name, job.OneShot = extractOnce(name)
+	name, job.Project = extractProject(name)
+	name, job.Tag, job.TagColor = extractTag(name)
+	name, job.ID = extractID(name)
+	job.Name, job.Runner = extractRunner(name)
+	if job.ID == "" {
+		job.ID = GenerateID()
+	}
+	return job
 }
 
 // extractOnce checks for the @once marker in a name comment.
@@ -368,9 +361,11 @@ func parseJobLine(line, name, scriptsDir string) (Job, bool) {
 }
 
 // splitCronLine splits a cron line into schedule (5 fields) and command.
+// Env assignments and @special schedules (@reboot, @daily, ...) are not
+// job lines lazycron manages; they are kept verbatim as foreign lines.
 func splitCronLine(line string) (schedule, command string, ok bool) {
 	fields := strings.Fields(line)
-	if len(fields) < 6 {
+	if len(fields) < 6 || strings.HasPrefix(fields[0], "@") || isEnvAssignment(line) {
 		return "", "", false
 	}
 	schedule = strings.Join(fields[:5], " ")
@@ -387,4 +382,11 @@ func splitCronLine(line string) (schedule, command string, ok bool) {
 	}
 	command = strings.TrimSpace(line[pos:])
 	return schedule, command, true
+}
+
+// envAssignment matches a crontab environment line: NAME=value or NAME = value.
+var envAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\s*=`)
+
+func isEnvAssignment(line string) bool {
+	return envAssignment.MatchString(line)
 }
