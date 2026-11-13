@@ -113,44 +113,8 @@ func Run(o Options) error {
 		Poll:    5 * time.Minute,
 		Log:     o.Log,
 	}
-	addr, err := sess.Start()
-	if err != nil {
-		_ = RemoveWorktree(repo, wt)
-		return err
-	}
-	rec := SessionRecord{Terminal: addr, SessionID: sessionID, Dir: wt, Repo: repo, Status: "working"}
-	_ = writeRecord(o.RunsDir, run.RunID, rec)
-	o.Log("agent %q started in terminal %s (watch: hc attach %s)", job.Name, addr, addr)
-	o.Log("claude session %s in %s", sessionID, wt)
-
-	out, err := sess.Wait(addr)
-	if err != nil {
-		return err
-	}
-	rec.Status = out.Status
-	_ = writeRecord(o.RunsDir, run.RunID, rec)
-	continueHint := "continue it with `lazycron resume " + run.RunID + "`"
-	if run.RunID == "" {
-		continueHint = fmt.Sprintf("continue it with `hc attach %s`, or `claude --resume %s` in %s", addr, sessionID, wt)
-	}
-	switch out.Status {
-	case "blocked":
-		o.Log("agent is waiting for input")
-		return fmt.Errorf("%w: answer it in herdr-app or with `hc attach %s`", ErrBlocked, addr)
-	case "done":
-		o.Log("agent finished; its session stays open: %s", continueHint)
-	case "exited":
-		o.Log("claude exited with code %d; %s", out.ExitCode, continueHint)
-	default:
-		o.Log("agent stopped: %s; %s", out.Status, continueHint)
-	}
-	switch {
-	case out.Status == "exited" && out.ExitCode != 0:
-		return fmt.Errorf("claude exited with code %d", out.ExitCode)
-	case out.Status == "error", out.Status == "timeout":
-		return fmt.Errorf("agent %s (read the session with `hc read %s`)", out.Status, addr)
-	}
-	return nil
+	rec := SessionRecord{SessionID: sessionID, Dir: wt, Repo: repo}
+	return supervise(sess, &tracker{runsDir: o.RunsDir, runID: run.RunID, rec: rec}, job.Name)
 }
 
 var unsafeName = regexp.MustCompile(`[^a-z0-9_-]+`)

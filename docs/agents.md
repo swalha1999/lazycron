@@ -19,14 +19,19 @@ crontab entry per job: cd <project> && lazycron agent .lazycron/jobs/<job>.md --
         │  cron fires (inside a herdr run terminal)
         ▼
 1. git fetch origin; worktree at ~/.lazycron/worktrees/<project>/<job>-<time> from origin's default branch
-2. hc run: claude --permission-mode <mode> [--model M] "<prompt + context.md>" in terminal agent-<job>-<time>
+2. hc run: claude --permission-mode <mode> --session-id <uuid> [--model M] "<prompt + context.md>" in terminal agent-<job>-<time>
 3. first-run prompts for the new folder (trust, permission mode) are answered
 4. hc wait follows the session:
-     done     → terminal closed, worktree removed, run succeeds
-     blocked  → terminal and worktree kept, run fails with the terminal to attach to
-     error    → session stopped, run fails
+     done     → session stays open, run succeeds
+     blocked  → session stays open, run fails with the terminal to attach to
+     error    → session stays open, run fails
      timeout  → session stopped, run fails
+     hc wait keeps failing (4 in a row, retried with backoff within the timeout)
+              → session stopped, run fails naming the terminal (status "lost")
+   the worktree is kept in every case
 ```
+
+Each run's history entry records its session under `agent`: terminal, session id, worktree and the status above. `lazycron resume <run-or-job>` continues it: in its terminal while that is open, otherwise in a new terminal running `claude --resume` in the run's worktree. So a session that was stopped (timeout, or lazycron lost track of it) loses nothing the agent had written. When a lost session can't be stopped either, the run's error says how to stop it by hand (`hc kill <terminal>`). Sessions and worktrees of the newest `herdr.keep_runs` runs (default 5) per job are kept; older ones are closed and removed.
 
 The agent does the GitHub work itself with `gh` (issues, branches, pushes, PRs). The wrapping prompt tells it never to push to or merge the default branch.
 

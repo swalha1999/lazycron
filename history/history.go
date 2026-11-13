@@ -46,7 +46,7 @@ type AgentSession struct {
 	SessionID string `json:"session_id,omitempty"` // claude --resume <id>
 	Dir       string `json:"dir,omitempty"`        // the worktree claude ran in
 	Repo      string `json:"repo,omitempty"`       // the clone the worktree belongs to
-	Status    string `json:"status,omitempty"`     // done, blocked, error, exited, timeout
+	Status    string `json:"status,omitempty"`     // working, done, blocked, error, exited, timeout, lost
 }
 
 // IDFromPath derives a run id from a history file path: its base name
