@@ -290,3 +290,24 @@ func TestExtraLabelsAddAndRemove(t *testing.T) {
 		t.Fatalf("labels not applied:\n%s", calls)
 	}
 }
+
+// A script's `lazycron agent` writes its session where the run reads it,
+// also when the run's lazycron dir is not ~/.lazycron (--cron-file).
+func TestRunRecordsAgentSessionFromRunsDir(t *testing.T) {
+	for _, herdr := range []bool{true, false} {
+		f := newFixture(t, herdr)
+		f.exec.Paths = PathsUnder(filepath.Join(t.TempDir(), "crontab.lazycron"))
+		f.script("ag", `printf '{"session_id":"s1","dir":"/w"}' > "$LAZYCRON_RUNS_DIR/$LAZYCRON_RUN_ID.agent.json"`)
+		runner := config.RunnerPlain
+		if herdr {
+			runner = config.RunnerHerdr
+		}
+		e := f.run(Request{JobID: "ag", JobName: "Ag", Runner: runner})
+		if e.Agent == nil || e.Agent.SessionID != "s1" || e.Agent.Dir != "/w" {
+			t.Fatalf("herdr=%v: entry agent = %+v, want session s1 (output %q)", herdr, e.Agent, e.Output)
+		}
+		if _, err := os.Stat(f.exec.Paths.AgentFile(e.RunID)); !os.IsNotExist(err) {
+			t.Errorf("herdr=%v: agent file not cleaned up: %v", herdr, err)
+		}
+	}
+}

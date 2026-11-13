@@ -50,3 +50,16 @@ func (p Paths) ExitFile(runID string) string {
 func (p Paths) AgentFile(runID string) string {
 	return filepath.Join(p.Runs, runID+".agent.json")
 }
+
+// Environment a run's script gets, so a `lazycron agent` inside it records
+// its Claude session where this run's history entry looks for it, whichever
+// lazycron directory (~/.lazycron, or --cron-file's) the run belongs to.
+const (
+	EnvRunsDir = "LAZYCRON_RUNS_DIR"
+	EnvRunID   = "LAZYCRON_RUN_ID"
+)
+
+// runEnv returns the environment entries for one run of a job.
+func (p Paths) runEnv(runID string) []string {
+	return []string{EnvRunsDir + "=" + p.Runs, EnvRunID + "=" + runID}
+}

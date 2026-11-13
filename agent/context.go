@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/swalha1999/lazycron/runner"
 )
 
 // Labels on agent terminals. The herdr.space label puts the terminal in the
@@ -31,7 +33,17 @@ type runContext struct {
 }
 
 // currentRun reads the labels of the herdr terminal this process runs in.
+// The run id the run's script was given (LAZYCRON_RUN_ID) wins, so plain
+// runs are recorded too.
 func currentRun(hc HC) runContext {
+	rc := readTerminalLabels(hc)
+	if id := os.Getenv(runner.EnvRunID); id != "" {
+		rc.RunID = id
+	}
+	return rc
+}
+
+func readTerminalLabels(hc HC) runContext {
 	id := os.Getenv("HC_TERMINAL_ID")
 	if id == "" || hc == nil {
 		return runContext{}

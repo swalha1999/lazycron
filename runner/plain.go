@@ -18,6 +18,7 @@ func (e *Executor) runPlain(a *Active) outcome {
 	var buf bytes.Buffer
 	c := exec.Command("bash", e.Paths.ScriptPath(a.JobID))
 	c.Dir, _ = os.UserHomeDir()
+	c.Env = append(os.Environ(), e.Paths.runEnv(a.RunID)...)
 	c.Stdout = &buf
 	c.Stderr = &buf
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // `kill` ends the whole job
