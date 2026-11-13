@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/swalha1999/lazycron/cron"
 	"gopkg.in/yaml.v3"
 )
 
@@ -74,7 +75,13 @@ func ParseJob(data []byte) (Job, error) {
 	if _, err := j.TimeoutDuration(); err != nil {
 		return j, err
 	}
-	return j, nil
+	return j, j.validateLabels()
+}
+
+// validateLabels rejects a name, tag or tag color that cannot be written
+// safely into a crontab line.
+func (j Job) validateLabels() error {
+	return cron.Job{Name: j.Name, Tag: j.Tag, TagColor: j.TagColor}.ValidateLabels()
 }
 
 // PermissionModeOrDefault returns the configured permission mode or the default.

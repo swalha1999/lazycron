@@ -14,6 +14,7 @@ type fakeHC struct {
 	screen   string   // what `hc read` returns
 	waitErrs int      // how many `hc wait` calls fail before the scripted ones
 	killErr  error    // what `hc kill` returns
+	runErr   error    // what `hc run` returns
 	calls    []string
 }
 
@@ -21,6 +22,9 @@ func (f *fakeHC) Run(args ...string) ([]byte, error) {
 	f.calls = append(f.calls, strings.Join(args, " "))
 	switch args[0] {
 	case "run":
+		if f.runErr != nil {
+			return nil, f.runErr
+		}
 		return []byte(`{"address":"t9","state":"live"}`), nil
 	case "wait":
 		if f.waitErrs > 0 {
@@ -92,7 +96,7 @@ func TestSessionStart_PassesLabelsSortedAndArgvLast(t *testing.T) {
 	}
 }
 
-func TestSessionWait_DoneKillsTerminal(t *testing.T) {
+func TestSessionWait_DoneLeavesTerminalOpen(t *testing.T) {
 	hc := &fakeHC{waits: []string{
 		`{"ended":false,"reason":"timeout","turn":0}`,
 		`{"ended":true,"reason":"status","status":"working","turn":0}`,
@@ -102,8 +106,8 @@ func TestSessionWait_DoneKillsTerminal(t *testing.T) {
 	if err != nil || out.Status != "done" {
 		t.Fatalf("Wait = %+v, %v", out, err)
 	}
-	if !hc.called("kill t9") {
-		t.Error("a finished session should be closed")
+	if hc.called("kill") {
+		t.Error("a finished session stays open so it can be continued")
 	}
 }
 

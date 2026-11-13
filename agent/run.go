@@ -19,6 +19,10 @@ type Options struct {
 	HC          HC
 	DryRun      bool // resolve everything and print the prompt; start nothing
 	Log         func(format string, args ...any)
+
+	SpaceID  string // herdr-app space when not run by `lazycron exec` (which labels its own)
+	RunsDir  string // where the session record for the run's history goes
+	KeepRuns int    // worktrees kept per job, the new one included (0: keep all)
 }
 
 // ErrBlocked means the agent is waiting on a person; its terminal is still open.
@@ -64,7 +68,9 @@ func Run(o Options) error {
 	prompt := BuildPrompt(job, PromptContext{
 		JobName: job.Name, Repo: RepoLabel(repo), Base: ref, Worktree: wt, Notes: string(notes),
 	})
-	argv := []string{"env", "PATH=" + os.Getenv("PATH"), claude, "--permission-mode", job.PermissionModeOrDefault()}
+	sessionID := newSessionID()
+	argv := []string{"env", "PATH=" + os.Getenv("PATH"), claude, "--permission-mode", job.PermissionModeOrDefault(),
+		"--session-id", sessionID, "--name", job.Name + " " + time.Now().Format("2006-01-02 15:04")}
 	if job.Model != "" {
 		argv = append(argv, "--model", job.Model)
 	}
@@ -77,20 +83,38 @@ func Run(o Options) error {
 		return nil
 	}
 
+	pruneWorktrees(repo, filepath.Dir(wt), jobID, o.KeepRuns, o.Log)
 	if err := AddWorktree(repo, wt, ref); err != nil {
 		return err
+	}
+	run := currentRun(o.HC)
+	labels := map[string]string{labelProject: o.ProjectName, labelJob: jobID, labelAgent: "claude", labelSpace: o.SpaceID}
+	if run.JobID != "" {
+		labels[labelJob] = run.JobID
+	}
+	if run.RunID != "" {
+		labels[labelRun] = run.RunID
+	}
+	if run.SpaceID != "" {
+		labels[labelSpace] = run.SpaceID
+	}
+	for k, v := range labels {
+		if v == "" {
+			delete(labels, k)
+		}
 	}
 	sess := &Session{
 		HC:      o.HC,
 		Name:    terminalName(jobID, stamp),
 		Dir:     wt,
 		Argv:    argv,
-		Labels:  map[string]string{"lazycron.project": o.ProjectName, "lazycron.job": jobID},
+		Labels:  labels,
 		Timeout: timeout,
 		Poll:    5 * time.Minute,
 		Log:     o.Log,
 	}
-	return supervise(sess, workspace{repo: repo, dir: wt}, job.Name)
+	rec := SessionRecord{SessionID: sessionID, Dir: wt, Repo: repo}
+	return supervise(sess, &tracker{runsDir: o.RunsDir, runID: run.RunID, rec: rec}, job.Name)
 }
 
 var unsafeName = regexp.MustCompile(`[^a-z0-9_-]+`)

@@ -267,7 +267,7 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		id = cron.GenerateID()
 	}
 
-	return cron.Job{
+	job := cron.Job{
 		ID:       id,
 		Name:     name,
 		Schedule: cronExpr,
@@ -278,7 +278,11 @@ func (f *formModel) buildJob() (cron.Job, error) {
 		TagColor: f.tagColor,
 		OneShot:  f.oneShot,
 		Project:  strings.TrimSpace(f.inputs[fieldProject].Value()),
-	}, nil
+	}
+	if err := job.ValidateLabels(); err != nil {
+		return cron.Job{}, err
+	}
+	return job, nil
 }
 
 func renderForm(f *formModel, width int) string {

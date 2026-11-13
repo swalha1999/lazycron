@@ -2,62 +2,86 @@ package agent
 
 import "fmt"
 
-// workspace is the worktree one agent run works in.
-type workspace struct {
-	repo string // the repository the worktree belongs to
-	dir  string // the worktree itself
+// statusLost is recorded when `hc wait` kept failing and the session was
+// stopped unseen: how far the agent got is unknown.
+const statusLost = "lost"
+
+// tracker keeps one run's session record up to date in the runs dir, where
+// `lazycron exec` picks it up for the history entry.
+type tracker struct {
+	runsDir string
+	runID   string // "" for an agent run outside a lazycron run: nothing is saved
+	rec     SessionRecord
 }
 
-// remove deletes the worktree, logging (not failing) when it can't.
-func (w workspace) remove(log func(format string, args ...any)) {
-	if err := RemoveWorktree(w.repo, w.dir); err != nil {
-		log("warning: could not remove worktree %s: %v", w.dir, err)
+// save records the session's status. A record that can't be written only
+// costs the run its `lazycron resume`, so the run itself goes on.
+func (t *tracker) save(status string) {
+	t.rec.Status = status
+	_ = writeRecord(t.runsDir, t.runID, t.rec)
+}
+
+// continueHint tells a person how to pick the session up again.
+func (t *tracker) continueHint() string {
+	if t.runID != "" {
+		return "continue it with `lazycron resume " + t.runID + "`"
 	}
+	return fmt.Sprintf("continue it with `hc attach %s`, or `claude --resume %s` in %s",
+		t.rec.Terminal, t.rec.SessionID, t.rec.Dir)
 }
 
-// supervise starts the session in ws, follows it to the end and cleans up.
-func supervise(sess *Session, ws workspace, jobName string) error {
+// supervise starts the session, follows it to the end and records how it
+// ended. The worktree is always kept once the session started: the session
+// can be resumed there until retention removes it.
+func supervise(sess *Session, t *tracker, jobName string) error {
 	addr, err := sess.Start()
 	if err != nil {
-		ws.remove(sess.Log)
+		if rmErr := RemoveWorktree(t.rec.Repo, t.rec.Dir); rmErr != nil {
+			sess.Log("warning: could not remove worktree %s: %v", t.rec.Dir, rmErr)
+		}
 		return err
 	}
+	t.rec.Terminal = addr
+	t.save("working")
 	sess.Log("agent %q started in terminal %s (watch: hc attach %s)", jobName, addr, addr)
+	sess.Log("claude session %s in %s", t.rec.SessionID, t.rec.Dir)
 
 	out, err := sess.Wait(addr)
 	if err != nil {
-		return abandon(sess, ws, addr, err)
+		return abandon(sess, t, err)
 	}
-	return finish(out, ws, sess.Log)
+	t.save(out.Status)
+	return finish(out, t.continueHint(), sess.Log)
 }
 
 // abandon stops an agent lazycron lost track of, so it can't keep running
-// unsupervised past its timeout, and removes its worktree. When the agent
-// can't be stopped its worktree is kept, since it may still be working there.
-func abandon(sess *Session, ws workspace, addr string, cause error) error {
+// unsupervised past its timeout. Its worktree and session record are kept:
+// whatever it had done is still there to resume. When it can't be stopped
+// the error says how to stop it by hand.
+func abandon(sess *Session, t *tracker, cause error) error {
+	t.save(statusLost)
+	addr := t.rec.Terminal
 	if _, err := sess.HC.Run("kill", addr); err != nil {
-		return fmt.Errorf("lost track of agent terminal %s and could not stop it (%v); stop it with `hc kill %s`, worktree kept at %s: %w",
-			addr, err, addr, ws.dir, cause)
+		return fmt.Errorf("lost track of agent terminal %s and could not stop it (%v); stop it with `hc kill %s`, its worktree is %s: %w",
+			addr, err, addr, t.rec.Dir, cause)
 	}
-	ws.remove(sess.Log)
-	return fmt.Errorf("lost track of agent terminal %s, stopped it: %w", addr, cause)
+	return fmt.Errorf("lost track of agent terminal %s and stopped it; %s: %w", addr, t.continueHint(), cause)
 }
 
-// finish reports how a followed session ended and removes its worktree,
-// unless the agent is waiting on a person.
-func finish(out Outcome, ws workspace, log func(format string, args ...any)) error {
+// finish reports how a followed session ended. Its terminal stays open,
+// except after a timeout, which stopped it.
+func finish(out Outcome, continueHint string, log func(format string, args ...any)) error {
 	switch out.Status {
 	case "blocked":
-		log("agent is waiting for input; worktree kept at %s", ws.dir)
-		return fmt.Errorf("%w: answer it with `hc attach %s` or in herdr-app", ErrBlocked, out.Terminal)
+		log("agent is waiting for input")
+		return fmt.Errorf("%w: answer it in herdr-app or with `hc attach %s`", ErrBlocked, out.Terminal)
 	case "done":
-		log("agent finished")
+		log("agent finished; its session stays open: %s", continueHint)
 	case "exited":
-		log("claude exited with code %d", out.ExitCode)
+		log("claude exited with code %d; %s", out.ExitCode, continueHint)
 	default:
-		log("agent stopped: %s", out.Status)
+		log("agent stopped: %s; %s", out.Status, continueHint)
 	}
-	ws.remove(log)
 	switch {
 	case out.Status == "exited" && out.ExitCode != 0:
 		return fmt.Errorf("claude exited with code %d", out.ExitCode)

@@ -79,7 +79,7 @@ func (s jobSpec) toJob() (cron.Job, error) {
 		return cron.Job{}, err
 	}
 	enabled := s.Enabled == nil || *s.Enabled
-	return cron.Job{
+	job := cron.Job{
 		ID:       id,
 		Name:     s.Name,
 		Schedule: expr,
@@ -91,7 +91,20 @@ func (s jobSpec) toJob() (cron.Job, error) {
 		TagColor: s.TagColor,
 		Project:  s.Project,
 		Runner:   s.Runner,
-	}, nil
+	}
+	if err := validateLabels(job); err != nil {
+		return cron.Job{}, err
+	}
+	return job, nil
+}
+
+// validateLabels rejects names, tags and projects that cannot be written
+// safely into a crontab line.
+func validateLabels(j cron.Job) error {
+	if err := j.ValidateLabels(); err != nil {
+		return errUsage("%v", err).withHint("remove newlines and %% from names, tags and projects")
+	}
+	return nil
 }
 
 // specFromJob is the inverse of toJob, used by `export`.

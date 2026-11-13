@@ -32,7 +32,21 @@ type Entry struct {
 	OutputTruncated bool   `json:"output_truncated,omitempty"`
 	FallbackReason  string `json:"fallback_reason,omitempty"`
 
+	// Agent is set when the run started a Claude agent (`lazycron agent`).
+	Agent *AgentSession `json:"agent,omitempty"`
+
 	FilePath string `json:"-"`
+}
+
+// AgentSession is the Claude Code session an agent run started. Its terminal
+// stays open after the agent finishes, and the session can be resumed in
+// its worktree until retention removes them.
+type AgentSession struct {
+	Terminal  string `json:"terminal,omitempty"`   // herdr address of the claude terminal
+	SessionID string `json:"session_id,omitempty"` // claude --resume <id>
+	Dir       string `json:"dir,omitempty"`        // the worktree claude ran in
+	Repo      string `json:"repo,omitempty"`       // the clone the worktree belongs to
+	Status    string `json:"status,omitempty"`     // working, done, blocked, error, exited, timeout, lost
 }
 
 // IDFromPath derives a run id from a history file path: its base name

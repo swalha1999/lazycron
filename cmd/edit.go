@@ -84,5 +84,5 @@ func applyEdits(j *cron.Job, changed func(string) bool) error {
 		}
 	}
 	j.Wrapped = true
-	return nil
+	return validateLabels(*j)
 }

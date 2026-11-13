@@ -187,10 +187,12 @@ Audit this repository and file GitHub issues for ...
 
 `lazycron agent <job>` (what the cron entry calls) fetches origin, adds a worktree under `~/.lazycron/worktrees/<project>/`, and starts `claude` in a herdr terminal named `agent-<job>-<time>`, with the prompt plus `context.md`. It answers Claude's first-run prompts for that fresh folder (trust, permission mode) and follows the session with `hc wait`:
 
-- **done**: the terminal is closed and the worktree removed.
-- **blocked on a question**: the run fails, the terminal stays open and the worktree is kept. Attach with `hc attach <terminal>` or herdr-app and answer.
-- **error or timeout**: the session is stopped and the run fails.
-- **lost track of it** (`hc wait` keeps failing, e.g. herdr-core restarted): brief failures are retried within the timeout; after 4 in a row the session is stopped, the worktree removed and the run fails naming the terminal.
+- **done**: the run succeeds and the Claude session stays open in herdr-app's Cron space, so you can read it or keep talking to it.
+- **blocked on a question**: the run fails and the session stays open for you to answer.
+- **error or timeout**: the run fails; on timeout the session is stopped.
+- **lost track of it** (`hc wait` keeps failing, e.g. herdr-core restarted): brief failures are retried with backoff within the timeout; after 4 in a row the session is stopped, so it can't run on unsupervised, and the run fails naming the terminal. If it can't be stopped, the error says how to stop it by hand.
+
+The worktree is kept in every case, and every run starts Claude with its own `--session-id`, recorded with its last status in the run's history entry (`lazycron logs <run> --json` shows `agent`). `lazycron resume <run-or-job>` puts you in that session: in its terminal while it is open, otherwise (after a timeout or a lost session, say) in a new terminal running `claude --resume` in the run's worktree. Sessions and worktrees of the newest `herdr.keep_runs` runs (default 5) per job are kept; older ones are closed and removed.
 
 ### Sync
 
