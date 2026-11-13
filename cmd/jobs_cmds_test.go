@@ -60,11 +60,36 @@ func TestAddValidatesInput(t *testing.T) {
 		addArgs("x", "X", "not a schedule", "true"),
 		addArgs("Bad ID", "X", "every hour", "true"),
 		addArgs("x", "X", "every hour", "true", "--runner", "docker"),
+		addArgs("x", "a\n* * * * * evil", "every hour", "true"),
+		addArgs("x", "Disk 90% alert", "every hour", "true"),
+		addArgs("x", "X", "every hour", "true", "--tag", "a\rb"),
+		addArgs("x", "X", "every hour", "true", "--project", "50%"),
 		{"add", "--name", "X"},
 	} {
 		if r := env.run(args...); r.code != exitUsage {
 			t.Errorf("%v: exit %d, want usage (stderr %s)", args, r.code, r.stderr)
 		}
+	}
+}
+
+func TestUnsafeLabelsAreRejected(t *testing.T) {
+	env := newTestEnv(t)
+	env.mustRun(addArgs("job1", "Job One", "every hour", "true")...)
+	for _, args := range [][]string{
+		{"edit", "job1", "--name", "Disk 90% alert"},
+		{"edit", "job1", "--project", "a\nb"},
+	} {
+		if r := env.run(args...); r.code != exitUsage {
+			t.Errorf("%v: exit %d, want usage (stderr %s)", args, r.code, r.stderr)
+		}
+	}
+	file := filepath.Join(env.home, "evil.yml")
+	writeFile(t, file, "jobs:\n  - name: \"a\\n* * * * * evil\"\n    schedule: every hour\n    command: x\n")
+	if r := env.run("apply", file); r.code != exitUsage {
+		t.Errorf("apply: exit %d, want usage (stderr %s)", r.code, r.stderr)
+	}
+	if jobs := env.jobs(); len(jobs) != 1 || jobs[0].Name != "Job One" || jobs[0].Project != "" {
+		t.Fatalf("crontab changed: %+v", jobs)
 	}
 }
 

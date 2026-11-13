@@ -48,6 +48,9 @@ func TestParseJob_Errors(t *testing.T) {
 		"empty prompt":    "---\nname: X\ncron: every hour\n---\n   \n",
 		"bad timeout":     "---\nname: X\ncron: every hour\ntimeout: soon\n---\nwork",
 		"bad yaml":        "---\nname: [\n---\nwork",
+		"newline in name": "---\nname: \"a\\n* * * * * evil\"\ncron: every hour\n---\nwork",
+		"% in name":       "---\nname: Disk 90% alert\ncron: every hour\n---\nwork",
+		"% in tag":        "---\nname: X\ncron: every hour\ntag: \"50%\"\n---\nwork",
 	}
 	for name, src := range cases {
 		if _, err := ParseJob([]byte(src)); err == nil {

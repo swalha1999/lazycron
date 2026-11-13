@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/swalha1999/lazycron/cron"
 )
 
 // handleConfirmDialogKey handles key input for any yes/no confirmation dialog.
@@ -79,6 +80,9 @@ func (m Model) handleProjectPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		jobIdx := m.currentJobIndex()
 		if jobIdx >= 0 {
 			newProject := strings.TrimSpace(m.projectInput.Value())
+			if err := cron.ValidateLabel("project", newProject); err != nil {
+				return m, m.setStatus(err.Error(), statusError, 4*time.Second)
+			}
 			m.jobs[jobIdx].Project = newProject
 			m.mode = modeNormal
 			var statusText string
