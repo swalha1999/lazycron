@@ -273,6 +273,9 @@ func renderJobRow(job cron.Job, maxNameWidth int, lastRunStatus map[string]*bool
 	if !job.Wrapped {
 		nameWithBadges += " " + warnStyle.Render("⚠")
 	}
+	if job.ScriptMissing() {
+		nameWithBadges += " " + missingStyle.Render("NO SCRIPT")
+	}
 
 	// Schedule (human readable)
 	schedule := cron.CronToHuman(job.Schedule)

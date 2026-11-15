@@ -41,7 +41,9 @@ Schedules are cron expressions or phrases: `every minute`, `every hour`,
 (`2026-12-01 09:00`, `tomorrow 9am`) and the job disables itself after running.
 
 A job's JSON: `id, name, schedule, schedule_human, command, enabled, once,
-tag, project, runner, runner_override, current_format, next_runs`.
+tag, project, runner, runner_override, current_format, next_runs`, plus
+`script_missing: true` when the job's script file could not be read (its
+`command` is then the script path; set the command again to recreate it).
 
 Jobs file (YAML or JSON) for `apply`:
 

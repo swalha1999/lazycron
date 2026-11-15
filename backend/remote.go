@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -83,11 +84,9 @@ func (b *RemoteBackend) ReadJobs() ([]cron.Job, error) {
 	jobs := cron.ParseIn(output, lcDir+"/scripts")
 
 	// Resolve script refs that couldn't be resolved locally (remote files).
-	// If resolution fails the Command field would otherwise stay as a script
-	// self-reference (`bash '<path>'`), and any subsequent RunJob call would
-	// overwrite the on-remote script with that self-reference — turning every
-	// future invocation into a fork bomb. Skip the job rather than carry a
-	// poisoned Command forward.
+	// When the remote read fails the job keeps its script-ref Command, which
+	// marks it ScriptMissing: WriteJobs and RunJob never upload it, so the
+	// remote script is not overwritten with a call to itself (a fork bomb).
 	for i, j := range jobs {
 		path := cron.ScriptRefPath(j.Command)
 		if path == "" {
@@ -120,16 +119,9 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 		return fmt.Errorf("create scripts dir: %w", err)
 	}
 
-	// Upload script files for each job.
-	active := make(map[string]bool)
-	for _, j := range jobs {
-		filename := filepath.Base(cron.ScriptPath(j.ID))
-		active[filename] = true
-		content := cron.BuildScriptContent(j.Command)
-		path := remoteScriptsDir + "/" + filename
-		if err := b.client.Upload(content, path, 0o755); err != nil {
-			return fmt.Errorf("upload script %s: %w", j.Name, err)
-		}
+	active, err := uploadScripts(b.client, remoteScriptsDir, jobs)
+	if err != nil {
+		return err
 	}
 
 	// Delete orphan scripts on remote.
@@ -154,6 +146,30 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 		return fmt.Errorf("write crontab: %w", err)
 	}
 	return nil
+}
+
+// scriptUploader is the part of the SSH client uploadScripts needs.
+type scriptUploader interface {
+	Upload(content, path string, mode os.FileMode) error
+}
+
+// uploadScripts uploads each job's script into dir and returns the script
+// file names that belong to jobs. A job whose script is missing keeps its
+// remote file untouched: its Command is the script ref, and uploading it
+// would make the script call itself forever.
+func uploadScripts(up scriptUploader, dir string, jobs []cron.Job) (map[string]bool, error) {
+	active := make(map[string]bool)
+	for _, j := range jobs {
+		filename := filepath.Base(cron.ScriptPath(j.ID))
+		active[filename] = true
+		if j.ScriptMissing() {
+			continue
+		}
+		if err := up.Upload(cron.BuildScriptContent(j.Command), dir+"/"+filename, 0o755); err != nil {
+			return nil, fmt.Errorf("upload script %s: %w", j.Name, err)
+		}
+	}
+	return active, nil
 }
 
 // remoteCrontab formats jobs for a server's crontab: local lazycron paths

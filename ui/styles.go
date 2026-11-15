@@ -95,6 +95,10 @@ var (
 	warnStyle = lipgloss.NewStyle().
 			Foreground(colorYellow)
 
+	missingStyle = lipgloss.NewStyle().
+			Foreground(colorRed).
+			Bold(true)
+
 	enabledDotStyle = lipgloss.NewStyle().
 			Foreground(colorGreen)
 
