@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/swalha1999/lazycron/runner"
 )
@@ -100,29 +98,4 @@ func writeRecord(runsDir, runID string, rec SessionRecord) error {
 		return err
 	}
 	return os.Rename(path+".tmp", path)
-}
-
-// pruneWorktrees removes this job's oldest worktrees so that, with the one
-// about to be made, keep remain. Worktrees are named <job>-<stamp>, so they
-// sort by age.
-func pruneWorktrees(repo, dir, jobID string, keep int, log func(string, ...any)) {
-	if keep <= 0 {
-		return
-	}
-	matches, _ := filepath.Glob(filepath.Join(dir, jobID+"-*"))
-	var mine []string
-	for _, m := range matches {
-		stamp := strings.TrimPrefix(filepath.Base(m), jobID+"-")
-		if len(stamp) == len("20060102-150405") && !strings.Contains(stamp[9:], "-") {
-			mine = append(mine, m)
-		}
-	}
-	sort.Strings(mine)
-	for len(mine) >= keep {
-		if err := RemoveWorktree(repo, mine[0]); err != nil {
-			log("warning: could not remove old worktree %s: %v", mine[0], err)
-			_ = os.RemoveAll(mine[0])
-		}
-		mine = mine[1:]
-	}
 }

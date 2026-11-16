@@ -79,6 +79,25 @@ func RemoveWorktree(repo, path string) error {
 	return err
 }
 
+// ListWorktrees returns the paths of repo's linked worktrees as git records
+// them. Records of worktrees whose directory is gone are pruned first.
+func ListWorktrees(repo string) ([]string, error) {
+	if _, err := git("-C", repo, "worktree", "prune"); err != nil {
+		return nil, err
+	}
+	out, err := git("-C", repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		if path, ok := strings.CutPrefix(line, "worktree "); ok {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
 // RepoLabel returns owner/name for a GitHub origin, else the origin URL.
 func RepoLabel(repo string) string {
 	url, err := git("-C", repo, "remote", "get-url", "origin")
