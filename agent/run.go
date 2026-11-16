@@ -62,7 +62,7 @@ func Run(o Options) error {
 		return err
 	}
 
-	stamp := time.Now().Format("20060102-150405")
+	stamp := time.Now().Format(stampLayout)
 	wt := filepath.Join(home, ".lazycron", "worktrees", o.ProjectName, jobID+"-"+stamp)
 	notes, _ := os.ReadFile(filepath.Join(lcDir, "context.md"))
 	prompt := BuildPrompt(job, PromptContext{
