@@ -57,7 +57,31 @@ ESC_OUTPUT="$(json_escape "$OUTPUT")"
   printf '}\n'
 } > "$DIR/${STAMP}_${JOB_ID}.json"
 
-# One-shot jobs: disable the crontab entry after execution
-if [ "$4" = "--once" ]; then
-  crontab -l 2>/dev/null | sed "/@id:${JOB_ID}/{ n; s/^/#DISABLED /; }" | crontab -
+# disable_job filters a crontab on stdin, prefixing "#DISABLED " to the
+# schedule line after the name comment whose @id is exactly $1. Like
+# cron.extractID, the id runs from the first " @id:" to the first byte
+# outside [a-z0-9_-], so "@id:fix" never matches "@id:fix-agent".
+disable_job() {
+  LC_ALL=C awk -v id="$1" '
+    pending {
+      pending = 0
+      if ($0 !~ /^#DISABLED /) $0 = "#DISABLED " $0
+    }
+    /^#/ && !/^#DISABLED / && (i = index($0, " @id:")) {
+      rest = substr($0, i + 5)
+      after = substr(rest, length(id) + 1, 1)
+      if (index(rest, id) == 1 && after !~ /^[a-z0-9_-]$/) pending = 1
+    }
+    { print }'
+}
+
+# One-shot jobs: disable the crontab entry after execution. An unreadable
+# crontab is left alone: piping nothing into `crontab -` would wipe it.
+if [ "$4" = "--once" ] && [ -n "$JOB_ID" ]; then
+  if CURRENT="$(crontab -l 2>/dev/null)"; then
+    UPDATED="$(printf '%s\n' "$CURRENT" | disable_job "$JOB_ID")"
+    if [ "$UPDATED" != "$CURRENT" ]; then
+      printf '%s\n' "$UPDATED" | crontab -
+    fi
+  fi
 fi
