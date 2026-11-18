@@ -1,7 +1,7 @@
 ---
 name: CVE + deps
-cron: every day at 4am
-description: Daily vulnerability check and dependency update opened as a pull request
+cron: "0 4 * * 1"
+description: Weekly vulnerability check and dependency update opened as a pull request
 tag: CV
 tag_color: "#f9e2af"
 model: sonnet

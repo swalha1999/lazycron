@@ -1,6 +1,6 @@
 ---
 name: Worker
-cron: every day at 5am
+cron: "0 5 * * 1,4"
 description: Takes the next unclaimed open issue, implements it, and opens a pull request
 tag: WK
 tag_color: "#f38ba8"
