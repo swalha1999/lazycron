@@ -240,10 +240,11 @@ func applyNameComment(job Job, comment string) Job {
 func extractOnce(name string) (string, bool) {
 	const marker = " @once"
 	if idx := strings.Index(name, marker); idx != -1 {
-		// Ensure @once is followed by nothing, whitespace, or [
+		// CrontabLineFor writes @once last among the @ markers, so only a
+		// [tag] or {project} suffix may follow it.
 		after := name[idx+len(marker):]
 		after = strings.TrimSpace(after)
-		if after == "" || strings.HasPrefix(after, "[") {
+		if after == "" || strings.HasPrefix(after, "[") || strings.HasPrefix(after, "{") {
 			clean := strings.TrimSpace(name[:idx] + " " + after)
 			return clean, true
 		}

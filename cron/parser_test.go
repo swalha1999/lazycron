@@ -446,6 +446,9 @@ func TestExtractOnce(t *testing.T) {
 		{"with @once and tag", "My Job @once [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", true},
 		{"no @once", "My Job", "My Job", false},
 		{"no @once with tag", "My Job [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", false},
+		{"with @once and project", "My Job @once {infra}", "My Job {infra}", true},
+		{"with @once, tag and project", "My Job @once [TAG:#f38ba8] {infra}", "My Job [TAG:#f38ba8] {infra}", true},
+		{"@once inside the name", "My Job @once later", "My Job @once later", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -638,6 +641,37 @@ func TestFullRoundtrip_OneShot(t *testing.T) {
 	assertEqual(t, "Command", got.Command, original.Command)
 	assertBool(t, "Enabled", got.Enabled, original.Enabled)
 	assertBool(t, "OneShot", got.OneShot, true)
+}
+
+// A one-shot job in a project (no tag) must stay one-shot after a
+// write/parse cycle, or the next save drops record's --once flag.
+func TestFullRoundtrip_OneShotWithProject(t *testing.T) {
+	withFakeScriptsDir(t)
+	original := Job{
+		ID:       "ff889901",
+		Name:     "one-shot-project",
+		Schedule: "30 14 22 3 *",
+		Command:  "echo hello",
+		Enabled:  true,
+		Wrapped:  true,
+		OneShot:  true,
+		Project:  "infra",
+	}
+	if err := WriteScript(original.ID, original.Command); err != nil {
+		t.Fatalf("WriteScript: %v", err)
+	}
+
+	jobs := Parse(original.CrontabLine())
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job after roundtrip, got %d", len(jobs))
+	}
+	got := jobs[0]
+	assertEqual(t, "Name", got.Name, original.Name)
+	assertEqual(t, "Project", got.Project, original.Project)
+	assertBool(t, "OneShot", got.OneShot, true)
+	if line := got.CrontabLine(); line != original.CrontabLine() {
+		t.Errorf("rewrite changed the line:\n got %q\nwant %q", line, original.CrontabLine())
+	}
 }
 
 // --- extractProject ---
