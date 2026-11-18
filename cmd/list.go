@@ -48,18 +48,27 @@ func printJobTable(w io.Writer, jobs []cron.Job) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tNAME\tPROJECT\tRUNNER\tSCHEDULE\tCOMMAND")
 	for _, job := range jobs {
-		status := "enabled"
-		if !job.Enabled {
-			status = "disabled"
-		}
 		project := job.Project
 		if project == "" {
 			project = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", job.ID, status, job.Name, project,
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", job.ID, jobStatus(job), job.Name, project,
 			job.EffectiveRunner(), job.Schedule, truncate(job.Command, 60))
 	}
 	return tw.Flush()
+}
+
+// jobStatus is the STATUS column: enabled/disabled, flagged when the job's
+// script could not be read.
+func jobStatus(job cron.Job) string {
+	status := "enabled"
+	if !job.Enabled {
+		status = "disabled"
+	}
+	if job.ScriptMissing() {
+		status += ",script-missing"
+	}
+	return status
 }
 
 // truncate shortens s to at most n bytes, marking the cut with "...".

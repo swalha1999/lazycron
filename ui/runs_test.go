@@ -117,3 +117,14 @@ func TestHerdrNoticeOnlyOnceAndOnlyWhenMissing(t *testing.T) {
 		t.Fatal("no notice when herdr-core is installed")
 	}
 }
+
+func TestJobRowAndDetailFlagMissingScript(t *testing.T) {
+	job := cron.Job{ID: "abc12345", Name: "J", Schedule: "* * * * *", Enabled: true, Wrapped: true,
+		Command: "bash '/home/u/.lazycron/scripts/abc12345.sh'"}
+	if row := renderJobRow(job, 20, nil, runState{}); !strings.Contains(row, "NO SCRIPT") {
+		t.Errorf("row = %q, want a NO SCRIPT badge", row)
+	}
+	if detail := renderDetail(&job, 80, runState{}); !strings.Contains(detail, "Script missing") {
+		t.Errorf("detail lacks the script-missing warning")
+	}
+}

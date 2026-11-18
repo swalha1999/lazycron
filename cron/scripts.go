@@ -116,8 +116,10 @@ func SyncScriptsIn(dir string, jobs []Job) error {
 
 	active := make(map[string]bool)
 	for _, j := range jobs {
-		filename := j.ID + ".sh"
-		active[filename] = true
+		active[j.ID+".sh"] = true
+		if j.ScriptMissing() {
+			continue // never write a script that runs itself; leave the file as is
+		}
 		if err := WriteScriptIn(dir, j.ID, j.Command); err != nil {
 			return err
 		}
@@ -227,6 +229,14 @@ func ScriptRefPath(command string) string {
 		}
 	}
 	return strings.Trim(path, "'\"")
+}
+
+// ScriptMissing reports whether the job's script could not be read when the
+// crontab was parsed: its Command is still the script reference rather than
+// the user's command. Writing that reference as the script's body would make
+// the script call itself forever, so writers skip such jobs.
+func (j Job) ScriptMissing() bool {
+	return IsScriptRef(j.Command)
 }
 
 // resolveScript reads the actual command from a script file reference.

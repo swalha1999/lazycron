@@ -83,6 +83,12 @@ func renderDetail(job *cron.Job, width int, runs runState) string {
 		b.WriteString("\n")
 	}
 
+	if job.ScriptMissing() {
+		b.WriteString("\n")
+		b.WriteString("  " + missingStyle.Render("✗ Script missing") + "  " + mutedItemStyle.Render("edit the job to set its command again"))
+		b.WriteString("\n")
+	}
+
 	// Command
 	b.WriteString("\n")
 	b.WriteString(detailHeaderStyle.Render("  Command"))

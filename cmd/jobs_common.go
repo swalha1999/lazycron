@@ -22,6 +22,7 @@ type jobView struct {
 	Runner        string   `json:"runner"`
 	RunnerSet     bool     `json:"runner_override"`
 	CurrentFormat bool     `json:"current_format"`
+	ScriptMissing bool     `json:"script_missing,omitempty"`
 	NextRuns      []string `json:"next_runs,omitempty"`
 }
 
@@ -40,6 +41,7 @@ func toJobView(j cron.Job) jobView {
 		Runner:        j.EffectiveRunner(),
 		RunnerSet:     j.Runner != "",
 		CurrentFormat: j.Wrapped,
+		ScriptMissing: j.ScriptMissing(),
 	}
 	if j.Enabled {
 		for _, t := range cron.NextRuns(j.Schedule, 3) {
