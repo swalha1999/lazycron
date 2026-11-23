@@ -122,11 +122,12 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if jobIdx >= 0 {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, -1)
 				if swapIdx >= 0 {
+					save := swapJobs(m.jobs[jobIdx].ID, m.jobs[swapIdx].ID)
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
 					m.rebuildRows()
 					m.selectedRow = rowForJobIdx(m.jobListRows, swapIdx)
 					b := m.manager.ActiveBackend()
-					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
+					return m, tea.Batch(saveJobs(b, save), m.setStatus(fmt.Sprintf("Moved '%s' up", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
 			}
 		}
@@ -137,11 +138,12 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if jobIdx >= 0 {
 				swapIdx := findSiblingJob(m.jobs, jobIdx, +1)
 				if swapIdx >= 0 {
+					save := swapJobs(m.jobs[jobIdx].ID, m.jobs[swapIdx].ID)
 					m.jobs[jobIdx], m.jobs[swapIdx] = m.jobs[swapIdx], m.jobs[jobIdx]
 					m.rebuildRows()
 					m.selectedRow = rowForJobIdx(m.jobListRows, swapIdx)
 					b := m.manager.ActiveBackend()
-					return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
+					return m, tea.Batch(saveJobs(b, save), m.setStatus(fmt.Sprintf("Moved '%s' down", m.jobs[swapIdx].Name), statusInfo, 2*time.Second))
 				}
 			}
 		}
@@ -284,7 +286,8 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					status = "disabled"
 				}
 				b := m.manager.ActiveBackend()
-				return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Job '%s' %s", m.jobs[jobIdx].Name, status), statusSuccess, 4*time.Second))
+				save := setJobEnabled(m.jobs[jobIdx].ID, m.jobs[jobIdx].Enabled)
+				return m, tea.Batch(saveJobs(b, save), m.setStatus(fmt.Sprintf("Job '%s' %s", m.jobs[jobIdx].Name, status), statusSuccess, 4*time.Second))
 			}
 		}
 
@@ -322,7 +325,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				job.Wrapped = true
 				b := m.manager.ActiveBackend()
-				return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Updated '%s' to latest format", job.Name), statusSuccess, 4*time.Second))
+				return m, tea.Batch(saveJobs(b, markJobWrapped(job.ID)), m.setStatus(fmt.Sprintf("Updated '%s' to latest format", job.Name), statusSuccess, 4*time.Second))
 			}
 		}
 

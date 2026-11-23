@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,7 +18,8 @@ type jobsLoadedMsg struct {
 }
 
 type jobSavedMsg struct {
-	err error
+	jobs []cron.Job // the jobs as written (or as read, when err != nil)
+	err  error
 }
 
 type jobRanMsg struct {
@@ -97,44 +99,24 @@ func (m Model) Init() tea.Cmd {
 // disableCompletedOneShotsMsg is sent after one-shot jobs have been auto-disabled.
 type disableCompletedOneShotsMsg struct {
 	disabled int
+	jobs     []cron.Job
 	err      error
 }
 
 // disableCompletedOneShots checks enabled one-shot jobs against history
 // and disables any that have already executed. This acts as a backup for the
 // shell-based auto-disable in record.sh, which can fail on macOS due to
-// crontab permission restrictions in cron execution context.
-func disableCompletedOneShots(b backend.Backend, jobs []cron.Job, hist []history.Entry) tea.Cmd {
-	// Copy the slice so we don't mutate the model from a command
-	updated := make([]cron.Job, len(jobs))
-	copy(updated, jobs)
-
+// crontab permission restrictions in cron execution context. It works on a
+// fresh read of the crontab, never the TUI's in-memory list.
+func disableCompletedOneShots(b backend.Backend, hist []history.Entry) tea.Cmd {
+	count := 0
+	mutation := disableRanOneShots(hist, &count)
 	return func() tea.Msg {
-		// Build set of job IDs that have history entries
-		ran := make(map[string]bool, len(hist))
-		for _, e := range hist {
-			if e.JobID != "" {
-				ran[e.JobID] = true
-			} else {
-				ran[e.JobName] = true
-			}
-		}
-
-		// Find enabled one-shot jobs that have already run
-		count := 0
-		for i := range updated {
-			if updated[i].OneShot && updated[i].Enabled && ran[updated[i].ID] {
-				updated[i].Enabled = false
-				count++
-			}
-		}
-
-		if count == 0 {
+		jobs, err := applyMutation(b, mutation)
+		if errors.Is(err, errNoChange) {
 			return disableCompletedOneShotsMsg{}
 		}
-
-		err := b.WriteJobs(updated)
-		return disableCompletedOneShotsMsg{disabled: count, err: err}
+		return disableCompletedOneShotsMsg{disabled: count, jobs: jobs, err: err}
 	}
 }
 
@@ -145,10 +127,11 @@ func loadJobs(b backend.Backend) tea.Cmd {
 	}
 }
 
-func saveJobs(b backend.Backend, jobs []cron.Job) tea.Cmd {
+// saveJobs applies mutation to the backend's current jobs and writes them.
+func saveJobs(b backend.Backend, mutation jobMutation) tea.Cmd {
 	return func() tea.Msg {
-		err := b.WriteJobs(jobs)
-		return jobSavedMsg{err: err}
+		jobs, err := applyMutation(b, mutation)
+		return jobSavedMsg{jobs: jobs, err: err}
 	}
 }
 

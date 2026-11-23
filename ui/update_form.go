@@ -85,6 +85,7 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		b := m.manager.ActiveBackend()
 		var statusText string
+		var save jobMutation
 		if m.form.editing {
 			job.Enabled = m.jobs[m.form.editIndex].Enabled
 			m.jobs[m.form.editIndex] = job
@@ -92,15 +93,17 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Re-position selection to follow the job (project may have changed)
 			m.selectedRow = rowForJobIdx(m.jobListRows, m.form.editIndex)
 			statusText = fmt.Sprintf("Updated job '%s'", job.Name)
+			save = replaceJob(job)
 		} else {
 			m.jobs = append(m.jobs, job)
 			m.rebuildRows()
 			// Point selectedRow to the new job's visual row
 			m.selectedRow = rowForJobIdx(m.jobListRows, len(m.jobs)-1)
 			statusText = fmt.Sprintf("Created job '%s'", job.Name)
+			save = appendJob(job)
 		}
 		m.mode = modeNormal
-		return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(statusText, statusSuccess, 4*time.Second))
+		return m, tea.Batch(saveJobs(b, save), m.setStatus(statusText, statusSuccess, 4*time.Second))
 
 	case "tab":
 		cmd := m.form.nextField()
