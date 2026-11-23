@@ -36,13 +36,13 @@ func (m Model) handleConfirmDialogKey(msg tea.KeyMsg, execute func(Model) (tea.M
 func (m Model) executeConfirmDelete() (tea.Model, tea.Cmd) {
 	jobIdx := m.currentJobIndex()
 	if jobIdx >= 0 && jobIdx < len(m.jobs) {
-		name := m.jobs[jobIdx].Name
+		name, id := m.jobs[jobIdx].Name, m.jobs[jobIdx].ID
 		m.jobs = append(m.jobs[:jobIdx], m.jobs[jobIdx+1:]...)
 		m.rebuildRows()
 		m.clampSelectedRow()
 		m.mode = modeNormal
 		b := m.manager.ActiveBackend()
-		return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(fmt.Sprintf("Deleted job '%s'", name), statusSuccess, 4*time.Second))
+		return m, tea.Batch(saveJobs(b, deleteJob(id)), m.setStatus(fmt.Sprintf("Deleted job '%s'", name), statusSuccess, 4*time.Second))
 	}
 	return m, nil
 }
@@ -95,7 +95,8 @@ func (m Model) handleProjectPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.rebuildRows()
 			m.selectedRow = rowForJobIdx(m.jobListRows, jobIdx)
 			b := m.manager.ActiveBackend()
-			return m, tea.Batch(saveJobs(b, m.jobs), m.setStatus(statusText, statusSuccess, 4*time.Second))
+			save := setJobProject(m.jobs[jobIdx].ID, newProject)
+			return m, tea.Batch(saveJobs(b, save), m.setStatus(statusText, statusSuccess, 4*time.Second))
 		}
 		m.mode = modeNormal
 	case "esc":

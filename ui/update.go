@@ -62,15 +62,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Auto-disable completed one-shot jobs (backup for record.sh)
 		if len(m.jobs) > 0 && len(m.history) > 0 {
-			cmds = append(cmds, disableCompletedOneShots(m.manager.ActiveBackend(), m.jobs, m.history))
+			cmds = append(cmds, disableCompletedOneShots(m.manager.ActiveBackend(), m.history))
 		}
 		return m, tea.Batch(cmds...)
 
 	case jobSavedMsg:
-		if msg.err != nil {
-			return m, m.setStatus("Save failed: "+msg.err.Error(), statusError, 5*time.Second)
-		}
 		m.manager.InvalidateCache(m.manager.ActiveIndex())
+		if msg.jobs != nil {
+			m.replaceJobs(msg.jobs)
+		}
+		if msg.err != nil {
+			status := m.setStatus("Save failed: "+msg.err.Error(), statusError, 5*time.Second)
+			if msg.jobs == nil {
+				return m, tea.Batch(status, loadJobs(m.manager.ActiveBackend()))
+			}
+			return m, status
+		}
 		return m, nil
 
 	case historyTickMsg:
@@ -87,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastRunStatus = buildLastRunStatus(m.history)
 			// Auto-disable completed one-shot jobs (backup for record.sh)
 			if len(m.jobs) > 0 && len(m.history) > 0 {
-				return m, disableCompletedOneShots(m.manager.ActiveBackend(), m.jobs, m.history)
+				return m, disableCompletedOneShots(m.manager.ActiveBackend(), m.history)
 			}
 		}
 		return m, nil
@@ -97,9 +104,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.setStatus("Auto-disable failed: "+msg.err.Error(), statusError, 5*time.Second)
 		}
 		if msg.disabled > 0 {
-			// Reload jobs to reflect the changes
-			b := m.manager.ActiveBackend()
-			return m, loadJobs(b)
+			m.manager.InvalidateCache(m.manager.ActiveIndex())
+			m.replaceJobs(msg.jobs)
 		}
 		return m, nil
 

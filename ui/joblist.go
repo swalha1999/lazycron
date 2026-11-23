@@ -38,6 +38,24 @@ func (m *Model) rebuildRows() {
 	m.jobListRows = buildRows(m.jobs, m.collapsedProjects, m.searchJobMatch)
 }
 
+// replaceJobs swaps in a fresh job list (e.g. as just written), keeping the
+// active search and the selection on the same job where it still exists.
+func (m *Model) replaceJobs(jobs []cron.Job) {
+	selectedID := ""
+	if i := m.currentJobIndex(); i >= 0 && i < len(m.jobs) {
+		selectedID = m.jobs[i].ID
+	}
+	m.jobs = jobs
+	if m.searchPanel == panelJobs && m.searchQuery != "" {
+		m.searchJobMatch = matchJobs(m.jobs, m.searchQuery)
+	}
+	m.rebuildRows()
+	if i, err := indexOfJob(m.jobs, selectedID); err == nil {
+		m.selectedRow = rowForJobIdx(m.jobListRows, i)
+	}
+	m.clampSelectedRow()
+}
+
 // currentJobIndex returns the job index for the current selectedRow,
 // or -1 if the selection is out of range or on a project header.
 func (m *Model) currentJobIndex() int {
