@@ -88,3 +88,32 @@ func writeExecutable(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateLabelRejectsReservedDelimiters(t *testing.T) {
+	bad := []struct{ field, value string }{
+		{"name", "a @id:b"},
+		{"name", "a @runner:herdr"},
+		{"tag", "a[b"},
+		{"tag", "a]"},
+		{"tag color", "#fff:x"},
+		{"tag color", "[#fff"},
+		{"project", "x{y"},
+		{"project", "x}"},
+	}
+	for _, b := range bad {
+		if err := ValidateLabel(b.field, b.value); err == nil {
+			t.Errorf("%s %q: expected an error", b.field, b.value)
+		}
+	}
+	ok := []struct{ field, value string }{
+		{"name", "Sync [db:prod] {eu} @once"},
+		{"tag", "env:prod"},
+		{"tag color", "#f38ba8"},
+		{"project", "infra [eu]"},
+	}
+	for _, o := range ok {
+		if err := ValidateLabel(o.field, o.value); err != nil {
+			t.Errorf("%s %q: unexpected error %v", o.field, o.value, err)
+		}
+	}
+}

@@ -222,11 +222,14 @@ func parseCrontab(output, scriptsDir string) parsedCrontab {
 }
 
 // applyNameComment sets the name, id and markers from a name comment line.
+// CrontabLineFor writes "<name> @id:<id> @runner:<r> @once [tag:color]
+// {project}", so the suffixes come off in reverse: a name that happens to
+// contain " @once" or brackets is never mistaken for a marker.
 func applyNameComment(job Job, comment string) Job {
 	name := strings.TrimSpace(strings.TrimPrefix(comment, "#"))
-	name, job.OneShot = extractOnce(name)
 	name, job.Project = extractProject(name)
 	name, job.Tag, job.TagColor = extractTag(name)
+	name, job.OneShot = extractOnce(name)
 	name, job.ID = extractID(name)
 	job.Name, job.Runner = extractRunner(name)
 	if job.ID == "" {
@@ -235,37 +238,29 @@ func applyNameComment(job Job, comment string) Job {
 	return job
 }
 
-// extractOnce checks for the @once marker in a name comment.
-// Returns the clean name (without @once) and whether it was present.
+// extractOnce strips the @once marker from the end of a name comment whose
+// [tag] and {project} suffixes are already removed. Returns the clean name
+// and whether the marker was present.
 func extractOnce(name string) (string, bool) {
-	const marker = " @once"
-	if idx := strings.Index(name, marker); idx != -1 {
-		// CrontabLineFor writes @once last among the @ markers, so only a
-		// [tag] or {project} suffix may follow it.
-		after := name[idx+len(marker):]
-		after = strings.TrimSpace(after)
-		if after == "" || strings.HasPrefix(after, "[") || strings.HasPrefix(after, "{") {
-			clean := strings.TrimSpace(name[:idx] + " " + after)
-			return clean, true
-		}
-	}
-	return name, false
+	clean, ok := strings.CutSuffix(name, " @once")
+	return strings.TrimSpace(clean), ok
 }
 
 // extractTag parses a tag suffix from a name like "Job Name [PP:#f38ba8]".
-// Returns the clean name, tag text, and tag color.
+// Returns the clean name, tag text, and tag color. The color is split off at
+// the last colon, so a tag may itself contain colons ("env:prod").
 func extractTag(name string) (string, string, string) {
 	openIdx := strings.LastIndex(name, "[")
 	if openIdx == -1 || !strings.HasSuffix(name, "]") {
 		return name, "", ""
 	}
 	inner := name[openIdx+1 : len(name)-1]
-	parts := strings.SplitN(inner, ":", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	sep := strings.LastIndex(inner, ":")
+	if sep <= 0 || sep == len(inner)-1 {
 		return name, "", ""
 	}
 	cleanName := strings.TrimSpace(name[:openIdx])
-	return cleanName, parts[0], parts[1]
+	return cleanName, inner[:sep], inner[sep+1:]
 }
 
 // extractID parses an ID marker from a name like "Job Name @id:a1b2c3d4".

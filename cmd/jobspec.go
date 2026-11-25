@@ -102,7 +102,7 @@ func (s jobSpec) toJob() (cron.Job, error) {
 // safely into a crontab line.
 func validateLabels(j cron.Job) error {
 	if err := j.ValidateLabels(); err != nil {
-		return errUsage("%v", err).withHint("remove newlines and %% from names, tags and projects")
+		return errUsage("%v", err).withHint("remove the text the error names from the name, tag or project")
 	}
 	return nil
 }
