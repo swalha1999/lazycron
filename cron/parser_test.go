@@ -443,12 +443,10 @@ func TestExtractOnce(t *testing.T) {
 		wantOnce bool
 	}{
 		{"with @once", "My Job @once", "My Job", true},
-		{"with @once and tag", "My Job @once [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", true},
+		{"with @once after id", "My Job @id:abc @once", "My Job @id:abc", true},
 		{"no @once", "My Job", "My Job", false},
-		{"no @once with tag", "My Job [TAG:#f38ba8]", "My Job [TAG:#f38ba8]", false},
-		{"with @once and project", "My Job @once {infra}", "My Job {infra}", true},
-		{"with @once, tag and project", "My Job @once [TAG:#f38ba8] {infra}", "My Job [TAG:#f38ba8] {infra}", true},
 		{"@once inside the name", "My Job @once later", "My Job @once later", false},
+		{"@once ending the name, before the id", "Notify @once @id:abc", "Notify @once @id:abc", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -812,3 +810,49 @@ func assertBool(t *testing.T, field string, got, want bool) {
 	}
 }
 
+// Labels that contain marker-like text must come back unchanged from the
+// name comment: CrontabLine -> Parse is the path every save goes through.
+func TestFullRoundtrip_MarkerLikeLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		job  Job
+	}{
+		{"tag with a colon", Job{Name: "Backup", Tag: "env:prod", TagColor: "#a6e3a1"}},
+		{"tag with a colon, default color", Job{Name: "Backup", Tag: "env:prod"}},
+		{"one-shot named @once", Job{Name: "Notify @once", OneShot: true}},
+		{"recurring job named @once", Job{Name: "Notify @once"}},
+		{"name with brackets and braces", Job{Name: "Sync [db:prod] {eu}", Tag: "T", TagColor: "#fff", Project: "p"}},
+		{"every marker", Job{Name: "All", Runner: "herdr", OneShot: true, Tag: "a:b", TagColor: "#fff", Project: "infra"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := tt.job
+			want.ID, want.Schedule, want.Command, want.Enabled = "abc", "0 2 * * *", "true", true
+			if want.Tag != "" && want.TagColor == "" {
+				want.TagColor = "#f38ba8"
+			}
+			jobs := Parse(want.CrontabLine())
+			if len(jobs) != 1 {
+				t.Fatalf("parsed %d jobs from %q", len(jobs), want.CrontabLine())
+			}
+			got := jobs[0]
+			if got.Name != want.Name || got.ID != want.ID || got.OneShot != want.OneShot ||
+				got.Tag != want.Tag || got.TagColor != want.TagColor || got.Project != want.Project || got.Runner != want.Runner {
+				t.Errorf("round trip of %q:\n got  %+v\n want %+v", want.CrontabLine(), got, want)
+			}
+		})
+	}
+}
+
+// Crontabs written before the fix that carry a tag with a colon parse into
+// the full tag now.
+func TestParse_TagWithColonFromExistingCrontab(t *testing.T) {
+	jobs := Parse("# Backup @id:abc @once [env:prod:#f38ba8] {infra}\n0 2 * * * true\n")
+	if len(jobs) != 1 {
+		t.Fatalf("got %d jobs", len(jobs))
+	}
+	j := jobs[0]
+	if j.Tag != "env:prod" || j.TagColor != "#f38ba8" || !j.OneShot || j.Project != "infra" || j.Name != "Backup" {
+		t.Errorf("got %+v", j)
+	}
+}

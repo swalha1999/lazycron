@@ -68,8 +68,10 @@ jobs:
 ```
 
 Names, tags, tag colors and projects must not contain newlines, other control
-characters or `%` (cron ends a command at `%`); such jobs are rejected with a
-usage error.
+characters or `%` (cron ends a command at `%`). The crontab comment that
+stores them uses a few delimiters too, so a name must not contain ` @id:` or
+` @runner:`, a tag `[` or `]`, a tag color `[`, `]` or `:`, and a project `{`
+or `}`. Such jobs are rejected with a usage error.
 
 `lazycron export | lazycron apply -` is a no-op; the pair is the way to keep
 jobs in git and converge a machine to them.
