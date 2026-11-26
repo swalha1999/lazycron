@@ -140,9 +140,24 @@ func (b *RemoteBackend) WriteJobs(jobs []cron.Job) error {
 	}
 	crontabContent := remoteCrontab(existing, jobs, defaultRunner, remoteHome)
 
-	_, err = b.client.Run(fmt.Sprintf("echo %s | crontab -",
-		shellQuote(crontabContent)))
+	return installCrontab(b.client, crontabContent)
+}
+
+// stdinRunner is the part of the SSH client installCrontab needs.
+type stdinRunner interface {
+	RunWithStdin(cmd, stdin string) (string, error)
+}
+
+// installCrontab replaces the server's crontab with content. The content goes
+// to `crontab -` on stdin, never through a shell word: the login shell's echo
+// would turn \n, \t and \\ in the user's lines into other bytes, and \c would
+// cut the crontab short and drop every job after it.
+func installCrontab(r stdinRunner, content string) error {
+	out, err := r.RunWithStdin("crontab -", content)
 	if err != nil {
+		if out != "" {
+			return fmt.Errorf("write crontab: %w: %s", err, out)
+		}
 		return fmt.Errorf("write crontab: %w", err)
 	}
 	return nil

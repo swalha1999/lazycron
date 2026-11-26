@@ -177,91 +177,93 @@ func (c *Client) Connect() error {
 
 // Run executes a command on the remote server.
 func (c *Client) Run(cmd string) (string, error) {
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
+	return c.run(cmd, nil)
+}
 
-	if conn == nil {
-		if err := c.Connect(); err != nil {
-			return "", err
-		}
-		c.mu.Lock()
-		conn = c.conn
-		c.mu.Unlock()
-	}
+// RunWithStdin executes a command on the remote server with stdin fed to it
+// byte for byte. Use it to pass content (a crontab, a script) to a command
+// without putting the content through the remote shell's quoting or echo.
+func (c *Client) RunWithStdin(cmd, stdin string) (string, error) {
+	return c.run(cmd, strings.NewReader(stdin))
+}
 
-	session, err := conn.NewSession()
+func (c *Client) run(cmd string, stdin io.Reader) (string, error) {
+	session, err := c.newSession()
 	if err != nil {
-		// Connection may have dropped — try reconnect once
-		c.mu.Lock()
-		c.conn = nil
-		c.mu.Unlock()
-		if err := c.Connect(); err != nil {
-			return "", err
-		}
-		c.mu.Lock()
-		conn = c.conn
-		c.mu.Unlock()
-		session, err = conn.NewSession()
-		if err != nil {
-			return "", fmt.Errorf("ssh session: %w", err)
-		}
+		return "", err
 	}
 	defer session.Close()
 
 	var stdout, stderr bytes.Buffer
+	session.Stdin = stdin
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
 	err = session.Run(cmd)
-	stdoutStr := strings.TrimSpace(stdout.String())
-	stderrStr := strings.TrimSpace(stderr.String())
-	// On success, return stdout — callers like FileExists / ReadFile expect
-	// just the command's stdout. On failure, surface both streams so the
-	// user sees the actual error message even when the command also wrote
-	// progress noise to stdout (the previous behavior dropped stderr in
-	// that case, leaving "Run Failed" with only the progress output).
+	return commandOutput(stdout.String(), stderr.String(), err)
+}
+
+// newSession opens a session, reconnecting once when the connection dropped.
+func (c *Client) newSession() (*ssh.Session, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return nil, err
+	}
+	session, err := conn.NewSession()
 	if err == nil {
-		return stdoutStr, nil
+		return session, nil
+	}
+	c.mu.Lock()
+	c.conn = nil
+	c.mu.Unlock()
+	if conn, err = c.connection(); err != nil {
+		return nil, err
+	}
+	session, err = conn.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("ssh session: %w", err)
+	}
+	return session, nil
+}
+
+// connection returns the live connection, connecting first if needed.
+func (c *Client) connection() (*ssh.Client, error) {
+	if err := c.Connect(); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn, nil
+}
+
+// commandOutput picks what Run returns. On success, stdout: callers like
+// FileExists / ReadFile expect just the command's stdout. On failure, both
+// streams, so the user sees the actual error message even when the command
+// also wrote progress noise to stdout.
+func commandOutput(stdout, stderr string, err error) (string, error) {
+	stdout = strings.TrimSpace(stdout)
+	stderr = strings.TrimSpace(stderr)
+	if err == nil {
+		return stdout, nil
 	}
 	switch {
-	case stdoutStr == "":
-		return stderrStr, err
-	case stderrStr == "":
-		return stdoutStr, err
+	case stdout == "":
+		return stderr, err
+	case stderr == "":
+		return stdout, err
 	default:
-		return stdoutStr + "\n" + stderrStr, err
+		return stdout + "\n" + stderr, err
 	}
 }
 
-// Upload writes content to a remote file path.
+// Upload writes content to a remote file path. The content goes to `cat` on
+// stdin, so it reaches the file unchanged.
 func (c *Client) Upload(content, path string, mode os.FileMode) error {
-	// Use cat to write content via stdin
 	quotedPath := cron.ShellQuote(path)
 	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\" && cat > %s && chmod %o %s",
 		quotedPath, quotedPath, mode, quotedPath)
-
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
-
-	if conn == nil {
-		if err := c.Connect(); err != nil {
-			return err
-		}
-		c.mu.Lock()
-		conn = c.conn
-		c.mu.Unlock()
-	}
-
-	session, err := conn.NewSession()
-	if err != nil {
-		return fmt.Errorf("ssh session: %w", err)
-	}
-	defer session.Close()
-
-	session.Stdin = strings.NewReader(content)
-	return session.Run(cmd)
+	_, err := c.RunWithStdin(cmd, content)
+	return err
 }
 
 // UploadDirectory tars localDir locally, streams the tarball over the SSH
